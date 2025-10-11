@@ -1,0 +1,38 @@
+import { AppSidebar } from "@/components/app-sidebar";
+
+import { SiteHeader } from "@/components/site-header";
+import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
+import { Routes, Route } from "react-router-dom";
+
+import { Workflow } from "./workflow/workflow";
+import { Dashboard } from "./dashboard/dashboard";
+import { Admin } from "./admin/admin";
+import { Node } from "./node/node";
+import { WorkflowDetail } from "./workflow/workflow-detail";
+import { Record } from "./record/record";
+
+export default function Page() {
+  return (
+    <SidebarProvider
+      style={
+        {
+          "--sidebar-width": "calc(var(--spacing) * 64)",
+          "--header-height": "calc(var(--spacing) * 12)",
+        } as React.CSSProperties
+      }
+    >
+      <AppSidebar />
+      <SidebarInset>
+        <SiteHeader />
+        <Routes>
+          <Route path="/" element={<Dashboard />} />
+          <Route path="/workflow" element={<Workflow />} />
+          <Route path="/workflow/:workflowName" element={<WorkflowDetail />} />
+          <Route path="/record" element={<Record />} />
+          <Route path="/node" element={<Node />} />
+          <Route path="/admin" element={<Admin />} />
+        </Routes>
+      </SidebarInset>
+    </SidebarProvider>
+  );
+}
