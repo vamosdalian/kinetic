@@ -19,20 +19,57 @@ import { ActionBarNodeDemo } from "./custom-node";
 import { Play, Save, LoaderCircle, Plus, CloudCheck } from "lucide-react";
 import { useReactFlow } from "@xyflow/react";
 import { ReactFlowProvider } from "@xyflow/react";
-import type { JSX } from "react/jsx-runtime";
 import { v7 as uuidv7 } from "uuid";
+import { useParams } from "react-router-dom";
+import { useSavedStore, useWorkflowStore } from "./workflow-store";
 
 const initialNodes: Node[] = [];
 const initialEdges: Edge[] = [];
 
-function WorkflowGraph(props: JSX.IntrinsicAttributes) {
-  // const { workflowName } = useParams();
+function WorkflowGraph() {
+  const { workflowName } = useParams();
   const [nodes, setNodes] = React.useState<Node[]>(initialNodes);
   const [edges, setEdges] = React.useState<Edge[]>(initialEdges);
   const [colorMode, setColorMode] = React.useState<ColorMode>("light");
-  const [saved, setSaved] = React.useState<boolean>(true);
+  const { saved, setSaved } = useSavedStore();
   const [running, setRunning] = React.useState<boolean>(false);
+  const [isReady, setIsReady] = React.useState<boolean>(false);
   const { getViewport } = useReactFlow();
+  const { workflowData, setTaskId } = useWorkflowStore();
+
+  const nodeTypes = {
+    baseNodeFull: ActionBarNodeDemo,
+  };
+
+  const NewNode = React.useCallback(() => {
+    const viewport = getViewport();
+    const centerX = (window.innerWidth / 2 - viewport.x) / viewport.zoom;
+    const centerY = (window.innerHeight / 2 - viewport.y) / viewport.zoom;
+    const newNode: Node = {
+      id: uuidv7(),
+      position: { x: centerX, y: centerY },
+      data: { name: `New Task` },
+      type: "baseNodeFull",
+    };
+    return newNode;
+  }, [getViewport]);
+
+  React.useEffect(() => {
+    console.log("Workflow Name from URL:", workflowName);
+    if (!isReady) {
+      return;
+    }
+    if (workflowName === "new") {
+      setNodes(initialNodes.concat(NewNode()));
+      setEdges(initialEdges);
+      setSaved(false);
+    } else {
+      // Load existing workflow data based on workflowName
+      // For example, fetch from an API and setNodes, setEdges accordingly
+      // This is a placeholder for actual data fetching logic
+      console.log(`Load workflow data for: ${workflowName}`);
+    }
+  }, [workflowName, NewNode, isReady, setSaved]);
 
   React.useEffect(() => {
     // Function to update color mode based on the presence of 'dark' class on <html>
@@ -66,19 +103,9 @@ function WorkflowGraph(props: JSX.IntrinsicAttributes) {
   }, []);
 
   const addNode = React.useCallback(() => {
-    console.log("Adding new node");
-    const viewport = getViewport();
-    const centerX = (window.innerWidth / 2 - viewport.x) / viewport.zoom;
-    const centerY = (window.innerHeight / 2 - viewport.y) / viewport.zoom;
-    const newNode: Node = {
-      id: uuidv7(),
-      position: { x: centerX, y: centerY },
-      data: { label: `New Task` },
-      type: "baseNodeFull",
-    };
-    setNodes((nds) => nds.concat(newNode));
+    setNodes((nds) => nds.concat(NewNode()));
     setSaved(false);
-  }, [getViewport]);
+  }, [NewNode, setSaved]);
 
   const onNodesChange = React.useCallback(
     (changes: NodeChange[]) =>
@@ -96,18 +123,29 @@ function WorkflowGraph(props: JSX.IntrinsicAttributes) {
     []
   );
 
-  const nodeTypes = {
-    baseNodeFull: ActionBarNodeDemo,
-  };
+  const onSelectionChange = React.useCallback(
+    ({ nodes: selectedNodes }: { nodes: Node[] }) => {
+      // props.setFocusedNode(selectedNodes.length === 1);
+      if (selectedNodes.length === 1) {
+        const selectedNode = selectedNodes[0];
+        setTaskId(selectedNode.id);
+      } else {
+        setTaskId("");
+      }
+    },
+    [setTaskId]
+  );
 
-  const onSave = () => {
-    // Implement your save logic here, e.g., send nodes and edges to a server
-    console.log("Saving workflow...", { nodes, edges });
+  const onSave = React.useCallback(() => {
+    console.log("Saving workflow...", { workflowData });
     setSaved(true);
-  }
+  }, [setSaved, workflowData]);
 
   return (
-    <div style={{ width: "100%", height: "100%" }} className="position: relative;">
+    <div
+      style={{ width: "100%", height: "100%" }}
+      className="position: relative;"
+    >
       <ReactFlow
         nodes={nodes}
         nodeTypes={nodeTypes}
@@ -115,9 +153,10 @@ function WorkflowGraph(props: JSX.IntrinsicAttributes) {
         onNodesChange={onNodesChange}
         onEdgesChange={onEdgesChange}
         onConnect={onConnect}
+        onSelectionChange={onSelectionChange}
+        onInit={() => setIsReady(true)}
         colorMode={colorMode}
         fitView
-        {...props}
       >
         <Background />
         <Controls />
@@ -155,10 +194,10 @@ function WorkflowGraph(props: JSX.IntrinsicAttributes) {
   );
 }
 
-export function FlowWithProvider(props: JSX.IntrinsicAttributes) {
+export function FlowWithProvider() {
   return (
     <ReactFlowProvider>
-      <WorkflowGraph {...props} />
+      <WorkflowGraph />
     </ReactFlowProvider>
   );
 }

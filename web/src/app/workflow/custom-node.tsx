@@ -15,9 +15,17 @@ import {
 } from "@/components/ui/tooltip";
 import { Button } from "@/components/ui/button";
 
+interface NodeData {
+  name: string;
+}
+
 export const ActionBarNodeDemo = memo((props: NodeProps) => {
   const { deleteElements } = useReactFlow();
-  const { selected } = props;
+  const { id,selected } = props;
+  const data = React.useMemo(
+    () => props.data as unknown as NodeData,
+    [props.data]
+  );
 
   React.useEffect(() => {
     console.log("Node props:", props);
@@ -45,11 +53,11 @@ export const ActionBarNodeDemo = memo((props: NodeProps) => {
           <Tooltip delayDuration={1000}>
             <TooltipTrigger asChild>
               <span className="truncate flex-grow min-w-0 font-medium text-[10px]">
-                Simple Node with a very long name
+                {data.name}
               </span>
             </TooltipTrigger>
             <TooltipContent>
-              <p>Simple Node with a very long name</p>
+              <p>{data.name}</p>
             </TooltipContent>
           </Tooltip>
 
@@ -58,7 +66,7 @@ export const ActionBarNodeDemo = memo((props: NodeProps) => {
               className="w-4 h-4 flex items-center justify-center rounded hover:bg-gray-100 dark:hover:bg-gray-700 cursor-pointer transition-colors"
               onClick={(e) => {
                 e.stopPropagation();
-                console.log("Play clicked");
+                console.log("Play clicked,id", id);
               }}
             >
               <Play className="w-3 h-3" />

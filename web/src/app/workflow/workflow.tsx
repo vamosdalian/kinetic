@@ -39,6 +39,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { useWorkflowStore } from "./workflow-store";
 
 const data: Workflow[] = [
   {
@@ -82,6 +83,7 @@ export type Workflow = {
 
 export function Workflow() {
   const navigate = useNavigate();
+  const { setWorkflowId } = useWorkflowStore();
   const columns = React.useMemo<ColumnDef<Workflow>[]>(
     () => [
       {
@@ -179,7 +181,10 @@ export function Workflow() {
               <Button
                 variant="ghost"
                 className="h-8 w-8 p-0"
-                onClick={() => navigate(`/workflow/${workflow.name}`)}
+                onClick={() => {
+                  setWorkflowId(workflow.id);
+                  navigate(`/workflow/${workflow.name}`);
+                }}
               >
                 <SquarePen className="h-4 w-4" />
               </Button>
@@ -206,7 +211,7 @@ export function Workflow() {
         },
       },
     ],
-    [navigate]
+    [navigate, setWorkflowId]
   );
 
   const [sorting, setSorting] = React.useState<SortingState>([]);
@@ -235,7 +240,7 @@ export function Workflow() {
 
   return (
     <div className="w-full p-4">
-      <div className="flex items-center py-4">
+      <div className="flex items-center justify-between py-4">
         <Input
           placeholder="Filter name..."
           value={(table.getColumn("name")?.getFilterValue() as string) ?? ""}
@@ -244,32 +249,37 @@ export function Workflow() {
           }
           className="max-w-sm"
         />
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button variant="outline" className="ml-auto">
-              Columns <ChevronDown className="ml-2 h-4 w-4" />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
-            {table
-              .getAllColumns()
-              .filter((column) => column.getCanHide())
-              .map((column) => {
-                return (
-                  <DropdownMenuCheckboxItem
-                    key={column.id}
-                    className="capitalize"
-                    checked={column.getIsVisible()}
-                    onCheckedChange={(value) =>
-                      column.toggleVisibility(!!value)
-                    }
-                  >
-                    {column.id}
-                  </DropdownMenuCheckboxItem>
-                );
-              })}
-          </DropdownMenuContent>
-        </DropdownMenu>
+        <div className="space-x-2">
+          <Button variant="outline" onClick={() => navigate(`/workflow/new`)}>
+            Create
+          </Button>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline" className="ml-auto">
+                Columns <ChevronDown className="ml-2 h-4 w-4" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              {table
+                .getAllColumns()
+                .filter((column) => column.getCanHide())
+                .map((column) => {
+                  return (
+                    <DropdownMenuCheckboxItem
+                      key={column.id}
+                      className="capitalize"
+                      checked={column.getIsVisible()}
+                      onCheckedChange={(value) =>
+                        column.toggleVisibility(!!value)
+                      }
+                    >
+                      {column.id}
+                    </DropdownMenuCheckboxItem>
+                  );
+                })}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
       </div>
       <div className="rounded-md border">
         <Table>
