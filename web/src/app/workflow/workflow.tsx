@@ -41,36 +41,6 @@ import {
 } from "@/components/ui/table";
 import { useWorkflowStore } from "./workflow-store";
 
-const data: Workflow[] = [
-  {
-    id: "m5gr84i9",
-    name: "Workflow 1",
-    enable: true,
-    version: "1.0.0",
-    last_running_status: "success",
-    next_running_time: "2025-09-16 10:00:00",
-    create_at: "2025-09-15 10:00:00",
-  },
-  {
-    id: "3u1reuv4",
-    name: "Workflow 2",
-    enable: false,
-    version: "1.2.0",
-    last_running_status: "failed",
-    next_running_time: "2025-09-17 12:00:00",
-    create_at: "2025-09-14 11:00:00",
-  },
-  {
-    id: "derv1ws0",
-    name: "Workflow 3",
-    enable: true,
-    version: "2.0.0",
-    last_running_status: "running",
-    next_running_time: "2025-09-16 14:00:00",
-    create_at: "2025-09-13 14:00:00",
-  },
-];
-
 export type Workflow = {
   id: string;
   name: string;
@@ -84,6 +54,16 @@ export type Workflow = {
 export function Workflow() {
   const navigate = useNavigate();
   const { setWorkflowId } = useWorkflowStore();
+  const [data, setData] = React.useState<Workflow[]>([]);
+
+  React.useEffect(() => {
+    fetch("/api/workflows")
+      .then((res) => res.json())
+      .then((data) => {
+        setData(data);
+      });
+  }, []);
+
   const columns = React.useMemo<ColumnDef<Workflow>[]>(
     () => [
       {
