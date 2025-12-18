@@ -2,7 +2,6 @@ import React from "react";
 import {
   Dialog,
   DialogContent,
-  //   DialogDescription,
   DialogHeader,
   DialogTitle,
   DialogTrigger,
@@ -10,8 +9,15 @@ import {
   DialogClose,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import Editor from "@monaco-editor/react";
-import { useWorkflowStore, useSavedStore } from "./workflow-store";
+import { useWorkflowStore } from "./workflow-store";
+
+// CodeMirror 6 imports
+import { EditorState } from "@codemirror/state";
+import { EditorView, keymap, lineNumbers, highlightActiveLine, highlightActiveLineGutter } from "@codemirror/view";
+import { defaultKeymap, history, historyKeymap } from "@codemirror/commands";
+import { syntaxHighlighting, defaultHighlightStyle, StreamLanguage } from "@codemirror/language";
+import { shell } from "@codemirror/legacy-modes/mode/shell";
+import { oneDark } from "@codemirror/theme-one-dark";
 
 export function ShellEditor({
   children,
@@ -19,24 +25,24 @@ export function ShellEditor({
 }: {
   children: React.ReactNode;
 }) {
-  const [theme, setTheme] = React.useState("light");
   const [open, setOpen] = React.useState(false);
   const [scriptContent, setScriptContent] = React.useState("");
+  const editorRef = React.useRef<HTMLDivElement>(null);
+  const viewRef = React.useRef<EditorView | null>(null);
 
-  const { taskId, nodes, setNodes } = useWorkflowStore();
-  const { setSaved } = useSavedStore();
+  const { selectedTaskId, taskNodes, updateTaskNode } = useWorkflowStore();
+  const taskNode = taskNodes[selectedTaskId];
+
+  // Track dark mode
+  const [isDark, setIsDark] = React.useState(() =>
+    document.documentElement.classList.contains("dark")
+  );
 
   React.useEffect(() => {
-    // Function to update color mode based on the presence of 'dark' class on <html>
     const updateTheme = () => {
-      const isDarkMode = document.documentElement.classList.contains("dark");
-      setTheme(isDarkMode ? "vs-dark" : "light");
+      setIsDark(document.documentElement.classList.contains("dark"));
     };
 
-    // Set the initial color mode when the component mounts
-    updateTheme();
-
-    // Create an observer to watch for class changes on the <html> element
     const observer = new MutationObserver((mutationsList) => {
       for (const mutation of mutationsList) {
         if (
@@ -48,26 +54,89 @@ export function ShellEditor({
       }
     });
 
-    // Start observing the <html> element
     observer.observe(document.documentElement, { attributes: true });
 
-    // Cleanup function to disconnect the observer when the component unmounts
     return () => {
       observer.disconnect();
     };
   }, []);
 
+  // Initialize and manage CodeMirror editor
   React.useEffect(() => {
-    if (open && taskId && nodes[taskId]) {
-      setScriptContent(nodes[taskId].script || "#!/bin/bash");
-    }
-  }, [open, taskId, nodes]);
+    if (!open) return;
+
+    // Small delay to ensure Dialog content is fully rendered
+    const timer = setTimeout(() => {
+      if (!editorRef.current) {
+        console.error("Editor container not found");
+        return;
+      }
+
+      // Destroy previous editor instance if exists
+      if (viewRef.current) {
+        viewRef.current.destroy();
+        viewRef.current = null;
+      }
+
+      // Clear any previous content
+      editorRef.current.innerHTML = "";
+
+      // Get initial content from config.script
+      const initialContent = taskNode?.config?.script || "#!/bin/bash\n";
+      setScriptContent(initialContent);
+
+      const extensions = [
+        lineNumbers(),
+        highlightActiveLine(),
+        highlightActiveLineGutter(),
+        history(),
+        keymap.of([...defaultKeymap, ...historyKeymap]),
+        StreamLanguage.define(shell),
+        syntaxHighlighting(defaultHighlightStyle),
+        EditorView.updateListener.of((update) => {
+          if (update.docChanged) {
+            setScriptContent(update.state.doc.toString());
+          }
+        }),
+        EditorView.theme({
+          "&": { height: "100%" },
+          ".cm-scroller": { overflow: "auto" },
+        }),
+      ];
+
+      // Add dark theme if needed
+      if (isDark) {
+        extensions.push(oneDark);
+      }
+
+      const state = EditorState.create({
+        doc: initialContent,
+        extensions,
+      });
+
+      const view = new EditorView({
+        state,
+        parent: editorRef.current,
+      });
+
+      viewRef.current = view;
+    }, 50); // Small delay for Dialog animation
+
+    return () => {
+      clearTimeout(timer);
+      if (viewRef.current) {
+        viewRef.current.destroy();
+        viewRef.current = null;
+      }
+    };
+  }, [open, isDark, taskNode]); // Recreate editor when dialog opens or theme changes
 
   const handleSave = () => {
-    if (taskId) {
-      setNodes({ [taskId]: { script: scriptContent } });
-      setSaved(false);
-      setOpen(false); // Close the dialog
+    if (selectedTaskId && taskNode) {
+      updateTaskNode(selectedTaskId, {
+        config: { ...taskNode.config, script: scriptContent },
+      });
+      setOpen(false);
     }
   };
 
@@ -78,16 +147,11 @@ export function ShellEditor({
         <DialogHeader>
           <DialogTitle>Edit Script</DialogTitle>
         </DialogHeader>
-        <div className="h-120 border">
-          <Editor
-            height="100%"
-            width="100%"
-            defaultLanguage="shell"
-            value={scriptContent}
-            onChange={(value) => setScriptContent(value || "")}
-            theme={theme}
-          />
-        </div>
+        <div
+          ref={editorRef}
+          className="border rounded-md overflow-hidden"
+          style={{ height: "480px" }}
+        />
         <DialogFooter>
           <DialogClose asChild>
             <Button variant="outline">Cancel</Button>

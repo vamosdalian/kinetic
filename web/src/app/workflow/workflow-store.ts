@@ -1,98 +1,178 @@
 import { create } from "zustand";
+import { type Edge } from "@xyflow/react";
+import { useDirtyStore } from "./dirty-store";
 
-interface TaskData {
-  name: string;
-  description: string;
-  input: string;
+// ============ Task Type Configs ============
+
+export type TaskType = "shell" | "http" | "python" | "condition";
+
+export interface ShellConfig {
   script: string;
 }
 
-const defaultTaskData: TaskData = {
-  name: "",
-  description: "",
-  input: "",
-  script: "",
-};
-
-// saved state
-
-interface SavedState {
-  saved: boolean;
-  setSaved: (saved: boolean) => void;
+export interface HttpConfig {
+  url: string;
+  method: "GET" | "POST" | "PUT" | "DELETE";
+  headers?: Record<string, string>;
+  body?: string;
 }
 
-const useSavedStore = create<SavedState>()((set) => ({
-  saved: false,
-  setSaved: (saved: boolean) => set({ saved }),
-}));
+export interface PythonConfig {
+  script: string;
+  requirements?: string[];
+}
 
-// workflow data
+export interface ConditionConfig {
+  expression: string;
+}
 
-interface WorkflowData {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export type TaskConfig = any; // ShellConfig | HttpConfig | PythonConfig | ConditionConfig | any
+
+// ============ TaskNode (merged Node + Task) ============
+
+export interface TaskNode {
+  id: string;
+
+  // 业务数据
+  name: string;
+  description: string;
+  type: TaskType;
+  config: TaskConfig;
+
+  // 视觉数据
+  position: { x: number; y: number };
+  nodeType: string; // ReactFlow node type, e.g., "baseNodeFull"
+}
+
+const defaultTaskNode: Omit<TaskNode, "id" | "position"> = {
+  name: "New Task",
+  description: "",
+  type: "shell",
+  config: { script: "" } as ShellConfig,
+  nodeType: "baseNodeFull",
+};
+
+// ============ Workflow Data ============
+
+export interface WorkflowData {
   name: string;
   description: string;
 }
 
+// ============ Workflow State ============
+
 interface WorkflowState {
+  // Workflow 元信息
   workflowId: string;
   workflowData: WorkflowData;
-  taskId: string;
-  nodes: { [key: string]: TaskData }; // key: node ID, value: TaskData
 
+  // 核心数据（单一数据源）
+  taskNodes: Record<string, TaskNode>;
+  edges: Edge[];
+
+  // UI 状态
+  selectedTaskId: string;
+
+  // Actions - Workflow
   clear: () => void;
   setWorkflowId: (id: string) => void;
   setWorkflowData: (data: Partial<WorkflowData>) => void;
-  setNodes: (data: { [key: string]: Partial<TaskData> }) => void;
-  delNode: (id: string) => void;
-  setTaskId: (id: string) => void;
+
+  // Actions - TaskNodes
+  addTaskNode: (id: string, position: { x: number; y: number }) => void;
+  updateTaskNode: (id: string, data: Partial<Omit<TaskNode, "id">>) => void;
+  removeTaskNode: (id: string) => void;
+
+  // Actions - Edges
+  setEdges: (edges: Edge[]) => void;
+
+  // Actions - UI
+  selectTask: (id: string) => void;
 }
 
-const useWorkflowStore = create<WorkflowState>()((set) => ({
+// Helper to mark dirty
+const markDirty = () => useDirtyStore.getState().markDirty();
+
+export const useWorkflowStore = create<WorkflowState>()((set) => ({
+  // Initial state
   workflowId: "",
-  taskId: "",
   workflowData: {
     name: "",
     description: "",
   },
-  nodes: {},
+  taskNodes: {},
+  edges: [],
+  selectedTaskId: "",
 
-  clear: () =>
+  // Actions - Workflow
+  clear: () => {
+    useDirtyStore.getState().markClean();
     set({
       workflowId: "",
-      workflowData: {
-        name: "",
-        description: "",
-      },
-      nodes: {},
-    }),
+      workflowData: { name: "", description: "" },
+      taskNodes: {},
+      edges: [],
+      selectedTaskId: "",
+    });
+  },
+
   setWorkflowId: (id: string) => set({ workflowId: id }),
-  setWorkflowData: (data: Partial<WorkflowData>) =>
+
+  setWorkflowData: (data: Partial<WorkflowData>) => {
+    markDirty();
     set((state) => ({
       workflowData: { ...state.workflowData, ...data },
-    })),
-  setNodes: (data: { [key: string]: Partial<TaskData> }) =>
+    }));
+  },
+
+  // Actions - TaskNodes
+  addTaskNode: (id: string, position: { x: number; y: number }) => {
+    markDirty();
+    set((state) => ({
+      taskNodes: {
+        ...state.taskNodes,
+        [id]: { ...defaultTaskNode, id, position },
+      },
+    }));
+  },
+
+  updateTaskNode: (id: string, data: Partial<Omit<TaskNode, "id">>) => {
+    markDirty();
     set((state) => {
-      const newNodes = { ...state.nodes };
-      for (const id in data) {
-        const existingNode = newNodes[id];
-        const providedData = data[id];
-        if (existingNode) {
-          // Update existing node
-          newNodes[id] = { ...existingNode, ...providedData };
-        } else {
-          // Create new node with defaults
-          newNodes[id] = { ...defaultTaskData, ...providedData };
-        }
-      }
-      return { nodes: newNodes };
-    }),
-  delNode: (id: string) =>
+      const existing = state.taskNodes[id];
+      if (!existing) return state;
+      return {
+        taskNodes: {
+          ...state.taskNodes,
+          [id]: { ...existing, ...data },
+        },
+      };
+    });
+  },
+
+  removeTaskNode: (id: string) => {
+    markDirty();
     set((state) => {
-      const newNodes = { ...state.nodes };
-      delete newNodes[id];
-      return { nodes: newNodes };
-    }),
-  setTaskId: (id: string) => set({ taskId: id }),
+      const { [id]: _, ...rest } = state.taskNodes;
+      return {
+        taskNodes: rest,
+        edges: state.edges.filter((e) => e.source !== id && e.target !== id),
+        selectedTaskId: state.selectedTaskId === id ? "" : state.selectedTaskId,
+      };
+    });
+  },
+
+  // Actions - Edges
+  setEdges: (edges: Edge[]) => {
+    markDirty();
+    set({ edges });
+  },
+
+  // Actions - UI
+  selectTask: (id: string) => set({ selectedTaskId: id }),
 }));
 
-export { useSavedStore, useWorkflowStore, type WorkflowData };
+// ============ Exports ============
+
+export type { WorkflowState };

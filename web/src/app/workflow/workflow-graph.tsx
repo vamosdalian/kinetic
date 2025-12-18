@@ -1,7 +1,6 @@
 import * as React from "react";
 import {
   ReactFlow,
-  applyNodeChanges,
   applyEdgeChanges,
   addEdge,
   type NodeChange,
@@ -21,38 +20,52 @@ import { useReactFlow } from "@xyflow/react";
 import { ReactFlowProvider } from "@xyflow/react";
 import { v7 as uuidv7 } from "uuid";
 import { useParams } from "react-router-dom";
-import { useSavedStore, useWorkflowStore } from "./workflow-store";
+import { useWorkflowStore } from "./workflow-store";
+import { useDirtyStore } from "./dirty-store";
 
-const initialNodes: Node[] = [];
 const initialEdges: Edge[] = [];
 
 function WorkflowGraph() {
   const { workflowName } = useParams();
-  const [nodes, setNodes] = React.useState<Node[]>(initialNodes);
-  const [edges, setEdges] = React.useState<Edge[]>(initialEdges);
   const [colorMode, setColorMode] = React.useState<ColorMode>("light");
-  const { saved, setSaved } = useSavedStore();
   const [running, setRunning] = React.useState<boolean>(false);
   const [isReady, setIsReady] = React.useState<boolean>(false);
   const { getViewport } = useReactFlow();
-  const { workflowData, setTaskId } = useWorkflowStore();
+
+  const {
+    workflowData,
+    taskNodes,
+    edges,
+    selectTask,
+    addTaskNode,
+    updateTaskNode,
+    removeTaskNode,
+    setEdges,
+  } = useWorkflowStore();
+
+  const { isDirty, markClean } = useDirtyStore();
 
   const nodeTypes = {
     baseNodeFull: ActionBarNodeDemo,
   };
 
-  const NewNode = React.useCallback(() => {
+  // 从 taskNodes 派生 ReactFlow nodes
+  const nodes: Node[] = React.useMemo(() => {
+    return Object.values(taskNodes).map((task) => ({
+      id: task.id,
+      position: task.position,
+      type: task.nodeType,
+      data: { name: task.name, type: task.type },
+    }));
+  }, [taskNodes]);
+
+  const createNewNode = React.useCallback(() => {
     const viewport = getViewport();
     const centerX = (window.innerWidth / 2 - viewport.x) / viewport.zoom;
     const centerY = (window.innerHeight / 2 - viewport.y) / viewport.zoom;
-    const newNode: Node = {
-      id: uuidv7(),
-      position: { x: centerX, y: centerY },
-      data: { name: `New Task` },
-      type: "baseNodeFull",
-    };
-    return newNode;
-  }, [getViewport]);
+    const id = uuidv7();
+    addTaskNode(id, { x: centerX, y: centerY });
+  }, [getViewport, addTaskNode]);
 
   React.useEffect(() => {
     console.log("Workflow Name from URL:", workflowName);
@@ -60,16 +73,15 @@ function WorkflowGraph() {
       return;
     }
     if (workflowName === "new") {
-      setNodes(initialNodes.concat(NewNode()));
+      createNewNode();
       setEdges(initialEdges);
-      setSaved(false);
     } else {
       // Load existing workflow data based on workflowName
       // For example, fetch from an API and setNodes, setEdges accordingly
       // This is a placeholder for actual data fetching logic
       console.log(`Load workflow data for: ${workflowName}`);
     }
-  }, [workflowName, NewNode, isReady, setSaved]);
+  }, [workflowName, createNewNode, isReady, setEdges]);
 
   React.useEffect(() => {
     // Function to update color mode based on the presence of 'dark' class on <html>
@@ -102,44 +114,62 @@ function WorkflowGraph() {
     };
   }, []);
 
-  const addNode = React.useCallback(() => {
-    setNodes((nds) => nds.concat(NewNode()));
-    setSaved(false);
-  }, [NewNode, setSaved]);
-
   const onNodesChange = React.useCallback(
-    (changes: NodeChange[]) =>
-      setNodes((nodesSnapshot) => applyNodeChanges(changes, nodesSnapshot)),
-    []
+    (changes: NodeChange[]) => {
+      // 处理位置变化，同步到 taskNodes
+      for (const change of changes) {
+        if (change.type === "position" && change.position) {
+          updateTaskNode(change.id, { position: change.position });
+        }
+        if (change.type === "remove") {
+          removeTaskNode(change.id);
+        }
+      }
+
+      // 对于 select 和其他变化，ReactFlow 内部处理即可
+      console.log("onNodesChange", changes);
+    },
+    [updateTaskNode, removeTaskNode]
   );
+
   const onEdgesChange = React.useCallback(
-    (changes: EdgeChange[]) =>
-      setEdges((edgesSnapshot) => applyEdgeChanges(changes, edgesSnapshot)),
-    []
+    (changes: EdgeChange[]) => {
+      const newEdges = applyEdgeChanges(changes, edges);
+      console.log("onEdgesChange", changes);
+      setEdges(newEdges);
+    },
+    [edges, setEdges]
   );
+
   const onConnect = React.useCallback(
-    (params: Connection) =>
-      setEdges((edgesSnapshot) => addEdge(params, edgesSnapshot)),
-    []
+    (params: Connection) => {
+      const newEdges = addEdge(params, edges);
+      console.log("onConnect", params);
+      setEdges(newEdges);
+    },
+    [edges, setEdges]
   );
 
   const onSelectionChange = React.useCallback(
     ({ nodes: selectedNodes }: { nodes: Node[] }) => {
-      // props.setFocusedNode(selectedNodes.length === 1);
       if (selectedNodes.length === 1) {
         const selectedNode = selectedNodes[0];
-        setTaskId(selectedNode.id);
+        selectTask(selectedNode.id);
       } else {
-        setTaskId("");
+        selectTask("");
       }
     },
-    [setTaskId]
+    [selectTask]
   );
 
   const onSave = React.useCallback(() => {
-    console.log("Saving workflow...", { workflowData });
-    setSaved(true);
-  }, [setSaved, workflowData]);
+    console.log("Saving workflow...");
+    console.log("Workflow:", workflowData);
+    console.log("TaskNodes:", taskNodes);
+    console.log("Edges:", edges);
+    // TODO: Implement actual save logic (API call)
+    markClean();
+  }, [edges, taskNodes, markClean, workflowData]);
 
   return (
     <div
@@ -161,12 +191,12 @@ function WorkflowGraph() {
         <Background />
         <Controls />
         <div className="absolute left-4 top-4 flex flex-col gap-2 z-10">
-          <Button variant="outline" size="icon" onClick={addNode}>
+          <Button variant="outline" size="icon" onClick={createNewNode}>
             <Plus></Plus>
           </Button>
         </div>
         <div className="absolute top-4 right-4 flex gap-2 z-10">
-          {saved ? (
+          {!isDirty ? (
             <Button variant="outline" disabled>
               <CloudCheck></CloudCheck>
               Saved

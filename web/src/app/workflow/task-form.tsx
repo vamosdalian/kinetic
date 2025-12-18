@@ -1,4 +1,3 @@
-// import * as React from "react";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import {
@@ -12,12 +11,23 @@ import { Label } from "@/components/ui/label";
 import { ShellEditor } from "./shell_editor";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
-import { useWorkflowStore, useSavedStore } from "./workflow-store";
+import {
+  useWorkflowStore,
+  type TaskType,
+  type ShellConfig,
+} from "./workflow-store";
 
 export function Taskform() {
-  const { taskId, nodes, setNodes } = useWorkflowStore();
-  const { setSaved } = useSavedStore();
-  const taskinfo = nodes[taskId] || {};
+  const { selectedTaskId, taskNodes, updateTaskNode } = useWorkflowStore();
+  const taskNode = taskNodes[selectedTaskId];
+
+  if (!taskNode) {
+    return (
+      <div className="flex items-center justify-center h-full text-muted-foreground">
+        Select a task to edit
+      </div>
+    );
+  }
 
   return (
     <div className="grid gap-6 m-4">
@@ -26,76 +36,141 @@ export function Taskform() {
         <Separator style={{ margin: "0" }}></Separator>
       </div>
       <div className="grid gap-2">
-        <Label htmlFor="subject">TaskName</Label>
+        <Label htmlFor="task_name">Task Name</Label>
         <Input
           id="task_name"
-          placeholder="I need help with..."
-          value={taskinfo.name || ""}
+          placeholder="Enter task name..."
+          value={taskNode.name}
           onChange={(e) => {
-            if (taskId) {
-              setNodes({ [taskId]: { name: e.target.value } });
-              setSaved(false);
-            }
+            updateTaskNode(selectedTaskId, { name: e.target.value });
           }}
         />
       </div>
-      <div className="grid grid-cols-2 gap-4">
+      <div className="grid gap-2">
+        <Label htmlFor="task_type">Task Type</Label>
+        <Select
+          value={taskNode.type}
+          onValueChange={(value: TaskType) => {
+            // 切换类型时，重置 config
+            let newConfig = {};
+            if (value === "shell") {
+              newConfig = { script: "" } as ShellConfig;
+            } else if (value === "http") {
+              newConfig = { url: "", method: "GET" };
+            } else if (value === "python") {
+              newConfig = { script: "", requirements: [] };
+            } else if (value === "condition") {
+              newConfig = { expression: "" };
+            }
+            updateTaskNode(selectedTaskId, { type: value, config: newConfig });
+          }}
+        >
+          <SelectTrigger id="task_type" className="w-full">
+            <SelectValue placeholder="Select task type" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="shell">Shell</SelectItem>
+            <SelectItem value="http">HTTP</SelectItem>
+            <SelectItem value="python">Python</SelectItem>
+            <SelectItem value="condition">Condition</SelectItem>
+          </SelectContent>
+        </Select>
+      </div>
+
+      {/* Shell Config */}
+      {taskNode.type === "shell" && (
         <div className="grid gap-2">
-          <Label htmlFor="area">Input</Label>
-          <Select defaultValue="billing">
-            <SelectTrigger id="area" className="w-full">
-              <SelectValue placeholder="Select" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="team">Task1</SelectItem>
-              <SelectItem value="billing">Task2</SelectItem>
-              <SelectItem value="account">Account</SelectItem>
-              <SelectItem value="deployments">Deployments</SelectItem>
-              <SelectItem value="support">None</SelectItem>
-            </SelectContent>
-          </Select>
+          <Label>Script</Label>
+          <ShellEditor>
+            <Button variant="outline" className="w-full">
+              Edit Script
+            </Button>
+          </ShellEditor>
         </div>
-        {/* <div className="grid gap-2">
-          <Label htmlFor="security-level">Security Level</Label>
-          <Select defaultValue="2">
-            <SelectTrigger
-              id="security-level"
-              className="line-clamp-1 w-[160px] truncate"
+      )}
+
+      {/* HTTP Config */}
+      {taskNode.type === "http" && (
+        <>
+          <div className="grid gap-2">
+            <Label htmlFor="http_url">URL</Label>
+            <Input
+              id="http_url"
+              placeholder="https://api.example.com/endpoint"
+              value={taskNode.config?.url || ""}
+              onChange={(e) => {
+                updateTaskNode(selectedTaskId, {
+                  config: { ...taskNode.config, url: e.target.value },
+                });
+              }}
+            />
+          </div>
+          <div className="grid gap-2">
+            <Label htmlFor="http_method">Method</Label>
+            <Select
+              value={taskNode.config?.method || "GET"}
+              onValueChange={(value) => {
+                updateTaskNode(selectedTaskId, {
+                  config: { ...taskNode.config, method: value },
+                });
+              }}
             >
-              <SelectValue placeholder="Select level" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="1">Severity 1 (Highest)</SelectItem>
-              <SelectItem value="2">Severity 2</SelectItem>
-              <SelectItem value="3">Severity 3</SelectItem>
-              <SelectItem value="4">Severity 4 (Lowest)</SelectItem>
-            </SelectContent>
-          </Select>
-        </div> */}
-      </div>
-      <div className="grid gap-2">
-        <Label htmlFor="subject">Script</Label>
-        <ShellEditor>
-          <Button variant="outline" className="w-full ">
-            Edit Script
-          </Button>
-        </ShellEditor>
-      </div>
-      <div className="grid gap-2">
-        <Label htmlFor="subject">Subject</Label>
-        <Input id="subject" placeholder="I need help with..." />
-      </div>
+              <SelectTrigger id="http_method" className="w-full">
+                <SelectValue placeholder="Select method" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="GET">GET</SelectItem>
+                <SelectItem value="POST">POST</SelectItem>
+                <SelectItem value="PUT">PUT</SelectItem>
+                <SelectItem value="DELETE">DELETE</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+        </>
+      )}
+
+      {/* Python Config */}
+      {taskNode.type === "python" && (
+        <div className="grid gap-2">
+          <Label>Python Script</Label>
+          <Textarea
+            placeholder="Enter Python code..."
+            value={taskNode.config?.script || ""}
+            onChange={(e) => {
+              updateTaskNode(selectedTaskId, {
+                config: { ...taskNode.config, script: e.target.value },
+              });
+            }}
+            className="font-mono min-h-[200px]"
+          />
+        </div>
+      )}
+
+      {/* Condition Config */}
+      {taskNode.type === "condition" && (
+        <div className="grid gap-2">
+          <Label htmlFor="condition_expr">Condition Expression</Label>
+          <Input
+            id="condition_expr"
+            placeholder="e.g., {{ input.status }} == 'success'"
+            value={taskNode.config?.expression || ""}
+            onChange={(e) => {
+              updateTaskNode(selectedTaskId, {
+                config: { ...taskNode.config, expression: e.target.value },
+              });
+            }}
+          />
+        </div>
+      )}
+
       <div className="grid gap-2">
         <Label htmlFor="description">Description</Label>
         <Textarea
           id="description"
-          placeholder="Please include all information relevant to your issue."
-          value={taskinfo.description || ""}
+          placeholder="Describe what this task does..."
+          value={taskNode.description}
           onChange={(e) => {
-            if (taskId) {
-              setNodes({ [taskId]: { description: e.target.value } });
-              setSaved(false);
-            }
+            updateTaskNode(selectedTaskId, { description: e.target.value });
           }}
         />
       </div>
