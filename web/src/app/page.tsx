@@ -27,7 +27,7 @@ export default function Page() {
         <Routes>
           <Route path="/" element={<Dashboard />} />
           <Route path="/workflow" element={<Workflow />} />
-          <Route path="/workflow/:workflowName" element={<WorkflowDetail />} />
+          <Route path="/workflow/:workflowId" element={<WorkflowDetail />} />
           <Route path="/record" element={<Record />} />
           <Route path="/node" element={<Node />} />
           <Route path="/admin" element={<Admin />} />

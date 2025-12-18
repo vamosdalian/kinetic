@@ -20,31 +20,39 @@ import { Play, Save, LoaderCircle, Plus, CloudCheck } from "lucide-react";
 import { useReactFlow } from "@xyflow/react";
 import { ReactFlowProvider } from "@xyflow/react";
 import { v7 as uuidv7 } from "uuid";
-import { useParams } from "react-router-dom";
-import { useWorkflowStore } from "./workflow-store";
+import { useParams, useNavigate } from "react-router-dom";
+import { useWorkflowStore, type WorkflowDetail } from "./workflow-store";
 import { useDirtyStore } from "./dirty-store";
 import { useSelection } from "./selection-context";
 
 const initialEdges: Edge[] = [];
 
 function WorkflowGraph() {
-  const { workflowName } = useParams();
+  // URL 中的 workflowId，可能是 "new" 或者实际的 UUID
+  const { workflowId: urlWorkflowId } = useParams();
+  const navigate = useNavigate();
   const [colorMode, setColorMode] = React.useState<ColorMode>("light");
   const [running, setRunning] = React.useState<boolean>(false);
+  const [saving, setSaving] = React.useState<boolean>(false);
+  const [loading, setLoading] = React.useState<boolean>(false);
   const [isReady, setIsReady] = React.useState<boolean>(false);
   const { getViewport } = useReactFlow();
 
   const {
+    workflowId,
     workflowData,
     taskNodes,
     edges,
+    setWorkflowId,
+    loadWorkflow,
+    clear,
     addTaskNode,
     updateTaskNode,
     removeTaskNode,
     setEdges,
   } = useWorkflowStore();
 
-  const { isDirty, markClean } = useDirtyStore();
+  const { isDirty, markDirty, markClean } = useDirtyStore();
   const { selectedTaskId, setSelectedTaskId } = useSelection();
 
   // 本地 nodes state，用于实时拖动
@@ -77,19 +85,56 @@ function WorkflowGraph() {
     addTaskNode(id, { x: centerX, y: centerY });
   }, [getViewport, addTaskNode]);
 
+  // 加载已有 workflow 数据
+  const fetchWorkflow = React.useCallback(async (id: string) => {
+    setLoading(true);
+    try {
+      const response = await fetch(`/api/workflows/${id}`);
+      if (!response.ok) {
+        if (response.status === 404) {
+          console.error("Workflow not found:", id);
+          navigate("/workflow");
+          return;
+        }
+        throw new Error(`Failed to load workflow: ${response.statusText}`);
+      }
+      const data: WorkflowDetail = await response.json();
+      console.log("Workflow loaded:", data);
+      loadWorkflow(data);
+    } catch (error) {
+      console.error("Failed to load workflow:", error);
+    } finally {
+      setLoading(false);
+    }
+  }, [loadWorkflow, navigate]);
+
+  // 初始化新 workflow
+  const initNewWorkflow = React.useCallback(() => {
+    clear();
+    // 生成新的 workflowId
+    const newId = uuidv7();
+    setWorkflowId(newId);
+    // 创建初始 task
+    createNewNode();
+    setEdges(initialEdges);
+    // 新建 workflow 标记为 dirty
+    markDirty();
+  }, [clear, setWorkflowId, createNewNode, setEdges, markDirty]);
+
   React.useEffect(() => {
-    console.log("Workflow Name from URL:", workflowName);
+    console.log("Workflow ID from URL:", urlWorkflowId);
     if (!isReady) {
       return;
     }
-    if (workflowName === "new") {
-      createNewNode();
-      setEdges(initialEdges);
-    } else {
-      // Load existing workflow data based on workflowName
-      console.log(`Load workflow data for: ${workflowName}`);
+
+    if (urlWorkflowId === "new") {
+      // 新建 workflow
+      initNewWorkflow();
+    } else if (urlWorkflowId) {
+      // 使用 URL 中的 ID 加载已有 workflow
+      fetchWorkflow(urlWorkflowId);
     }
-  }, [workflowName, createNewNode, isReady, setEdges]);
+  }, [urlWorkflowId, isReady, initNewWorkflow, fetchWorkflow]);
 
   React.useEffect(() => {
     const updateColorMode = () => {
@@ -161,13 +206,57 @@ function WorkflowGraph() {
     [edges, setEdges]
   );
 
-  const onSave = React.useCallback(() => {
-    console.log("Saving workflow...");
-    console.log("Workflow:", workflowData);
-    console.log("TaskNodes:", taskNodes);
-    console.log("Edges:", edges);
-    markClean();
-  }, [edges, taskNodes, markClean, workflowData]);
+  const onSave = React.useCallback(async () => {
+    setSaving(true);
+
+    try {
+      const payload = {
+        name: workflowData.name || "Untitled Workflow",
+        description: workflowData.description || "",
+        taskNodes: Object.values(taskNodes),
+        edges: edges,
+      };
+
+      console.log("Saving workflow...", workflowId, payload);
+
+      const response = await fetch(`/api/workflows/${workflowId}`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(payload),
+      });
+
+      if (!response.ok) {
+        throw new Error(`Failed to save workflow: ${response.statusText}`);
+      }
+
+      const savedWorkflow = await response.json();
+      console.log("Workflow saved:", savedWorkflow);
+
+      // 如果是从 /workflow/new 保存的，更新 URL 为实际 ID
+      if (urlWorkflowId === "new") {
+        navigate(`/workflow/${workflowId}`, { replace: true });
+      }
+
+      markClean();
+    } catch (error) {
+      console.error("Failed to save workflow:", error);
+      // TODO: Show error toast
+    } finally {
+      setSaving(false);
+    }
+  }, [workflowId, urlWorkflowId, workflowData, taskNodes, edges, markClean, navigate]);
+
+  // 显示加载状态
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-full">
+        <LoaderCircle className="w-8 h-8 animate-spin text-muted-foreground" />
+        <span className="ml-2 text-muted-foreground">Loading workflow...</span>
+      </div>
+    );
+  }
 
   return (
     <div
@@ -193,7 +282,12 @@ function WorkflowGraph() {
           </Button>
         </div>
         <div className="absolute top-4 right-4 flex gap-2 z-10">
-          {!isDirty ? (
+          {saving ? (
+            <Button variant="outline" disabled>
+              <LoaderCircle className="mr-2 animate-spin" />
+              Saving...
+            </Button>
+          ) : !isDirty ? (
             <Button variant="outline" disabled>
               <CloudCheck></CloudCheck>
               Saved

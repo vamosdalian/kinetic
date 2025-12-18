@@ -39,7 +39,6 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { useWorkflowStore } from "./workflow-store";
 
 export type Workflow = {
   id: string;
@@ -53,7 +52,6 @@ export type Workflow = {
 
 export function Workflow() {
   const navigate = useNavigate();
-  const { setWorkflowId } = useWorkflowStore();
   const [data, setData] = React.useState<Workflow[]>([]);
 
   React.useEffect(() => {
@@ -153,17 +151,35 @@ export function Workflow() {
         cell: ({ row }) => {
           const workflow = row.original;
 
+          const handleRun = async () => {
+            try {
+              const response = await fetch(`/api/workflows/${workflow.id}/run`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({}),
+              });
+              if (!response.ok) {
+                throw new Error(`Failed to run workflow: ${response.statusText}`);
+              }
+              const data = await response.json();
+              console.log("Workflow run started:", data);
+              // TODO: Show success toast or redirect to execution page
+            } catch (error) {
+              console.error("Failed to run workflow:", error);
+              // TODO: Show error toast
+            }
+          };
+
           return (
             <div className="flex items-center space-x-1">
-              <Button variant="ghost" className="h-8 w-8 p-0">
+              <Button variant="ghost" className="h-8 w-8 p-0" onClick={handleRun}>
                 <Play className="h-4 w-4" />
               </Button>
               <Button
                 variant="ghost"
                 className="h-8 w-8 p-0"
                 onClick={() => {
-                  setWorkflowId(workflow.id);
-                  navigate(`/workflow/${workflow.name}`);
+                  navigate(`/workflow/${workflow.id}`);
                 }}
               >
                 <SquarePen className="h-4 w-4" />
@@ -191,7 +207,7 @@ export function Workflow() {
         },
       },
     ],
-    [navigate, setWorkflowId]
+    [navigate]
   );
 
   const [sorting, setSorting] = React.useState<SortingState>([]);

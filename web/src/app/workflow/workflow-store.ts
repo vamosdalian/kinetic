@@ -60,6 +60,20 @@ export interface WorkflowData {
   description: string;
 }
 
+// ============ Workflow Detail (API response) ============
+
+export interface WorkflowDetail {
+  id: string;
+  name: string;
+  description: string;
+  taskNodes: TaskNode[];
+  edges: Edge[];
+  version?: string;
+  enable?: boolean;
+  create_at?: string;
+  update_at?: string;
+}
+
 // ============ Workflow State ============
 
 interface WorkflowState {
@@ -73,6 +87,7 @@ interface WorkflowState {
 
   // Actions - Workflow
   clear: () => void;
+  loadWorkflow: (data: WorkflowDetail) => void;
   setWorkflowId: (id: string) => void;
   setWorkflowData: (data: Partial<WorkflowData>) => void;
 
@@ -106,6 +121,25 @@ export const useWorkflowStore = create<WorkflowState>()((set) => ({
       workflowData: { name: "", description: "" },
       taskNodes: {},
       edges: [],
+    });
+  },
+
+  loadWorkflow: (data: WorkflowDetail) => {
+    // Convert taskNodes array to Record
+    const taskNodesRecord: Record<string, TaskNode> = {};
+    for (const task of data.taskNodes) {
+      taskNodesRecord[task.id] = task;
+    }
+
+    useDirtyStore.getState().markClean();
+    set({
+      workflowId: data.id,
+      workflowData: {
+        name: data.name,
+        description: data.description,
+      },
+      taskNodes: taskNodesRecord,
+      edges: data.edges,
     });
   },
 
