@@ -1,16 +1,16 @@
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Taskform } from "./task-form";
 import { Workflowform } from "./workflow-form";
-import { useWorkflowStore } from "./workflow-store";
+import { useSelection } from "./selection-context";
 
 export function WorkflowRight() {
-  const selectedTaskId = useWorkflowStore((state) => state.selectedTaskId);
+  const { selectedTaskId } = useSelection();
   return (
     <ScrollArea className="h-[calc(100vh-var(--header-height))]">
       {selectedTaskId.length > 0 ? (
-        <Taskform></Taskform>
+        <Taskform />
       ) : (
-        <Workflowform></Workflowform>
+        <Workflowform />
       )}
     </ScrollArea>
   );

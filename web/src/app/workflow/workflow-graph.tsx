@@ -2,6 +2,7 @@ import * as React from "react";
 import {
   ReactFlow,
   applyEdgeChanges,
+  applyNodeChanges,
   addEdge,
   type NodeChange,
   type EdgeChange,
@@ -22,6 +23,7 @@ import { v7 as uuidv7 } from "uuid";
 import { useParams } from "react-router-dom";
 import { useWorkflowStore } from "./workflow-store";
 import { useDirtyStore } from "./dirty-store";
+import { useSelection } from "./selection-context";
 
 const initialEdges: Edge[] = [];
 
@@ -36,7 +38,6 @@ function WorkflowGraph() {
     workflowData,
     taskNodes,
     edges,
-    selectTask,
     addTaskNode,
     updateTaskNode,
     removeTaskNode,
@@ -44,20 +45,29 @@ function WorkflowGraph() {
   } = useWorkflowStore();
 
   const { isDirty, markClean } = useDirtyStore();
+  const { selectedTaskId, setSelectedTaskId } = useSelection();
 
-  const nodeTypes = {
-    baseNodeFull: ActionBarNodeDemo,
-  };
+  // 本地 nodes state，用于实时拖动
+  const [localNodes, setLocalNodes] = React.useState<Node[]>([]);
 
-  // 从 taskNodes 派生 ReactFlow nodes
-  const nodes: Node[] = React.useMemo(() => {
-    return Object.values(taskNodes).map((task) => ({
+  const nodeTypes = React.useMemo(
+    () => ({
+      baseNodeFull: ActionBarNodeDemo,
+    }),
+    []
+  );
+
+  // 当 taskNodes 或 selectedTaskId 变化时，同步到 localNodes
+  React.useEffect(() => {
+    const newNodes = Object.values(taskNodes).map((task) => ({
       id: task.id,
       position: task.position,
       type: task.nodeType,
       data: { name: task.name, type: task.type },
+      selected: task.id === selectedTaskId,
     }));
-  }, [taskNodes]);
+    setLocalNodes(newNodes);
+  }, [taskNodes, selectedTaskId]);
 
   const createNewNode = React.useCallback(() => {
     const viewport = getViewport();
@@ -77,23 +87,18 @@ function WorkflowGraph() {
       setEdges(initialEdges);
     } else {
       // Load existing workflow data based on workflowName
-      // For example, fetch from an API and setNodes, setEdges accordingly
-      // This is a placeholder for actual data fetching logic
       console.log(`Load workflow data for: ${workflowName}`);
     }
   }, [workflowName, createNewNode, isReady, setEdges]);
 
   React.useEffect(() => {
-    // Function to update color mode based on the presence of 'dark' class on <html>
     const updateColorMode = () => {
       const isDarkMode = document.documentElement.classList.contains("dark");
       setColorMode(isDarkMode ? "dark" : "light");
     };
 
-    // Set the initial color mode when the component mounts
     updateColorMode();
 
-    // Create an observer to watch for class changes on the <html> element
     const observer = new MutationObserver((mutationsList) => {
       for (const mutation of mutationsList) {
         if (
@@ -105,10 +110,8 @@ function WorkflowGraph() {
       }
     });
 
-    // Start observing the <html> element
     observer.observe(document.documentElement, { attributes: true });
 
-    // Cleanup function to disconnect the observer when the component unmounts
     return () => {
       observer.disconnect();
     };
@@ -116,26 +119,35 @@ function WorkflowGraph() {
 
   const onNodesChange = React.useCallback(
     (changes: NodeChange[]) => {
-      // 处理位置变化，同步到 taskNodes
+      // 实时应用所有变化到本地 state（包括拖动）
+      setLocalNodes((nds) => applyNodeChanges(changes, nds));
+
+      // 处理特定类型的变化
       for (const change of changes) {
-        if (change.type === "position" && change.position) {
+        // 处理选中变化
+        if (change.type === "select") {
+          if (change.selected) {
+            setSelectedTaskId(change.id);
+          } else if (selectedTaskId === change.id) {
+            setSelectedTaskId("");
+          }
+        }
+        // 拖动结束时，同步位置到 store
+        if (change.type === "position" && change.dragging === false && change.position) {
           updateTaskNode(change.id, { position: change.position });
         }
+        // 处理删除
         if (change.type === "remove") {
           removeTaskNode(change.id);
         }
       }
-
-      // 对于 select 和其他变化，ReactFlow 内部处理即可
-      console.log("onNodesChange", changes);
     },
-    [updateTaskNode, removeTaskNode]
+    [updateTaskNode, removeTaskNode, setSelectedTaskId, selectedTaskId]
   );
 
   const onEdgesChange = React.useCallback(
     (changes: EdgeChange[]) => {
       const newEdges = applyEdgeChanges(changes, edges);
-      console.log("onEdgesChange", changes);
       setEdges(newEdges);
     },
     [edges, setEdges]
@@ -144,22 +156,9 @@ function WorkflowGraph() {
   const onConnect = React.useCallback(
     (params: Connection) => {
       const newEdges = addEdge(params, edges);
-      console.log("onConnect", params);
       setEdges(newEdges);
     },
     [edges, setEdges]
-  );
-
-  const onSelectionChange = React.useCallback(
-    ({ nodes: selectedNodes }: { nodes: Node[] }) => {
-      if (selectedNodes.length === 1) {
-        const selectedNode = selectedNodes[0];
-        selectTask(selectedNode.id);
-      } else {
-        selectTask("");
-      }
-    },
-    [selectTask]
   );
 
   const onSave = React.useCallback(() => {
@@ -167,7 +166,6 @@ function WorkflowGraph() {
     console.log("Workflow:", workflowData);
     console.log("TaskNodes:", taskNodes);
     console.log("Edges:", edges);
-    // TODO: Implement actual save logic (API call)
     markClean();
   }, [edges, taskNodes, markClean, workflowData]);
 
@@ -177,13 +175,12 @@ function WorkflowGraph() {
       className="position: relative;"
     >
       <ReactFlow
-        nodes={nodes}
+        nodes={localNodes}
         nodeTypes={nodeTypes}
         edges={edges}
         onNodesChange={onNodesChange}
         onEdgesChange={onEdgesChange}
         onConnect={onConnect}
-        onSelectionChange={onSelectionChange}
         onInit={() => setIsReady(true)}
         colorMode={colorMode}
         fitView

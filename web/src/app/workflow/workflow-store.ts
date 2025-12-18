@@ -71,9 +71,6 @@ interface WorkflowState {
   taskNodes: Record<string, TaskNode>;
   edges: Edge[];
 
-  // UI 状态
-  selectedTaskId: string;
-
   // Actions - Workflow
   clear: () => void;
   setWorkflowId: (id: string) => void;
@@ -86,9 +83,6 @@ interface WorkflowState {
 
   // Actions - Edges
   setEdges: (edges: Edge[]) => void;
-
-  // Actions - UI
-  selectTask: (id: string) => void;
 }
 
 // Helper to mark dirty
@@ -103,7 +97,6 @@ export const useWorkflowStore = create<WorkflowState>()((set) => ({
   },
   taskNodes: {},
   edges: [],
-  selectedTaskId: "",
 
   // Actions - Workflow
   clear: () => {
@@ -113,7 +106,6 @@ export const useWorkflowStore = create<WorkflowState>()((set) => ({
       workflowData: { name: "", description: "" },
       taskNodes: {},
       edges: [],
-      selectedTaskId: "",
     });
   },
 
@@ -158,7 +150,6 @@ export const useWorkflowStore = create<WorkflowState>()((set) => ({
       return {
         taskNodes: rest,
         edges: state.edges.filter((e) => e.source !== id && e.target !== id),
-        selectedTaskId: state.selectedTaskId === id ? "" : state.selectedTaskId,
       };
     });
   },
@@ -168,9 +159,6 @@ export const useWorkflowStore = create<WorkflowState>()((set) => ({
     markDirty();
     set({ edges });
   },
-
-  // Actions - UI
-  selectTask: (id: string) => set({ selectedTaskId: id }),
 }));
 
 // ============ Exports ============

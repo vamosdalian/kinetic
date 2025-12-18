@@ -2,10 +2,11 @@ import { FlowWithProvider } from "./workflow-graph";
 import { WorkflowRight } from "./workflow-right";
 import { PanelGroup, Panel, PanelResizeHandle } from "react-resizable-panels";
 import { UnsavedChangesGuard } from "./unsaved-changes-guard";
+import { SelectionProvider } from "./selection-context";
 
 export function WorkflowDetail() {
   return (
-    <>
+    <SelectionProvider>
       <UnsavedChangesGuard />
       <PanelGroup direction="horizontal" className="h-full min-h-0">
         <Panel>
@@ -16,6 +17,6 @@ export function WorkflowDetail() {
           <WorkflowRight />
         </Panel>
       </PanelGroup>
-    </>
+    </SelectionProvider>
   );
 }

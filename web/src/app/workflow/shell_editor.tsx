@@ -10,6 +10,7 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { useWorkflowStore } from "./workflow-store";
+import { useSelection } from "./selection-context";
 
 // CodeMirror 6 imports
 import { EditorState } from "@codemirror/state";
@@ -30,7 +31,8 @@ export function ShellEditor({
   const editorRef = React.useRef<HTMLDivElement>(null);
   const viewRef = React.useRef<EditorView | null>(null);
 
-  const { selectedTaskId, taskNodes, updateTaskNode } = useWorkflowStore();
+  const { selectedTaskId } = useSelection();
+  const { taskNodes, updateTaskNode } = useWorkflowStore();
   const taskNode = taskNodes[selectedTaskId];
 
   // Track dark mode
