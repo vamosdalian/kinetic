@@ -12,6 +12,7 @@ import {
   BreadcrumbPage,
 } from "@/components/ui/breadcrumb";
 import { Link, useLocation } from "react-router-dom"
+import { useWorkflowStore } from "@/app/workflow/workflow-store"
 
 export interface BreadcrumbItem {
   label: string
@@ -43,6 +44,7 @@ export function SiteHeader() {
   }, [isDarkMode]);
 
   const location = useLocation()
+  const { workflowData } = useWorkflowStore()
 
   const breadcrumbs = React.useMemo(() => {
     const pathSegments = location.pathname.split("/").filter(x => x)
@@ -66,13 +68,25 @@ export function SiteHeader() {
           href: isLast ? null : currentPath,
         }
       }
+
+      // 处理 /workflow/:id 的情况
+      if (pathSegments[0] === "workflow" && index === 1) {
+        if (segment === "new") {
+          return { label: "New Workflow", href: null }
+        }
+        // 显示 workflow name，如果没有则显示 "Untitled Workflow"
+        return {
+          label: workflowData.name || "Untitled Workflow",
+          href: null,
+        }
+      }
       
       return {
         label: segment.replace(/_/g, " ").toUpperCase(),
         href: null, // Dynamic parts are not clickable
       }
     })
-  }, [location.pathname])
+  }, [location.pathname, workflowData.name])
 
   return (
     <header className="flex h-(--header-height) shrink-0 items-center gap-2 border-b transition-[width,height] ease-linear group-has-data-[collapsible=icon]/sidebar-wrapper:h-(--header-height)">

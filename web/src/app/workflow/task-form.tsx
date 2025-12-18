@@ -49,6 +49,17 @@ export function Taskform() {
         />
       </div>
       <div className="grid gap-2">
+        <Label htmlFor="description">Description</Label>
+        <Textarea
+          id="description"
+          placeholder="Describe what this task does..."
+          value={taskNode.description}
+          onChange={(e) => {
+            updateTaskNode(selectedTaskId, { description: e.target.value });
+          }}
+        />
+      </div>
+      <div className="grid gap-2">
         <Label htmlFor="task_type">Task Type</Label>
         <Select
           value={taskNode.type}
@@ -165,17 +176,7 @@ export function Taskform() {
         </div>
       )}
 
-      <div className="grid gap-2">
-        <Label htmlFor="description">Description</Label>
-        <Textarea
-          id="description"
-          placeholder="Describe what this task does..."
-          value={taskNode.description}
-          onChange={(e) => {
-            updateTaskNode(selectedTaskId, { description: e.target.value });
-          }}
-        />
-      </div>
+
     </div>
   );
 }
