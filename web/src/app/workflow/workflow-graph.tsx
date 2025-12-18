@@ -36,7 +36,7 @@ function WorkflowGraph() {
   const [saving, setSaving] = React.useState<boolean>(false);
   const [loading, setLoading] = React.useState<boolean>(false);
   const [isReady, setIsReady] = React.useState<boolean>(false);
-  const { getViewport } = useReactFlow();
+  const { getViewport, setViewport, fitView } = useReactFlow();
 
   const {
     workflowId,
@@ -101,12 +101,16 @@ function WorkflowGraph() {
       const data: WorkflowDetail = await response.json();
       console.log("Workflow loaded:", data);
       loadWorkflow(data);
+      // 加载完成后调整视图以适应所有节点
+      setTimeout(() => {
+        fitView({ padding: 0.2, duration: 0 });
+      }, 0);
     } catch (error) {
       console.error("Failed to load workflow:", error);
     } finally {
       setLoading(false);
     }
-  }, [loadWorkflow, navigate]);
+  }, [loadWorkflow, navigate, fitView]);
 
   // 初始化新 workflow
   const initNewWorkflow = React.useCallback(() => {
@@ -114,12 +118,18 @@ function WorkflowGraph() {
     // 生成新的 workflowId
     const newId = uuidv7();
     setWorkflowId(newId);
-    // 创建初始 task
-    createNewNode();
+    // 创建初始 task，使用固定位置
+    const taskId = uuidv7();
+    addTaskNode(taskId, { x: 250, y: 200 });
     setEdges(initialEdges);
+    // 设置画布视图：zoom=1，居中显示节点
+    // 使用 setTimeout 确保节点已渲染
+    setTimeout(() => {
+      setViewport({ x: 0, y: 0, zoom: 1 }, { duration: 0 });
+    }, 0);
     // 新建 workflow 标记为 dirty
     markDirty();
-  }, [clear, setWorkflowId, createNewNode, setEdges, markDirty]);
+  }, [clear, setWorkflowId, addTaskNode, setEdges, setViewport, markDirty]);
 
   React.useEffect(() => {
     console.log("Workflow ID from URL:", urlWorkflowId);
@@ -272,7 +282,7 @@ function WorkflowGraph() {
         onConnect={onConnect}
         onInit={() => setIsReady(true)}
         colorMode={colorMode}
-        fitView
+        defaultViewport={{ x: 0, y: 0, zoom: 1 }}
       >
         <Background />
         <Controls />
