@@ -88,7 +88,7 @@ const mockWorkflowDetails: Map<string, WorkflowDetail> = new Map([
           target: "task-002",
         },
       ],
-      version: "1.0.0",
+      version: "1",
       enable: true,
       create_at: "2025-12-18T08:00:00Z",
       update_at: "2025-12-18T10:30:00Z",
@@ -115,7 +115,7 @@ const mockWorkflowDetails: Map<string, WorkflowDetail> = new Map([
         },
       ],
       edges: [],
-      version: "1.0.0",
+      version: "1",
     enable: true,
       create_at: "2025-12-17T09:00:00Z",
       update_at: "2025-12-17T09:00:00Z",
@@ -178,13 +178,16 @@ export const handlers = [
     const existing = mockWorkflowDetails.get(workflowId as string);
     const now = new Date().toISOString();
 
+    // version 由服务器自动生成：新建为 "1"，更新时递增
+    const version = existing ? String(Number(existing.version) + 1) : "1";
+
     const workflow: WorkflowDetail = {
       id: workflowId as string,
       name: body.name || existing?.name || "Untitled",
       description: body.description || existing?.description || "",
       taskNodes: body.taskNodes || existing?.taskNodes || [],
       edges: body.edges || existing?.edges || [],
-      version: existing?.version || "1.0.0",
+      version,
       enable: body.enable ?? existing?.enable ?? true,
       create_at: existing?.create_at || now,
       update_at: now,

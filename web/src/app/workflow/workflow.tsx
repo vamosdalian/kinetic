@@ -1,5 +1,6 @@
 import * as React from "react";
 import { useNavigate } from "react-router-dom";
+import { v7 as uuidv7 } from "uuid";
 import {
   type ColumnDef,
   type ColumnFiltersState,
@@ -246,7 +247,10 @@ export function Workflow() {
           className="max-w-sm"
         />
         <div className="space-x-2">
-          <Button variant="outline" onClick={() => navigate(`/workflow/new`)}>
+          <Button variant="outline" onClick={() => {
+            const newId = uuidv7();
+            navigate(`/workflow/${newId}?action=create`);
+          }}>
             Create
           </Button>
           <DropdownMenu>

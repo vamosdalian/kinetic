@@ -20,7 +20,7 @@ import { Play, Save, LoaderCircle, Plus, CloudCheck } from "lucide-react";
 import { useReactFlow } from "@xyflow/react";
 import { ReactFlowProvider } from "@xyflow/react";
 import { v7 as uuidv7 } from "uuid";
-import { useParams, useNavigate } from "react-router-dom";
+import { useParams, useSearchParams } from "react-router-dom";
 import { useWorkflowStore, type WorkflowDetail } from "./workflow-store";
 import { useDirtyStore } from "./dirty-store";
 import { useSelection } from "./selection-context";
@@ -28,9 +28,11 @@ import { useSelection } from "./selection-context";
 const initialEdges: Edge[] = [];
 
 function WorkflowGraph() {
-  // URL 中的 workflowId，可能是 "new" 或者实际的 UUID
+  // URL 中的 workflowId
   const { workflowId: urlWorkflowId } = useParams();
-  const navigate = useNavigate();
+  // URL 查询参数，action=create 表示新建，否则为更新
+  const [searchParams] = useSearchParams();
+  const action = searchParams.get("action");
   const [colorMode, setColorMode] = React.useState<ColorMode>("light");
   const [running, setRunning] = React.useState<boolean>(false);
   const [saving, setSaving] = React.useState<boolean>(false);
@@ -85,17 +87,30 @@ function WorkflowGraph() {
     addTaskNode(id, { x: centerX, y: centerY });
   }, [getViewport, addTaskNode]);
 
+  // 初始化新 workflow，使用指定的 id
+  const initNewWorkflow = React.useCallback((id: string) => {
+    clear();
+    // 使用传入的 workflowId
+    setWorkflowId(id);
+    // 创建初始 task，使用固定位置
+    const taskId = uuidv7();
+    addTaskNode(taskId, { x: 250, y: 200 });
+    setEdges(initialEdges);
+    // 设置画布视图：zoom=1，居中显示节点
+    // 使用 setTimeout 确保节点已渲染
+    setTimeout(() => {
+      setViewport({ x: 0, y: 0, zoom: 1 }, { duration: 0 });
+    }, 0);
+    // 新建 workflow 标记为 dirty
+    markDirty();
+  }, [clear, setWorkflowId, addTaskNode, setEdges, setViewport, markDirty]);
+
   // 加载已有 workflow 数据
   const fetchWorkflow = React.useCallback(async (id: string) => {
     setLoading(true);
     try {
       const response = await fetch(`/api/workflows/${id}`);
       if (!response.ok) {
-        if (response.status === 404) {
-          console.error("Workflow not found:", id);
-          navigate("/workflow");
-          return;
-        }
         throw new Error(`Failed to load workflow: ${response.statusText}`);
       }
       const data: WorkflowDetail = await response.json();
@@ -110,41 +125,22 @@ function WorkflowGraph() {
     } finally {
       setLoading(false);
     }
-  }, [loadWorkflow, navigate, fitView]);
-
-  // 初始化新 workflow
-  const initNewWorkflow = React.useCallback(() => {
-    clear();
-    // 生成新的 workflowId
-    const newId = uuidv7();
-    setWorkflowId(newId);
-    // 创建初始 task，使用固定位置
-    const taskId = uuidv7();
-    addTaskNode(taskId, { x: 250, y: 200 });
-    setEdges(initialEdges);
-    // 设置画布视图：zoom=1，居中显示节点
-    // 使用 setTimeout 确保节点已渲染
-    setTimeout(() => {
-      setViewport({ x: 0, y: 0, zoom: 1 }, { duration: 0 });
-    }, 0);
-    // 新建 workflow 标记为 dirty
-    markDirty();
-  }, [clear, setWorkflowId, addTaskNode, setEdges, setViewport, markDirty]);
+  }, [loadWorkflow, fitView]);
 
   React.useEffect(() => {
-    console.log("Workflow ID from URL:", urlWorkflowId);
-    if (!isReady) {
+    console.log("Workflow ID from URL:", urlWorkflowId, "action:", action);
+    if (!isReady || !urlWorkflowId) {
       return;
     }
 
-    if (urlWorkflowId === "new") {
+    if (action === "create") {
       // 新建 workflow
-      initNewWorkflow();
-    } else if (urlWorkflowId) {
-      // 使用 URL 中的 ID 加载已有 workflow
+      initNewWorkflow(urlWorkflowId);
+    } else {
+      // 加载已有 workflow
       fetchWorkflow(urlWorkflowId);
     }
-  }, [urlWorkflowId, isReady, initNewWorkflow, fetchWorkflow]);
+  }, [urlWorkflowId, action, isReady, initNewWorkflow, fetchWorkflow]);
 
   React.useEffect(() => {
     const updateColorMode = () => {
@@ -244,11 +240,6 @@ function WorkflowGraph() {
       const savedWorkflow = await response.json();
       console.log("Workflow saved:", savedWorkflow);
 
-      // 如果是从 /workflow/new 保存的，更新 URL 为实际 ID
-      if (urlWorkflowId === "new") {
-        navigate(`/workflow/${workflowId}`, { replace: true });
-      }
-
       markClean();
     } catch (error) {
       console.error("Failed to save workflow:", error);
@@ -256,7 +247,7 @@ function WorkflowGraph() {
     } finally {
       setSaving(false);
     }
-  }, [workflowId, urlWorkflowId, workflowData, taskNodes, edges, markClean, navigate]);
+  }, [workflowId, workflowData, taskNodes, edges, markClean]);
 
   // 显示加载状态
   if (loading) {
@@ -314,7 +305,7 @@ function WorkflowGraph() {
               Running...
             </Button>
           ) : (
-            <Button variant="default" onClick={() => setRunning(true)}>
+            <Button variant="default" onClick={() => setRunning(true)} disabled={isDirty}>
               <Play />
               Run Workflow
             </Button>

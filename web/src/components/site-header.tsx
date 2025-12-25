@@ -71,9 +71,6 @@ export function SiteHeader() {
 
       // 处理 /workflow/:id 的情况
       if (pathSegments[0] === "workflow" && index === 1) {
-        if (segment === "new") {
-          return { label: "New Workflow", href: null }
-        }
         // 显示 workflow name，如果没有则显示 "Untitled Workflow"
         return {
           label: workflowData.name || "Untitled Workflow",
