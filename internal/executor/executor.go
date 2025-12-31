@@ -1,0 +1,68 @@
+package executor
+
+import (
+	"context"
+	"log"
+	"sync"
+)
+
+// Executor 任务执行器
+type Executor struct {
+	maxConcurrency int
+	semaphore      chan struct{}
+	wg             sync.WaitGroup
+}
+
+// NewExecutor 创建执行器
+func NewExecutor(maxConcurrency int) *Executor {
+	if maxConcurrency <= 0 {
+		maxConcurrency = 10
+	}
+	return &Executor{
+		maxConcurrency: maxConcurrency,
+		semaphore:      make(chan struct{}, maxConcurrency),
+	}
+}
+
+// Task 任务接口
+type Task interface {
+	ID() string
+	Type() string
+	Execute(ctx context.Context) error
+}
+
+// Execute 执行任务
+func (e *Executor) Execute(ctx context.Context, task Task) error {
+	// 获取信号量
+	select {
+	case e.semaphore <- struct{}{}:
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+	defer func() { <-e.semaphore }()
+
+	log.Printf("Executing task %s (type: %s)", task.ID(), task.Type())
+
+	if err := task.Execute(ctx); err != nil {
+		log.Printf("Task %s failed: %v", task.ID(), err)
+		return err
+	}
+
+	log.Printf("Task %s completed", task.ID())
+	return nil
+}
+
+// ExecuteAsync 异步执行任务
+func (e *Executor) ExecuteAsync(ctx context.Context, task Task) {
+	e.wg.Add(1)
+	go func() {
+		defer e.wg.Done()
+		e.Execute(ctx, task)
+	}()
+}
+
+// Wait 等待所有任务完成
+func (e *Executor) Wait() {
+	e.wg.Wait()
+}
+
