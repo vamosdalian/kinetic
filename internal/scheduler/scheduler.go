@@ -4,6 +4,8 @@ import (
 	"context"
 	"log"
 	"sync"
+
+	"github.com/sirupsen/logrus"
 )
 
 // Scheduler 任务调度器
@@ -21,7 +23,7 @@ func NewScheduler() *Scheduler {
 
 // Run 启动调度器
 func (s *Scheduler) Run() error {
-	log.Println("Starting scheduler...")
+	logrus.Info("Starting scheduler...")
 
 	// TODO: 实现调度逻辑
 	// 1. 定期检查需要执行的定时任务
@@ -37,4 +39,3 @@ func (s *Scheduler) Shutdown(ctx context.Context) error {
 	close(s.stopCh)
 	return nil
 }
-

@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/sirupsen/logrus"
 )
 
 type RouteRegistrar func(engine *gin.Engine)
@@ -87,7 +88,7 @@ func (r *Router) Run() error {
 		IdleTimeout:  60 * time.Second,
 	}
 
-	log.Printf("HTTP server starting on %s", r.addr)
+	logrus.Infof("HTTP server starting on %s", r.addr)
 	if err := r.httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 		return fmt.Errorf("failed to start server: %w", err)
 	}

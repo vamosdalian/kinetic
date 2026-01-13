@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 
+	"github.com/sirupsen/logrus"
 	apiserver "github.com/vamosdalian/kinetic/internal/api-server"
 	"github.com/vamosdalian/kinetic/internal/config"
 	"github.com/vamosdalian/kinetic/internal/database"
@@ -43,7 +44,7 @@ func NewController(cfg *config.Config) (*Controller, error) {
 }
 
 func (c *Controller) Run() error {
-	log.Println("Starting controller...")
+	logrus.Info("Starting controller...")
 
 	go func() {
 		if err := c.scheduler.Run(); err != nil {
