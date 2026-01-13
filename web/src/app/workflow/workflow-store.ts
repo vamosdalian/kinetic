@@ -127,8 +127,10 @@ export const useWorkflowStore = create<WorkflowState>()((set) => ({
   loadWorkflow: (data: WorkflowDetail) => {
     // Convert taskNodes array to Record
     const taskNodesRecord: Record<string, TaskNode> = {};
-    for (const task of data.taskNodes) {
-      taskNodesRecord[task.id] = task;
+    if (data.taskNodes) {
+      for (const task of data.taskNodes) {
+        taskNodesRecord[task.id] = task;
+      }
     }
 
     useDirtyStore.getState().markClean();
@@ -139,7 +141,7 @@ export const useWorkflowStore = create<WorkflowState>()((set) => ({
         description: data.description,
       },
       taskNodes: taskNodesRecord,
-      edges: data.edges,
+      edges: data.edges || [],
     });
   },
 

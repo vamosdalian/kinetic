@@ -100,7 +100,7 @@ function WorkflowGraph() {
     // 设置画布视图：zoom=1，居中显示节点
     // 使用 setTimeout 确保节点已渲染
     setTimeout(() => {
-      setViewport({ x: 0, y: 0, zoom: 1 }, { duration: 0 });
+      setViewport({ x: 0, y: 0, zoom: 2 }, { duration: 0 });
     }, 0);
     // 新建 workflow 标记为 dirty
     markDirty();
