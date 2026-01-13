@@ -20,3 +20,4 @@ requirement:
 
 Language: TypeScript with React and Vite
 requirement:
+  1. Use the provided `apiClient` utility for all API interactions instead of the native `fetch` function.

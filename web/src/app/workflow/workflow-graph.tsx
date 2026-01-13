@@ -24,6 +24,7 @@ import { useParams, useSearchParams } from "react-router-dom";
 import { useWorkflowStore, type WorkflowDetail } from "./workflow-store";
 import { useDirtyStore } from "./dirty-store";
 import { useSelection } from "./selection-context";
+import { apiClient } from "@/lib/api";
 
 const initialEdges: Edge[] = [];
 
@@ -109,11 +110,7 @@ function WorkflowGraph() {
   const fetchWorkflow = React.useCallback(async (id: string) => {
     setLoading(true);
     try {
-      const response = await fetch(`/api/workflows/${id}`);
-      if (!response.ok) {
-        throw new Error(`Failed to load workflow: ${response.statusText}`);
-      }
-      const data: WorkflowDetail = await response.json();
+      const data = await apiClient<WorkflowDetail>(`/api/workflows/${id}`);
       console.log("Workflow loaded:", data);
       loadWorkflow(data);
       // 加载完成后调整视图以适应所有节点
@@ -225,7 +222,7 @@ function WorkflowGraph() {
 
       console.log("Saving workflow...", workflowId, payload);
 
-      const response = await fetch(`/api/workflows/${workflowId}`, {
+      const savedWorkflow = await apiClient(`/api/workflows/${workflowId}`, {
         method: "PUT",
         headers: {
           "Content-Type": "application/json",
@@ -233,11 +230,6 @@ function WorkflowGraph() {
         body: JSON.stringify(payload),
       });
 
-      if (!response.ok) {
-        throw new Error(`Failed to save workflow: ${response.statusText}`);
-      }
-
-      const savedWorkflow = await response.json();
       console.log("Workflow saved:", savedWorkflow);
 
       markClean();

@@ -40,6 +40,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { apiClient } from "@/lib/api";
 
 export type Workflow = {
   id: string;
@@ -57,13 +58,9 @@ export function Workflow() {
   const [data, setData] = React.useState<Workflow[]>([]);
 
   React.useEffect(() => {
-    fetch("/api/workflows")
-      .then((res) => res.json())
-      .then((response) => {
-        if (response.success) {
-          setData(response.data);
-        }
-      });
+    apiClient<Workflow[]>("/api/workflows").then((data) => {
+      setData(data);
+    });
   }, []);
 
   const columns = React.useMemo<ColumnDef<Workflow>[]>(
@@ -176,15 +173,11 @@ export function Workflow() {
 
           const handleRun = async () => {
             try {
-              const response = await fetch(`/api/workflows/${workflow.id}/run`, {
+              const data = await apiClient(`/api/workflows/${workflow.id}/run`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({}),
               });
-              if (!response.ok) {
-                throw new Error(`Failed to run workflow: ${response.statusText}`);
-              }
-              const data = await response.json();
               console.log("Workflow run started:", data);
               // TODO: Show success toast or redirect to execution page
             } catch (error) {
@@ -195,14 +188,10 @@ export function Workflow() {
 
           const handleDelete = async () => {
              try {
-                const response = await fetch(`/api/workflows/${workflow.id}`, {
+                await apiClient(`/api/workflows/${workflow.id}`, {
                    method: "DELETE",
                 });
-                if (response.ok) {
-                   setData((prev) => prev.filter((w) => w.id !== workflow.id));
-                } else {
-                   console.error("Failed to delete workflow");
-                }
+                setData((prev) => prev.filter((w) => w.id !== workflow.id));
              } catch (error) {
                 console.error("Error deleting workflow:", error);
              }
