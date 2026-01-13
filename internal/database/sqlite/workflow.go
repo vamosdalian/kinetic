@@ -3,10 +3,12 @@ package sqlite
 import (
 	"time"
 
+	"github.com/sirupsen/logrus"
 	"github.com/vamosdalian/kinetic/internal/model/entity"
 )
 
 func (s *SqliteDB) ListWorkflows(offset int, limit int) ([]entity.WorkflowEntity, error) {
+	logrus.Debugf("query workflow limit %d offset %d", limit, offset)
 	rows, err := s.db.Query("SELECT id, name, enable, version, created_at, updated_at FROM workflows LIMIT ? OFFSET ?", limit, offset)
 	if err != nil {
 		return nil, err
@@ -31,6 +33,7 @@ func (s *SqliteDB) ListWorkflows(offset int, limit int) ([]entity.WorkflowEntity
 		}
 		workflows = append(workflows, workflow)
 	}
+	logrus.Debugf("found %d workflows", len(workflows))
 	return workflows, nil
 }
 

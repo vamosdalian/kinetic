@@ -41,7 +41,7 @@ func (h *WorkflowHandler) List(c *gin.Context) {
 		ResponseError(c, http.StatusBadRequest, ErrorCodeInvalidRequest, "pageSize must be <= 100")
 		return
 	}
-	workflows, err := h.db.ListWorkflows(page, pageSize)
+	workflows, err := h.db.ListWorkflows((page-1)*pageSize, pageSize)
 	if err != nil {
 		ResponseError(c, http.StatusInternalServerError, ErrorCodeInternalError, err.Error())
 		return

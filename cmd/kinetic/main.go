@@ -10,6 +10,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/sirupsen/logrus"
 	"github.com/vamosdalian/kinetic/internal/config"
 	"github.com/vamosdalian/kinetic/internal/controller"
 	"github.com/vamosdalian/kinetic/internal/worker"
@@ -44,7 +45,8 @@ func main() {
 		cfg.Mode = config.Mode(mode)
 	}
 
-	log.Printf("Starting Kinetic in %s mode...", cfg.Mode)
+	logrus.SetLevel(logrus.DebugLevel)
+	logrus.Infof("Starting Kinetic in %s mode...", cfg.Mode)
 
 	switch cfg.Mode {
 	case config.ModeController:

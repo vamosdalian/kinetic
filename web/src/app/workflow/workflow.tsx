@@ -49,6 +49,7 @@ export type Workflow = {
   last_running_status: "pending" | "running" | "success" | "failed";
   next_running_time: string;
   create_at: string;
+  update_at: string;
 };
 
 export function Workflow() {
@@ -58,8 +59,10 @@ export function Workflow() {
   React.useEffect(() => {
     fetch("/api/workflows")
       .then((res) => res.json())
-      .then((data) => {
-        setData(data);
+      .then((response) => {
+        if (response.success) {
+          setData(response.data);
+        }
       });
   }, []);
 
@@ -146,6 +149,25 @@ export function Workflow() {
         ),
       },
       {
+        accessorKey: "update_at",
+        header: ({ column }) => {
+          return (
+            <Button
+              variant="ghost"
+              onClick={() =>
+                column.toggleSorting(column.getIsSorted() === "asc")
+              }
+            >
+              Update At
+              <ArrowUpDown className="ml-2 h-4 w-4" />
+            </Button>
+          );
+        },
+        cell: ({ row }) => (
+          <div className="capitalize pl-3">{row.getValue("update_at")}</div>
+        ),
+      },
+      {
         id: "actions",
         header: "Operation",
         enableHiding: false,
@@ -170,6 +192,21 @@ export function Workflow() {
               // TODO: Show error toast
             }
           };
+
+          const handleDelete = async () => {
+             try {
+                const response = await fetch(`/api/workflows/${workflow.id}`, {
+                   method: "DELETE",
+                });
+                if (response.ok) {
+                   setData((prev) => prev.filter((w) => w.id !== workflow.id));
+                } else {
+                   console.error("Failed to delete workflow");
+                }
+             } catch (error) {
+                console.error("Error deleting workflow:", error);
+             }
+          }
 
           return (
             <div className="flex items-center space-x-1">
@@ -200,7 +237,9 @@ export function Workflow() {
                     Copy workflow ID
                   </DropdownMenuItem>
                   <DropdownMenuSeparator />
-                  <DropdownMenuItem>View workflow details</DropdownMenuItem>
+                  <DropdownMenuItem onClick={handleDelete} className="text-red-600">
+                    Delete
+                  </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
             </div>
@@ -208,7 +247,7 @@ export function Workflow() {
         },
       },
     ],
-    [navigate]
+    [navigate, setData]
   );
 
   const [sorting, setSorting] = React.useState<SortingState>([]);
