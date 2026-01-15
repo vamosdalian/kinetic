@@ -10,6 +10,7 @@ import { Admin } from "./admin/admin";
 import { Node } from "./node/node";
 import { WorkflowDetail } from "./workflow/workflow-detail";
 import { Record } from "./record/record";
+import { RecordDetail } from "./record/record-detail";
 
 export default function Page() {
   return (
@@ -29,6 +30,7 @@ export default function Page() {
           <Route path="/workflow" element={<Workflow />} />
           <Route path="/workflow/:workflowId" element={<WorkflowDetail />} />
           <Route path="/record" element={<Record />} />
+          <Route path="/record/:runId" element={<RecordDetail />} />
           <Route path="/node" element={<Node />} />
           <Route path="/admin" element={<Admin />} />
         </Routes>

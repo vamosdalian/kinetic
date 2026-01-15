@@ -40,7 +40,7 @@ type WorkflowRunListItem struct {
 	RunID      string `json:"run_id"`
 	WorkflowID string `json:"workflow_id"`
 	Name       string `json:"name"`
-	Version    string `json:"version,string"`
+	Version    int    `json:"version,string"`
 	Status     string `json:"status"`
 	CreatedAt  string `json:"create_at"`
 	StartedAt  string `json:"started_at"`

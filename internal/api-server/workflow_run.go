@@ -3,7 +3,6 @@ package apiserver
 import (
 	"encoding/json"
 	"net/http"
-	"strconv"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -55,7 +54,7 @@ func (h *WorkflowHandler) ListRuns(c *gin.Context) {
 			RunID:      run.RunID,
 			WorkflowID: run.WorkflowID,
 			Name:       run.WorkflowName,
-			Version:    strconv.Itoa(run.WorkflowVersion),
+			Version:    run.WorkflowVersion,
 			Status:     run.Status,
 			CreatedAt:  formatTime(run.CreatedAt),
 			StartedAt:  safeFormatTime(run.StartedAt),
@@ -96,7 +95,7 @@ func (h *WorkflowHandler) GetRun(c *gin.Context) {
 			RunID:      run.RunID,
 			WorkflowID: run.WorkflowID,
 			Name:       run.WorkflowName,
-			Version:    strconv.Itoa(run.WorkflowVersion),
+			Version:    run.WorkflowVersion,
 			Status:     run.Status,
 			CreatedAt:  formatTime(run.CreatedAt),
 			StartedAt:  safeFormatTime(run.StartedAt),
