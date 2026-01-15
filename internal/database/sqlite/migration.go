@@ -36,6 +36,46 @@ CREATE TABLE IF NOT EXISTS edges (
 	target_handle TEXT
 );
 `,
+	2: `
+CREATE TABLE IF NOT EXISTS workflow_runs (
+	run_id TEXT PRIMARY KEY, 
+	workflow_id TEXT, 
+	workflow_name TEXT, 
+	workflow_description TEXT, 
+	workflow_version INTEGER, 
+	status TEXT, 
+	created_at TEXT, 
+	started_at TEXT, 
+	finished_at TEXT
+);
+CREATE TABLE IF NOT EXISTS task_runs (
+	run_id TEXT, 
+	task_id TEXT, 
+	workflow_id TEXT, 
+	task_name TEXT, 
+	task_description TEXT, 
+	task_type TEXT, 
+	task_config TEXT, 
+	task_position TEXT, 
+	task_node_type TEXT, 
+	status TEXT, 
+	created_at TEXT, 
+	started_at TEXT, 
+	finished_at TEXT, 
+	exit_code INTEGER, 
+	output TEXT
+);
+CREATE TABLE IF NOT EXISTS edge_runs (
+	run_id TEXT, 
+	edge_id TEXT, 
+	workflow_id TEXT, 
+	edge_source TEXT, 
+	edge_target TEXT, 
+	edge_source_handle TEXT, 
+	edge_target_handle TEXT, 
+	created_at TEXT
+);
+`,
 }
 
 func (s *SqliteDB) Migrate() error {

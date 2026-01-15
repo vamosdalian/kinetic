@@ -208,7 +208,3 @@ func (h *WorkflowHandler) Delete(c *gin.Context) {
 
 	ResponseSuccess(c, nil)
 }
-
-func (h *WorkflowHandler) Run(c *gin.Context) {
-	ResponseSuccess(c, nil)
-}

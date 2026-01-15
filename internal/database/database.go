@@ -26,4 +26,12 @@ type Database interface {
 	SaveEdges(req []entity.EdgeEntity) ([]entity.EdgeEntity, error)
 	DeleteEdges(workflowID string) error
 	DeleteEdge(id string) error
+
+	// Workflow Run
+	CreateWorkflowRun(workflowID string, runID string) error
+	GetWorkflowRun(runID string) (entity.WorkflowRunEntity, error)
+	GetTaskRuns(runID string) ([]entity.TaskRunEntity, error)
+	GetEdgeRuns(runID string) ([]entity.EdgeRunEntity, error)
+	ListWorkflowRuns(offset int, limit int) ([]entity.WorkflowRunEntity, error)
+	// UpdateWorkflowRunStatus(runID string, status string) error
 }

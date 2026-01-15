@@ -48,5 +48,11 @@ func (a *APIServer) RegisterRoutes(engine *gin.Engine) {
 			workflows.DELETE("/:id", a.workflowHandler.Delete)
 			workflows.POST("/:id/run", a.workflowHandler.Run)
 		}
+
+		runs := api.Group("/workflow_runs")
+		{
+			runs.GET("", a.workflowHandler.ListRuns)
+			runs.GET("/:run_id", a.workflowHandler.GetRun)
+		}
 	}
 }

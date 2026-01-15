@@ -53,7 +53,7 @@ type WorkflowListItem struct {
 	ID        string    `json:"id"`
 	Name      string    `json:"name"`
 	Enable    bool      `json:"enable"`
-	Version   string    `json:"version"`
+	Version   string    `json:"version,string"`
 	CreatedAt time.Time `json:"create_at"`
 	UpdatedAt time.Time `json:"update_at"`
 }
