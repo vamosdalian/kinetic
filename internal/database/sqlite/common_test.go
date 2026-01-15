@@ -17,7 +17,8 @@ func TestCreateDB(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to get current database version: %v", err)
 	}
-	if currentVersion != LatestVersion {
-		t.Fatalf("Expected database version %d, got %d", LatestVersion, currentVersion)
+	expectedVersion := len(versionSql) - 1
+	if currentVersion != expectedVersion {
+		t.Fatalf("Expected database version %d, got %d", expectedVersion, currentVersion)
 	}
 }

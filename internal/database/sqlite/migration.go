@@ -6,10 +6,8 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-const LatestVersion = 1
-
-const (
-	version1Sql = `
+var versionSql = []string{
+	1: `
 CREATE TABLE IF NOT EXISTS workflows (
 	id TEXT PRIMARY KEY, 
 	name TEXT,
@@ -37,31 +35,30 @@ CREATE TABLE IF NOT EXISTS edges (
 	source_handle TEXT, 
 	target_handle TEXT
 );
-`
-)
+`,
+}
 
 func (s *SqliteDB) Migrate() error {
-	var current int
-	s.db.QueryRow("PRAGMA user_version;").Scan(&current)
-	if current >= LatestVersion {
+	current, err := s.GetCurrentVersion()
+	if err != nil {
+		return err
+	}
+	if current >= len(versionSql)-1 {
 		logrus.Infof("[Database] Database is up to date at version %d", current)
 		return nil
 	}
 	logrus.Infof("[Database] Current database version: %d, starting migration", current)
-	switch current {
-	case 0:
-		_, err := s.db.Exec(version1Sql)
+
+	for i := current + 1; i < len(versionSql); i++ {
+		_, err := s.db.Exec(versionSql[i])
 		if err != nil {
-			return fmt.Errorf("[Database] Failed to migrate database to version 1: %w", err)
+			return fmt.Errorf("[Database] Failed to migrate database to version %d: %w", i, err)
 		}
-		_, err = s.db.Exec("PRAGMA user_version = 1")
+		_, err = s.db.Exec(fmt.Sprintf("PRAGMA user_version = %d", i))
 		if err != nil {
 			return fmt.Errorf("[Database] Failed to set database version: %w", err)
 		}
-		logrus.Infof("[Database] Migrated database to version 1")
-	default:
-		logrus.Errorf("[Database] Unknown database version: %d", current)
-		return fmt.Errorf("[Database] Unknown database version: %d", current)
+		logrus.Infof("[Database] Migrated database to version %d", i)
 	}
 	logrus.Infof("[Database] Migration completed")
 	return nil
