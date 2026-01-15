@@ -41,6 +41,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { apiClient } from "@/lib/api";
+import { SiteHeader } from "@/components/site-header";
 
 export type Workflow = {
   id: string;
@@ -264,8 +265,12 @@ export function Workflow() {
   });
 
   return (
-    <div className="w-full p-4">
-      <div className="flex items-center justify-between py-4">
+    <div className="flex flex-1 flex-col">
+      <SiteHeader
+        breadcrumbs={[{ label: "Workflow", href: null }]}
+      />
+      <div className="w-full p-4">
+        <div className="flex items-center justify-between py-4">
         <Input
           placeholder="Filter name..."
           value={(table.getColumn("name")?.getFilterValue() as string) ?? ""}
@@ -379,6 +384,7 @@ export function Workflow() {
             Next
           </Button>
         </div>
+      </div>
       </div>
     </div>
   );

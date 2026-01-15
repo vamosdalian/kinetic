@@ -6,28 +6,23 @@ import { Github, Sun, Moon } from "lucide-react";
 import * as React from "react";
 import {
   Breadcrumb as ShadcnBreadcrumb,
-  BreadcrumbItem,
+  BreadcrumbItem as ShadcnBreadcrumbItem,
   BreadcrumbList,
   BreadcrumbSeparator,
   BreadcrumbPage,
 } from "@/components/ui/breadcrumb";
-import { Link, useLocation } from "react-router-dom"
-import { useWorkflowStore } from "@/app/workflow/workflow-store"
+import { Link } from "react-router-dom";
 
 export interface BreadcrumbItem {
   label: string
   href: string | null // null 表示不可点击（如动态参数）
 }
 
-export const breadcrumbMap: Record<string, { label: string; isDynamic?: boolean }> = {
-  "/": { label: "Dashboard" },
-  "/workflow": { label: "Workflow" },
-  "/record": { label: "Record" },
-  "/node": { label: "Node" },
-  "/admin": { label: "Admin" },
+export interface SiteHeaderProps {
+  breadcrumbs: BreadcrumbItem[];
 }
 
-export function SiteHeader() {
+export function SiteHeader({ breadcrumbs }: SiteHeaderProps) {
   const [isDarkMode, setIsDarkMode] = React.useState<boolean>(false);
 
   const toggleDarkMode = () => setIsDarkMode((isDark) => !isDark);
@@ -43,48 +38,6 @@ export function SiteHeader() {
     document.documentElement.classList.toggle("dark", isDarkMode);
   }, [isDarkMode]);
 
-  const location = useLocation()
-  const { workflowData } = useWorkflowStore()
-
-  const breadcrumbs = React.useMemo(() => {
-    const pathSegments = location.pathname.split("/").filter(x => x)
-    if (pathSegments.length === 0) {
-      // Handle root path e.g. /
-      const root = breadcrumbMap["/"]
-      if (root) {
-        return [{ label: root.label, href: null }]
-      }
-      return []
-    }
-
-    return pathSegments.map((segment, index) => {
-      const currentPath = `/${pathSegments.slice(0, index + 1).join("/")}`
-      const isLast = index === pathSegments.length - 1
-      const item = breadcrumbMap[currentPath]
-
-      if (item) {
-        return {
-          label: item.label,
-          href: isLast ? null : currentPath,
-        }
-      }
-
-      // 处理 /workflow/:id 的情况
-      if (pathSegments[0] === "workflow" && index === 1) {
-        // 显示 workflow name，如果没有则显示 "Untitled Workflow"
-        return {
-          label: workflowData.name || "Untitled Workflow",
-          href: null,
-        }
-      }
-      
-      return {
-        label: segment.replace(/_/g, " ").toUpperCase(),
-        href: null, // Dynamic parts are not clickable
-      }
-    })
-  }, [location.pathname, workflowData.name])
-
   return (
     <header className="flex h-(--header-height) shrink-0 items-center gap-2 border-b transition-[width,height] ease-linear group-has-data-[collapsible=icon]/sidebar-wrapper:h-(--header-height)">
       <div className="flex w-full items-center gap-1 px-4 lg:gap-2 lg:px-6">
@@ -99,18 +52,18 @@ export function SiteHeader() {
               <React.Fragment key={index}>
                 {index > 0 && <BreadcrumbSeparator />}
                 {item.href ? (
-                  <BreadcrumbItem>
+                  <ShadcnBreadcrumbItem>
                     <Link
                       to={item.href}
                       className="hover:text-foreground font-medium"
                     >
                       {item.label}
                     </Link>
-                  </BreadcrumbItem>
+                  </ShadcnBreadcrumbItem>
                 ) : (
-                  <BreadcrumbItem>
+                  <ShadcnBreadcrumbItem>
                     <BreadcrumbPage>{item.label}</BreadcrumbPage>
-                  </BreadcrumbItem>
+                  </ShadcnBreadcrumbItem>
                 )}
               </React.Fragment>
             ))}

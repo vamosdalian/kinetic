@@ -1,6 +1,6 @@
 import { AppSidebar } from "@/components/app-sidebar";
 
-import { SiteHeader } from "@/components/site-header";
+// import { SiteHeader } from "@/components/site-header";
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
 import { Routes, Route } from "react-router-dom";
 
@@ -24,7 +24,7 @@ export default function Page() {
     >
       <AppSidebar />
       <SidebarInset>
-        <SiteHeader />
+        {/* <SiteHeader /> */}
         <Routes>
           <Route path="/" element={<Dashboard />} />
           <Route path="/workflow" element={<Workflow />} />
