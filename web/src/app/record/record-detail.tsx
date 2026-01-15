@@ -122,7 +122,7 @@ export function RecordDetail() {
           nodesDraggable={false}
           className="bg-background"
         >
-          <Background color="#aaa" gap={16} />
+          <Background />
           <Controls />
         </ReactFlow>
       </div>

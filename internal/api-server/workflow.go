@@ -59,7 +59,7 @@ func (h *WorkflowHandler) List(c *gin.Context) {
 			ID:        w.ID,
 			Name:      w.Name,
 			Enable:    w.Enable,
-			Version:   fmt.Sprintf("%d", w.Version),
+			Version:   w.Version,
 			CreatedAt: w.CreatedAt,
 			UpdatedAt: w.UpdatedAt,
 		})
