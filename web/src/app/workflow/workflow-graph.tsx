@@ -16,7 +16,7 @@ import {
 import "@xyflow/react/dist/style.css";
 import { Button } from "@/components/ui/button";
 import { ActionBarNodeDemo } from "./custom-node";
-import { Play, Save, LoaderCircle, Plus, CloudCheck } from "lucide-react";
+import { Play, Save, LoaderCircle, Plus, CloudCheck, Settings } from "lucide-react";
 import { useReactFlow } from "@xyflow/react";
 import { ReactFlowProvider } from "@xyflow/react";
 import { v7 as uuidv7 } from "uuid";
@@ -25,6 +25,7 @@ import { useWorkflowStore, type WorkflowDetail } from "./workflow-store";
 import { useDirtyStore } from "./dirty-store";
 import { useSelection } from "./selection-context";
 import { apiClient } from "@/lib/api";
+import { cn } from "@/lib/utils";
 
 const initialEdges: Edge[] = [];
 
@@ -209,6 +210,10 @@ function WorkflowGraph() {
     [edges, setEdges]
   );
 
+  const onPaneClick = React.useCallback(() => {
+    setSelectedTaskId("");
+  }, [setSelectedTaskId]);
+
   const onSave = React.useCallback(async () => {
     setSaving(true);
 
@@ -263,6 +268,7 @@ function WorkflowGraph() {
         onNodesChange={onNodesChange}
         onEdgesChange={onEdgesChange}
         onConnect={onConnect}
+        onPaneClick={onPaneClick}
         onInit={() => setIsReady(true)}
         colorMode={colorMode}
         defaultViewport={{ x: 0, y: 0, zoom: 1 }}
@@ -273,8 +279,20 @@ function WorkflowGraph() {
           <Button variant="outline" size="icon" onClick={createNewNode}>
             <Plus></Plus>
           </Button>
+          <Button
+            variant="outline"
+            size="icon"
+            onClick={() => setSelectedTaskId("ROOT")}
+          >
+            <Settings></Settings>
+          </Button>
         </div>
-        <div className="absolute top-4 right-4 flex gap-2 z-10">
+        <div
+          className={cn(
+            "absolute top-4 right-4 flex gap-2 z-10 transition-transform duration-300 ease-in-out",
+            selectedTaskId ? "-translate-x-[510px]" : "translate-x-0"
+          )}
+        >
           {saving ? (
             <Button variant="outline" disabled>
               <LoaderCircle className="mr-2 animate-spin" />
