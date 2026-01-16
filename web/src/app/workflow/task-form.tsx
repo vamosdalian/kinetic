@@ -16,12 +16,10 @@ import {
   type TaskType,
   type ShellConfig,
 } from "./workflow-store";
-import { useSelection } from "./selection-context";
 
-export function Taskform() {
-  const { selectedTaskId } = useSelection();
+export function Taskform({ taskId }: { taskId: string }) {
   const { taskNodes, updateTaskNode } = useWorkflowStore();
-  const taskNode = taskNodes[selectedTaskId];
+  const taskNode = taskNodes[taskId];
 
   if (!taskNode) {
     return (

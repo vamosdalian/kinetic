@@ -1,16 +1,14 @@
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Taskform } from "./task-form";
 import { Workflowform } from "./workflow-form";
-import { useSelection } from "./selection-context";
 
-export function WorkflowRight() {
-  const { selectedTaskId } = useSelection();
+export function WorkflowRight({ selectedTaskId }: { selectedTaskId: string }) {
   return (
     <ScrollArea className="h-full">
       {selectedTaskId === "ROOT" ? (
         <Workflowform />
       ) : (
-        <Taskform />
+        <Taskform taskId={selectedTaskId} />
       )}
     </ScrollArea>
   );

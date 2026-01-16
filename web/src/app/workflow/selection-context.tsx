@@ -1,27 +1,24 @@
 import * as React from "react";
+import { create } from "zustand";
 
-interface SelectionContextType {
+interface SelectionStore {
   selectedTaskId: string;
   setSelectedTaskId: (id: string) => void;
 }
 
-const SelectionContext = React.createContext<SelectionContextType | null>(null);
-
-export function SelectionProvider({ children }: { children: React.ReactNode }) {
-  const [selectedTaskId, setSelectedTaskId] = React.useState("");
-
-  return (
-    <SelectionContext.Provider value={{ selectedTaskId, setSelectedTaskId }}>
-      {children}
-    </SelectionContext.Provider>
-  );
-}
+export const useSelectionStore = create<SelectionStore>((set) => ({
+  selectedTaskId: "",
+  setSelectedTaskId: (id) => set({ selectedTaskId: id }),
+}));
 
 export function useSelection() {
-  const context = React.useContext(SelectionContext);
-  if (!context) {
-    throw new Error("useSelection must be used within a SelectionProvider");
-  }
-  return context;
+  return useSelectionStore();
+}
+
+/**
+ * @deprecated Provider is no longer needed with zustand store
+ */
+export function SelectionProvider({ children }: { children: React.ReactNode }) {
+  return <>{children}</>;
 }
 

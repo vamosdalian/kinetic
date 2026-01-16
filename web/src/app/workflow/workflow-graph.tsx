@@ -22,10 +22,21 @@ import { ReactFlowProvider } from "@xyflow/react";
 import { v7 as uuidv7 } from "uuid";
 import { useParams, useSearchParams } from "react-router-dom";
 import { useWorkflowStore, type WorkflowDetail } from "./workflow-store";
-import { useDirtyStore } from "./dirty-store";
-import { useSelection } from "./selection-context";
 import { apiClient } from "@/lib/api";
 import { cn } from "@/lib/utils";
+import { Card } from "@/components/ui/card";
+import { WorkflowRight } from "./workflow-right";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { useBlocker } from "react-router-dom";
 
 const initialEdges: Edge[] = [];
 
@@ -56,8 +67,33 @@ function WorkflowGraph() {
     setEdges,
   } = useWorkflowStore();
 
-  const { isDirty, markDirty, markClean } = useDirtyStore();
-  const { selectedTaskId, setSelectedTaskId } = useSelection();
+  const [isDirty, setIsDirty] = React.useState(false);
+  const markDirty = React.useCallback(() => setIsDirty(true), []);
+  const markClean = React.useCallback(() => setIsDirty(false), []);
+
+  const [selectedTaskId, setSelectedTaskId] = React.useState<string>("");
+
+  // React Router blocker for navigation protection
+  const blocker = useBlocker(
+    ({ currentLocation, nextLocation }) =>
+      isDirty && currentLocation.pathname !== nextLocation.pathname
+  );
+
+  // Handle browser close/refresh
+  React.useEffect(() => {
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (isDirty) {
+        e.preventDefault();
+        e.returnValue = "";
+        return "";
+      }
+    };
+
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    return () => {
+      window.removeEventListener("beforeunload", handleBeforeUnload);
+    };
+  }, [isDirty]);
 
   // 本地 nodes state，用于实时拖动
   const [localNodes, setLocalNodes] = React.useState<Node[]>([]);
@@ -259,7 +295,7 @@ function WorkflowGraph() {
   return (
     <div
       style={{ width: "100%", height: "100%" }}
-      className="position: relative;"
+      className="relative w-full h-full overflow-hidden"
     >
       <ReactFlow
         nodes={localNodes}
@@ -322,6 +358,38 @@ function WorkflowGraph() {
           )}
         </div>
       </ReactFlow>
+
+      {/* Drawer Layer */}
+      <Card
+        className={cn(
+          "absolute top-2 right-2 bottom-2 w-[500px]",
+          "shadow-2xl z-20 p-0 border-border",
+          "transition-transform duration-300 ease-in-out",
+          selectedTaskId ? "translate-x-0" : "translate-x-[calc(100%+1rem)]"
+        )}
+      >
+        <WorkflowRight selectedTaskId={selectedTaskId} />
+      </Card>
+
+      <AlertDialog open={blocker.state === "blocked"}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Unsaved Changes</AlertDialogTitle>
+            <AlertDialogDescription>
+              You have unsaved changes. Are you sure you want to leave? Your
+              changes will be lost.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => blocker.reset?.()}>
+              Stay
+            </AlertDialogCancel>
+            <AlertDialogAction onClick={() => blocker.proceed?.()}>
+              Leave
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
