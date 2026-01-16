@@ -47,7 +47,7 @@ func New(opts ...Option) *Router {
 	gin.SetMode(gin.ReleaseMode)
 	engine := gin.New()
 	engine.Use(gin.Recovery())
-	engine.Use(gin.Logger())
+	engine.Use(ginLogger())
 
 	r := &Router{
 		engine: engine,
@@ -105,4 +105,37 @@ func (r *Router) Shutdown(ctx context.Context) error {
 
 func (r *Router) Addr() string {
 	return r.addr
+}
+
+func ginLogger() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		startTime := time.Now()
+		c.Next()
+		endTime := time.Now()
+		latencyTime := endTime.Sub(startTime)
+		reqMethod := c.Request.Method
+		reqUri := c.Request.RequestURI
+		statusCode := c.Writer.Status()
+		clientIP := c.ClientIP()
+
+		if len(c.Errors) > 0 {
+			logrus.Error(c.Errors.String())
+		} else {
+			msg := fmt.Sprintf("[%d] %s %s | %s | %s",
+				statusCode,
+				reqMethod,
+				reqUri,
+				clientIP,
+				latencyTime,
+			)
+
+			if statusCode >= 500 {
+				logrus.Error(msg)
+			} else if statusCode >= 400 {
+				logrus.Warn(msg)
+			} else {
+				logrus.Info(msg)
+			}
+		}
+	}
 }
