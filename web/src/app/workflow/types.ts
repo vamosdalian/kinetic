@@ -71,3 +71,4 @@ export interface WorkflowDetail {
   create_at?: string;
   update_at?: string;
 }
+

@@ -20,7 +20,7 @@ import {
   Play,
   SquarePen,
 } from "lucide-react";
-
+import { toast } from "sonner"
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -165,16 +165,16 @@ export function Workflow() {
 
         const handleRun = async () => {
           try {
-            const data = await apiClient(`/api/workflows/${workflow.id}/run`, {
+            await apiClient(`/api/workflows/${workflow.id}/run`, {
               method: "POST",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({}),
             });
             console.log("Workflow run started:", data);
-            // TODO: Show success toast or redirect to execution page
+            toast.success("Workflow run started successfully")
           } catch (error) {
-            console.error("Failed to run workflow:", error);
-            // TODO: Show error toast
+            console.error("Error starting workflow run:", error);
+            toast.error("Failed to start workflow run")
           }
         };
 

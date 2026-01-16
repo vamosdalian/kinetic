@@ -11,6 +11,7 @@ import { Node } from "./node/node";
 import { WorkflowDetail } from "./workflow/workflow-detail";
 import { Record } from "./record/record";
 import { RecordDetail } from "./record/record-detail";
+import { Toaster } from "@/components/ui/sonner"
 
 export default function Page() {
   return (
@@ -35,6 +36,7 @@ export default function Page() {
           <Route path="/admin" element={<Admin />} />
         </Routes>
       </SidebarInset>
+      <Toaster position="top-center" richColors/>
     </SidebarProvider>
   );
 }
