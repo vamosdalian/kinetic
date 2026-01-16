@@ -2,11 +2,14 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
-import { useWorkflowStore } from "./workflow-store";
+import type { WorkflowData } from "./types";
 
-export function Workflowform() {
-  const { workflowData, setWorkflowData } = useWorkflowStore();
+interface WorkflowFormProps {
+  data: WorkflowData;
+  onUpdate: (data: Partial<WorkflowData>) => void;
+}
 
+export function Workflowform({ data, onUpdate }: WorkflowFormProps) {
   return (
     <div className="grid gap-6 m-4">
       <div className="grid gap-2">
@@ -18,9 +21,9 @@ export function Workflowform() {
         <Input
           id="workflow_name"
           placeholder="Enter workflow name..."
-          value={workflowData.name}
+          value={data.name}
           onChange={(e) => {
-            setWorkflowData({ name: e.target.value });
+            onUpdate({ name: e.target.value });
           }}
         />
       </div>
@@ -29,9 +32,9 @@ export function Workflowform() {
         <Textarea
           id="description"
           placeholder="Describe what this workflow does..."
-          value={workflowData.description}
+          value={data.description}
           onChange={(e) => {
-            setWorkflowData({ description: e.target.value });
+            onUpdate({ description: e.target.value });
           }}
         />
       </div>

@@ -9,8 +9,6 @@ import {
   DialogClose,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { useWorkflowStore } from "./workflow-store";
-import { useSelection } from "./selection-context";
 
 // CodeMirror 6 imports
 import { EditorState } from "@codemirror/state";
@@ -20,20 +18,22 @@ import { syntaxHighlighting, defaultHighlightStyle, StreamLanguage } from "@code
 import { shell } from "@codemirror/legacy-modes/mode/shell";
 import { oneDark } from "@codemirror/theme-one-dark";
 
+interface ShellEditorProps {
+  children: React.ReactNode;
+  value?: string;
+  onChange: (value: string) => void;
+}
+
 export function ShellEditor({
   children,
+  value = "",
+  onChange,
   ...props
-}: {
-  children: React.ReactNode;
-}) {
+}: ShellEditorProps) {
   const [open, setOpen] = React.useState(false);
   const [scriptContent, setScriptContent] = React.useState("");
   const editorRef = React.useRef<HTMLDivElement>(null);
   const viewRef = React.useRef<EditorView | null>(null);
-
-  const { selectedTaskId } = useSelection();
-  const { taskNodes, updateTaskNode } = useWorkflowStore();
-  const taskNode = taskNodes[selectedTaskId];
 
   // Track dark mode
   const [isDark, setIsDark] = React.useState(() =>
@@ -83,8 +83,8 @@ export function ShellEditor({
       // Clear any previous content
       editorRef.current.innerHTML = "";
 
-      // Get initial content from config.script
-      const initialContent = taskNode?.config?.script || "#!/bin/bash\n";
+      // Get initial content from value
+      const initialContent = value || "#!/bin/bash\n";
       setScriptContent(initialContent);
 
       const extensions = [
@@ -131,15 +131,11 @@ export function ShellEditor({
         viewRef.current = null;
       }
     };
-  }, [open, isDark, taskNode]); // Recreate editor when dialog opens or theme changes
+  }, [open, isDark]);
 
   const handleSave = () => {
-    if (selectedTaskId && taskNode) {
-      updateTaskNode(selectedTaskId, {
-        config: { ...taskNode.config, script: scriptContent },
-      });
-      setOpen(false);
-    }
+    onChange(scriptContent);
+    setOpen(false);
   };
 
   return (

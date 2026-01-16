@@ -25,3 +25,4 @@ requirement:
   2. Use sahdcn/ui component library for UI components and styling.
   3. Avoid using React memo too early unless the user explicitly requests them.
   4. If you need to run commands such as npm in the frontend, you need to cd to the web directory first.
+  5. If you are referencing typs, don't forget to add the `types` keyword, for example `import type { User } from "@/types/user";`

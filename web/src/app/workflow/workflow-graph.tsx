@@ -21,7 +21,7 @@ import { useReactFlow } from "@xyflow/react";
 import { ReactFlowProvider } from "@xyflow/react";
 import { v7 as uuidv7 } from "uuid";
 import { useParams, useSearchParams } from "react-router-dom";
-import { useWorkflowStore, type WorkflowDetail } from "./workflow-store";
+import { defaultTaskNode, type WorkflowDetail, type WorkflowData, type TaskNode } from "./types";
 import { apiClient } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { Card } from "@/components/ui/card";
@@ -53,25 +53,87 @@ function WorkflowGraph() {
   const [isReady, setIsReady] = React.useState<boolean>(false);
   const { getViewport, setViewport, fitView } = useReactFlow();
 
-  const {
-    workflowId,
-    workflowData,
-    taskNodes,
-    edges,
-    setWorkflowId,
-    loadWorkflow,
-    clear,
-    addTaskNode,
-    updateTaskNode,
-    removeTaskNode,
-    setEdges,
-  } = useWorkflowStore();
+  // State Management
+  const [workflowId, setWorkflowId] = React.useState<string>("");
+  const [workflowData, setWorkflowData] = React.useState<WorkflowData>({
+    name: "",
+    description: "",
+  });
+  const [taskNodes, setTaskNodes] = React.useState<Record<string, TaskNode>>({});
+  const [edges, setEdges] = React.useState<Edge[]>([]);
 
   const [isDirty, setIsDirty] = React.useState(false);
   const markDirty = React.useCallback(() => setIsDirty(true), []);
   const markClean = React.useCallback(() => setIsDirty(false), []);
 
   const [selectedTaskId, setSelectedTaskId] = React.useState<string>("");
+
+  // Actions
+  const updateWorkflowData = React.useCallback((data: Partial<WorkflowData>) => {
+    setWorkflowData((prev) => ({ ...prev, ...data }));
+    markDirty();
+  }, [markDirty]);
+
+  const addTaskNode = React.useCallback((id: string, position: { x: number; y: number }) => {
+    setTaskNodes((prev) => ({
+      ...prev,
+      [id]: { ...defaultTaskNode, id, position },
+    }));
+    markDirty();
+  }, [markDirty]);
+
+  const updateTaskNode = React.useCallback((id: string, data: Partial<Omit<TaskNode, "id">>) => {
+    setTaskNodes((prev) => {
+      const existing = prev[id];
+      if (!existing) return prev;
+      return {
+        ...prev,
+        [id]: { ...existing, ...data },
+      };
+    });
+    markDirty();
+  }, [markDirty]);
+
+  const removeTaskNode = React.useCallback((id: string) => {
+    setTaskNodes((prev) => {
+      const next = { ...prev };
+      delete next[id];
+      return next;
+    });
+    setEdges((prev) => prev.filter((e) => e.source !== id && e.target !== id));
+    markDirty();
+  }, [markDirty, setEdges]);
+  
+  const updateEdges = React.useCallback((newEdges: Edge[]) => {
+      setEdges(newEdges);
+      markDirty();
+  }, [markDirty]);
+
+  const clear = React.useCallback(() => {
+    setWorkflowId("");
+    setWorkflowData({ name: "", description: "" });
+    setTaskNodes({});
+    setEdges([]);
+    markClean();
+  }, [markClean]);
+
+  const loadWorkflowData = React.useCallback((data: WorkflowDetail) => {
+    const taskNodesRecord: Record<string, TaskNode> = {};
+    if (data.taskNodes) {
+      for (const task of data.taskNodes) {
+        taskNodesRecord[task.id] = task;
+      }
+    }
+
+    setWorkflowId(data.id);
+    setWorkflowData({
+      name: data.name,
+      description: data.description,
+    });
+    setTaskNodes(taskNodesRecord);
+    setEdges(data.edges || []);
+    markClean();
+  }, [markClean]);
 
   // React Router blocker for navigation protection
   const blocker = useBlocker(
@@ -149,7 +211,7 @@ function WorkflowGraph() {
     try {
       const data = await apiClient<WorkflowDetail>(`/api/workflows/${id}`);
       console.log("Workflow loaded:", data);
-      loadWorkflow(data);
+      loadWorkflowData(data);
       // 加载完成后调整视图以适应所有节点
       setTimeout(() => {
         fitView({ padding: 0.2, duration: 0 });
@@ -159,7 +221,7 @@ function WorkflowGraph() {
     } finally {
       setLoading(false);
     }
-  }, [loadWorkflow, fitView]);
+  }, [loadWorkflowData, fitView]);
 
   React.useEffect(() => {
     console.log("Workflow ID from URL:", urlWorkflowId, "action:", action);
@@ -233,17 +295,17 @@ function WorkflowGraph() {
   const onEdgesChange = React.useCallback(
     (changes: EdgeChange[]) => {
       const newEdges = applyEdgeChanges(changes, edges);
-      setEdges(newEdges);
+      updateEdges(newEdges);
     },
-    [edges, setEdges]
+    [edges, updateEdges]
   );
 
   const onConnect = React.useCallback(
     (params: Connection) => {
       const newEdges = addEdge(params, edges);
-      setEdges(newEdges);
+      updateEdges(newEdges);
     },
-    [edges, setEdges]
+    [edges, updateEdges]
   );
 
   const onPaneClick = React.useCallback(() => {
@@ -368,7 +430,13 @@ function WorkflowGraph() {
           selectedTaskId ? "translate-x-0" : "translate-x-[calc(100%+1rem)]"
         )}
       >
-        <WorkflowRight selectedTaskId={selectedTaskId} />
+        <WorkflowRight
+          selectedTaskId={selectedTaskId}
+          workflowData={workflowData}
+          onUpdateWorkflowData={updateWorkflowData}
+          taskNodes={taskNodes}
+          onUpdateTaskNode={updateTaskNode}
+        />
       </Card>
 
       <AlertDialog open={blocker.state === "blocked"}>

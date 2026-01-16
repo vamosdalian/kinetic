@@ -1,13 +1,17 @@
 import './App.css'
-import { BrowserRouter as Router } from "react-router-dom"
+import { createBrowserRouter, RouterProvider } from "react-router-dom"
 import Page from './app/page'
 
-function App() {
+const router = createBrowserRouter([
+  {
+    path: "*",
+    element: <Page />,
+  }
+]);
 
+function App() {
   return (
-    <Router>
-      <Page></Page>
-    </Router>
+    <RouterProvider router={router} />
   )
 }
 

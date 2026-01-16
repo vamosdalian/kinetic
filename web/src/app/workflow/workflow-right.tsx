@@ -1,14 +1,33 @@
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Taskform } from "./task-form";
 import { Workflowform } from "./workflow-form";
+import type { WorkflowData, TaskNode } from "./types";
 
-export function WorkflowRight({ selectedTaskId }: { selectedTaskId: string }) {
+interface WorkflowRightProps {
+  selectedTaskId: string;
+  workflowData: WorkflowData;
+  onUpdateWorkflowData: (data: Partial<WorkflowData>) => void;
+  taskNodes: Record<string, TaskNode>;
+  onUpdateTaskNode: (id: string, data: Partial<Omit<TaskNode, "id">>) => void;
+}
+
+export function WorkflowRight({
+  selectedTaskId,
+  workflowData,
+  onUpdateWorkflowData,
+  taskNodes,
+  onUpdateTaskNode,
+}: WorkflowRightProps) {
   return (
     <ScrollArea className="h-full">
       {selectedTaskId === "ROOT" ? (
-        <Workflowform />
+        <Workflowform data={workflowData} onUpdate={onUpdateWorkflowData} />
       ) : (
-        <Taskform taskId={selectedTaskId} />
+        <Taskform
+          taskId={selectedTaskId}
+          node={taskNodes[selectedTaskId]}
+          onUpdate={onUpdateTaskNode}
+        />
       )}
     </ScrollArea>
   );
