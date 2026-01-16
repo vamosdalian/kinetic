@@ -72,3 +72,11 @@ export interface WorkflowDetail {
   update_at?: string;
 }
 
+export interface WorkflowListItem {
+  id: string;
+  name: string;
+  enable: boolean;
+  version: string;
+  create_at: string;
+  update_at: string;
+}

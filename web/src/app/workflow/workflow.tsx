@@ -40,31 +40,47 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { apiClient } from "@/lib/api";
+import { apiClient, apiClientFull } from "@/lib/api";
 import { SiteHeader } from "@/components/site-header";
-
-export type Workflow = {
-  id: string;
-  name: string;
-  enable: boolean;
-  version: string;
-  last_running_status: "pending" | "running" | "success" | "failed";
-  next_running_time: string;
-  create_at: string;
-  update_at: string;
-};
+import type {WorkflowListItem} from "./types"
+// export type Workflow = {
+//   id: string;
+//   name: string;
+//   enable: boolean;
+//   version: string;
+//   last_running_status: "pending" | "running" | "success" | "failed";
+//   next_running_time: string;
+//   create_at: string;
+//   update_at: string;
+// };
 
 export function Workflow() {
   const navigate = useNavigate();
-  const [data, setData] = React.useState<Workflow[]>([]);
+  const [data, setData] = React.useState<WorkflowListItem[]>([]);
+  const [pagination, setPagination] = React.useState({
+    pageIndex: 0,
+    pageSize: 20,
+  });
+  const [pageCount, setPageCount] = React.useState(-1);
+
+  const fetchWorkflows = React.useCallback(() => {
+    apiClientFull<WorkflowListItem[]>(
+      `/api/workflows?page=${pagination.pageIndex + 1}&pageSize=${
+        pagination.pageSize
+      }`
+    ).then((res) => {
+      setData(res.data);
+      if (res.meta) {
+        setPageCount(res.meta.totalPages);
+      }
+    });
+  }, [pagination]);
 
   React.useEffect(() => {
-    apiClient<Workflow[]>("/api/workflows").then((data) => {
-      setData(data);
-    });
-  }, []);
+    fetchWorkflows();
+  }, [fetchWorkflows]);
 
-  const columns: ColumnDef<Workflow>[] = [
+  const columns: ColumnDef<WorkflowListItem>[] = [
     {
       accessorKey: "name",
       header: ({ column }) => {
@@ -96,32 +112,32 @@ export function Workflow() {
         <div className="capitalize">{row.getValue("version")}</div>
       ),
     },
-    {
-      accessorKey: "last_running_status",
-      header: "Last Running Status",
-      cell: ({ row }) => (
-        <div className="lowercase">{row.getValue("last_running_status")}</div>
-      ),
-    },
-    {
-      accessorKey: "next_running_time",
-      header: ({ column }) => {
-        return (
-          <Button
-            variant="ghost"
-            onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}
-          >
-            Next Running Time
-            <ArrowUpDown className="ml-2 h-4 w-4" />
-          </Button>
-        );
-      },
-      cell: ({ row }) => (
-        <div className="capitalize pl-3">
-          {row.getValue("next_running_time")}
-        </div>
-      ),
-    },
+    // {
+    //   accessorKey: "last_running_status",
+    //   header: "Last Running Status",
+    //   cell: ({ row }) => (
+    //     <div className="lowercase">{row.getValue("last_running_status")}</div>
+    //   ),
+    // },
+    // {
+    //   accessorKey: "next_running_time",
+    //   header: ({ column }) => {
+    //     return (
+    //       <Button
+    //         variant="ghost"
+    //         onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}
+    //       >
+    //         Next Running Time
+    //         <ArrowUpDown className="ml-2 h-4 w-4" />
+    //       </Button>
+    //     );
+    //   },
+    //   cell: ({ row }) => (
+    //     <div className="capitalize pl-3">
+    //       {row.getValue("next_running_time")}
+    //     </div>
+    //   ),
+    // },
     {
       accessorKey: "create_at",
       header: ({ column }) => {
@@ -183,9 +199,11 @@ export function Workflow() {
             await apiClient(`/api/workflows/${workflow.id}`, {
               method: "DELETE",
             });
-            setData((prev) => prev.filter((w) => w.id !== workflow.id));
+            fetchWorkflows();
+            toast.success("Workflow deleted successfully");
           } catch (error) {
             console.error("Error deleting workflow:", error);
+            toast.error("Failed to delete workflow");
           }
         };
 
@@ -242,6 +260,9 @@ export function Workflow() {
   const table = useReactTable({
     data,
     columns,
+    manualPagination: true,
+    pageCount,
+    onPaginationChange: setPagination,
     onSortingChange: setSorting,
     onColumnFiltersChange: setColumnFilters,
     getCoreRowModel: getCoreRowModel(),
@@ -253,6 +274,7 @@ export function Workflow() {
       sorting,
       columnFilters,
       columnVisibility,
+      pagination,
     },
   });
 
