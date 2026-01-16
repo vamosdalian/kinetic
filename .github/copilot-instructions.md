@@ -23,3 +23,4 @@ Language: TypeScript with React and Vite
 requirement:
   1. Use the provided `apiClient` utility for all API interactions instead of the native `fetch` function.
   2. Use sahdcn/ui component library for UI components and styling.
+  3. Avoid using React memo too early unless the user explicitly requests them.
