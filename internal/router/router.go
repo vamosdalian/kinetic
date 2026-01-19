@@ -3,7 +3,6 @@ package router
 import (
 	"context"
 	"fmt"
-	"log"
 	"net/http"
 	"time"
 
@@ -97,7 +96,7 @@ func (r *Router) Run() error {
 
 func (r *Router) Shutdown(ctx context.Context) error {
 	if r.httpServer != nil {
-		log.Println("HTTP server shutting down...")
+		logrus.Info("HTTP server shutting down...")
 		return r.httpServer.Shutdown(ctx)
 	}
 	return nil

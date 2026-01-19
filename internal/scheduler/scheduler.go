@@ -2,7 +2,6 @@ package scheduler
 
 import (
 	"context"
-	"log"
 	"sync"
 
 	"github.com/sirupsen/logrus"
@@ -35,7 +34,7 @@ func (s *Scheduler) Run() error {
 
 // Shutdown 停止调度器
 func (s *Scheduler) Shutdown(ctx context.Context) error {
-	log.Println("Shutting down scheduler...")
+	logrus.Info("Shutting down scheduler...")
 	close(s.stopCh)
 	return nil
 }

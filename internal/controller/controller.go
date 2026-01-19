@@ -56,7 +56,7 @@ func (c *Controller) Run() error {
 }
 
 func (c *Controller) Shutdown(ctx context.Context) error {
-	log.Println("Shutting down controller...")
+	logrus.Info("Shutting down controller...")
 
 	if err := c.scheduler.Shutdown(ctx); err != nil {
 		log.Printf("Scheduler shutdown error: %v", err)
@@ -70,6 +70,6 @@ func (c *Controller) Shutdown(ctx context.Context) error {
 		log.Printf("Database close error: %v", err)
 	}
 
-	log.Println("Controller stopped")
+	logrus.Info("Controller stopped")
 	return nil
 }
