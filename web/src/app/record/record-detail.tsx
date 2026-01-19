@@ -64,8 +64,6 @@ export function RecordDetail() {
           target: edge.target,
           sourceHandle: edge.sourceHandle,
           targetHandle: edge.targetHandle,
-          animated: true, // Maybe animate if running?
-          style: { stroke: "#888" },
         }));
 
         setNodes(flowNodes);
