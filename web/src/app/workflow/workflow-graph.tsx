@@ -37,8 +37,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { useBlocker } from "react-router-dom";
-
-const initialEdges: Edge[] = [];
+import { toast } from "sonner";
 
 function WorkflowGraph() {
   // URL 中的 workflowId
@@ -195,6 +194,7 @@ function WorkflowGraph() {
     // 创建初始 task，使用固定位置
     const taskId = uuidv7();
     addTaskNode(taskId, { x: 250, y: 200 });
+    const initialEdges: Edge[] = [];
     setEdges(initialEdges);
     // 设置画布视图：zoom=1，居中显示节点
     // 使用 setTimeout 确保节点已渲染
@@ -334,11 +334,11 @@ function WorkflowGraph() {
       });
 
       console.log("Workflow saved:", savedWorkflow);
-
+      toast.success("Workflow saved successfully");
       markClean();
     } catch (error) {
-      console.error("Failed to save workflow:", error);
-      // TODO: Show error toast
+      toast.error("Failed to save workflow");
+      console.error("Error saving workflow:", error);
     } finally {
       setSaving(false);
     }
