@@ -1,14 +1,23 @@
 package apiserver
 
 import (
+	"context"
+	"net/http"
+	"time"
+
 	"github.com/gin-gonic/gin"
 	"github.com/vamosdalian/kinetic/internal/database"
 	"github.com/vamosdalian/kinetic/internal/router"
 	"github.com/vamosdalian/kinetic/internal/scheduler"
 )
 
+type healthChecker interface {
+	HealthCheck(ctx context.Context) error
+}
+
 type APIServer struct {
 	scheduler       *scheduler.Scheduler
+	db              healthChecker
 	workflowHandler *WorkflowHandler
 	nodeHandler     *NodeHandler
 	staticHandler   *StaticHandler
@@ -20,6 +29,7 @@ func NewAPIServer(db database.Database, scheduler *scheduler.Scheduler, r *route
 
 	apiServer := &APIServer{
 		scheduler:       scheduler,
+		db:              db,
 		workflowHandler: workflowHandler,
 		nodeHandler:     NewNodeHandler(nodeService),
 		staticHandler:   NewStaticHandler(),
@@ -37,10 +47,9 @@ func NewAPIServer(db database.Database, scheduler *scheduler.Scheduler, r *route
 }
 
 func (a *APIServer) RegisterRoutes(engine *gin.Engine) {
-	// Health check
-	engine.GET("/api/health", func(c *gin.Context) {
-		c.JSON(200, gin.H{"status": "ok"})
-	})
+	engine.GET("/healthz", a.healthz)
+	engine.GET("/readyz", a.readyz)
+	engine.GET("/api/health", a.healthz)
 
 	api := engine.Group("/api")
 	{
@@ -79,4 +88,41 @@ func (a *APIServer) RegisterRoutes(engine *gin.Engine) {
 			internal.POST("/nodes/:id/task-events", a.nodeHandler.TaskEvents)
 		}
 	}
+}
+
+func (a *APIServer) healthz(c *gin.Context) {
+	c.JSON(http.StatusOK, gin.H{"status": "ok"})
+}
+
+func (a *APIServer) readyz(c *gin.Context) {
+	status := http.StatusOK
+	response := gin.H{
+		"status": "ready",
+		"checks": gin.H{
+			"database": "ok",
+		},
+	}
+
+	if a.db == nil {
+		status = http.StatusServiceUnavailable
+		response["status"] = "not_ready"
+		response["checks"] = gin.H{
+			"database": "not_configured",
+		}
+		c.JSON(status, response)
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(c.Request.Context(), 2*time.Second)
+	defer cancel()
+
+	if err := a.db.HealthCheck(ctx); err != nil {
+		status = http.StatusServiceUnavailable
+		response["status"] = "not_ready"
+		response["checks"] = gin.H{
+			"database": err.Error(),
+		}
+	}
+
+	c.JSON(status, response)
 }

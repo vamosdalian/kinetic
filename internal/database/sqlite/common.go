@@ -1,6 +1,7 @@
 package sqlite
 
 import (
+	"context"
 	"database/sql"
 
 	_ "modernc.org/sqlite"
@@ -32,4 +33,8 @@ func NewSqliteDB(dbPath string) (*SqliteDB, error) {
 
 func (s *SqliteDB) Close() error {
 	return s.db.Close()
+}
+
+func (s *SqliteDB) HealthCheck(ctx context.Context) error {
+	return s.db.PingContext(ctx)
 }

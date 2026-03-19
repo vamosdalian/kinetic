@@ -8,13 +8,13 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
 	"net"
 	"net/http"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/sirupsen/logrus"
 	"github.com/vamosdalian/kinetic/internal/config"
 	"github.com/vamosdalian/kinetic/internal/executor"
 	"github.com/vamosdalian/kinetic/internal/model/dto"
@@ -50,8 +50,8 @@ func NewWorker(cfg *config.Config, kind string) *Worker {
 }
 
 func (w *Worker) Run() error {
-	log.Printf("Starting worker %s, connecting to controller: %s", w.cfg.Worker.ID, w.cfg.Worker.ControllerURL)
-	log.Printf("Max concurrency: %d", w.cfg.Worker.MaxConcurrency)
+	logger := w.logger()
+	logger.WithField("max_concurrency", w.cfg.Worker.MaxConcurrency).Info("Starting worker")
 
 	w.wg.Add(1)
 	go func() {
@@ -72,7 +72,7 @@ func (w *Worker) Run() error {
 		}
 
 		if err := w.register(); err != nil {
-			log.Printf("worker register failed: %v", err)
+			logger.WithError(err).Warn("Worker register failed")
 			if !w.waitReconnect(reconnectDelay) {
 				return nil
 			}
@@ -85,9 +85,9 @@ func (w *Worker) Run() error {
 				return nil
 			default:
 				if isExpectedStreamDisconnect(err) {
-					log.Printf("worker stream closed, reconnecting: %v", err)
+					logger.WithError(err).Warn("Worker stream closed, reconnecting")
 				} else {
-					log.Printf("worker stream disconnected: %v", err)
+					logger.WithError(err).Warn("Worker stream disconnected")
 				}
 			}
 		}
@@ -99,7 +99,8 @@ func (w *Worker) Run() error {
 }
 
 func (w *Worker) Shutdown(ctx context.Context) error {
-	log.Println("Shutting down worker...")
+	logger := w.logger()
+	logger.Info("Shutting down worker")
 	close(w.stopCh)
 
 	w.mu.Lock()
@@ -119,10 +120,10 @@ func (w *Worker) Shutdown(ctx context.Context) error {
 
 	select {
 	case <-done:
-		log.Println("Worker stopped")
+		logger.Info("Worker stopped")
 		return nil
 	case <-ctx.Done():
-		log.Println("Worker shutdown timeout")
+		logger.WithError(ctx.Err()).Warn("Worker shutdown timeout")
 		return ctx.Err()
 	}
 }
@@ -152,10 +153,19 @@ func (w *Worker) heartbeatLoop() {
 			return
 		case <-ticker.C:
 			if err := w.postJSON(fmt.Sprintf("/api/internal/nodes/%s/heartbeat", w.cfg.Worker.ID), dto.NodeHeartbeatRequest{}, nil); err != nil {
-				log.Printf("worker heartbeat failed: %v", err)
+				w.logger().WithError(err).Warn("Worker heartbeat failed")
 			}
 		}
 	}
+}
+
+func (w *Worker) logger() *logrus.Entry {
+	return logrus.WithFields(logrus.Fields{
+		"mode":           w.cfg.Mode,
+		"worker_id":      w.cfg.Worker.ID,
+		"worker_kind":    w.kind,
+		"controller_url": w.cfg.Worker.ControllerURL,
+	})
 }
 
 func (w *Worker) runStream() error {

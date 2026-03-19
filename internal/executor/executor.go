@@ -2,8 +2,9 @@ package executor
 
 import (
 	"context"
-	"log"
 	"sync"
+
+	"github.com/sirupsen/logrus"
 )
 
 // Executor 任务执行器
@@ -48,15 +49,19 @@ func (e *Executor) Execute(ctx context.Context, task Task, onOutput OutputFunc) 
 	}
 	defer func() { <-e.semaphore }()
 
-	log.Printf("Executing task %s (type: %s)", task.ID(), task.Type())
+	logger := logrus.WithFields(logrus.Fields{
+		"task_id":   task.ID(),
+		"task_type": task.Type(),
+	})
+	logger.Info("Executing task")
 
 	result, err := task.Execute(ctx, onOutput)
 	if err != nil {
-		log.Printf("Task %s failed: %v", task.ID(), err)
+		logger.WithError(err).Warn("Task failed")
 		return result, err
 	}
 
-	log.Printf("Task %s completed", task.ID())
+	logger.Info("Task completed")
 	return result, nil
 }
 

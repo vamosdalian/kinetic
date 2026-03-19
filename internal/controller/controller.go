@@ -3,7 +3,6 @@ package controller
 import (
 	"context"
 	"fmt"
-	"log"
 	"time"
 
 	"github.com/sirupsen/logrus"
@@ -70,17 +69,21 @@ func NewController(cfg *config.Config) (*Controller, error) {
 }
 
 func (c *Controller) Run() error {
-	logrus.Info("Starting controller...")
+	logger := logrus.WithFields(logrus.Fields{
+		"mode":            c.cfg.Mode,
+		"embedded_worker": c.embeddedWorker != nil,
+	})
+	logger.Info("Starting controller")
 
 	go func() {
 		if err := c.scheduler.Run(); err != nil {
-			log.Printf("Scheduler error: %v", err)
+			logger.WithError(err).Error("Scheduler error")
 		}
 	}()
 	if c.embeddedWorker != nil {
 		go func() {
 			if err := c.embeddedWorker.Run(); err != nil {
-				log.Printf("Embedded worker error: %v", err)
+				logger.WithError(err).Error("Embedded worker error")
 			}
 		}()
 	}
@@ -89,25 +92,26 @@ func (c *Controller) Run() error {
 }
 
 func (c *Controller) Shutdown(ctx context.Context) error {
-	logrus.Info("Shutting down controller...")
+	logger := logrus.WithField("mode", c.cfg.Mode)
+	logger.Info("Shutting down controller")
 
 	if err := c.scheduler.Shutdown(ctx); err != nil {
-		log.Printf("Scheduler shutdown error: %v", err)
+		logger.WithError(err).Error("Scheduler shutdown error")
 	}
 	if c.embeddedWorker != nil {
 		if err := c.embeddedWorker.Shutdown(ctx); err != nil {
-			log.Printf("Embedded worker shutdown error: %v", err)
+			logger.WithError(err).Error("Embedded worker shutdown error")
 		}
 	}
 
 	if err := c.router.Shutdown(ctx); err != nil {
-		log.Printf("Router shutdown error: %v", err)
+		logger.WithError(err).Error("Router shutdown error")
 	}
 
 	if err := c.db.Close(); err != nil {
-		log.Printf("Database close error: %v", err)
+		logger.WithError(err).Error("Database close error")
 	}
 
-	logrus.Info("Controller stopped")
+	logger.Info("Controller stopped")
 	return nil
 }

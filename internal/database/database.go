@@ -1,12 +1,15 @@
 package database
 
 import (
+	"context"
+
 	"github.com/vamosdalian/kinetic/internal/model/entity"
 	_ "modernc.org/sqlite"
 )
 
 type Database interface {
 	Close() error
+	HealthCheck(ctx context.Context) error
 
 	// Workflow
 	ListWorkflows(offset int, limit int) ([]entity.WorkflowEntity, error)

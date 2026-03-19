@@ -112,6 +112,10 @@ func Load() (*Config, error) {
 	cfg := DefaultConfig()
 
 	path := configPath()
+	return loadFromPath(cfg, path)
+}
+
+func loadFromPath(cfg *Config, path string) (*Config, error) {
 	if err := cfg.loadFromFile(path); err != nil {
 		if os.IsNotExist(err) {
 			if err := cfg.save(path); err != nil {
@@ -157,10 +161,15 @@ func (c *Config) save(path string) error {
 #   - worker: runs executor only, connects to controller
 #
 # Environment variables can override any setting:
-#   KINETIC_MODE, KINETIC_API_HOST, KINETIC_API_PORT,
+#   KINETIC_MODE,
+#   KINETIC_API_HOST, KINETIC_API_PORT,
 #   KINETIC_DATABASE_TYPE, KINETIC_DATABASE_PATH,
 #   KINETIC_CONTROLLER_EMBEDDED_WORKER_ENABLED,
-#   KINETIC_WORKER_ID, KINETIC_WORKER_NAME, etc.
+#   KINETIC_WORKER_ID, KINETIC_WORKER_NAME,
+#   KINETIC_WORKER_CONTROLLER_URL, KINETIC_WORKER_ADVERTISE_IP,
+#   KINETIC_WORKER_HEARTBEAT_INTERVAL, KINETIC_WORKER_STREAM_RECONNECT_INTERVAL,
+#   KINETIC_WORKER_MAX_CONCURRENCY,
+#   KINETIC_LOG_LEVEL, KINETIC_LOG_FORMAT
 #
 
 `

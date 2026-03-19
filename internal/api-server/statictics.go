@@ -2,11 +2,11 @@ package apiserver
 
 import (
 	"io/fs"
-	"log"
 	"net/http"
 	"strings"
 
 	"github.com/gin-gonic/gin"
+	"github.com/sirupsen/logrus"
 	"github.com/vamosdalian/kinetic/web"
 )
 
@@ -20,7 +20,7 @@ type StaticHandler struct {
 func NewStaticHandler() *StaticHandler {
 	distFS, err := web.DistFS()
 	if err != nil {
-		log.Printf("Warning: failed to load static files: %v", err)
+		logrus.WithError(err).Warn("Failed to load static files")
 		return nil
 	}
 
@@ -33,7 +33,7 @@ func NewStaticHandler() *StaticHandler {
 // RegisterRoutes 注册静态文件路由
 func (h *StaticHandler) RegisterRoutes(engine *gin.Engine) {
 	if h == nil || h.distFS == nil {
-		log.Println("Warning: static handler not initialized, skipping static routes")
+		logrus.Warn("Static handler not initialized, skipping static routes")
 		return
 	}
 

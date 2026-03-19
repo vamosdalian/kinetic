@@ -4,7 +4,6 @@ import (
 	"context"
 	"flag"
 	"fmt"
-	"log"
 	"os"
 	"os/signal"
 	"syscall"
@@ -22,36 +21,49 @@ var (
 	date    = "unknown"
 )
 
+type cliOptions struct {
+	showVersion bool
+	mode        string
+	withWorker  bool
+}
+
+func bindFlags(fs *flag.FlagSet, opts *cliOptions) {
+	fs.BoolVar(&opts.showVersion, "version", false, "Show version information")
+	fs.StringVar(&opts.mode, "mode", "", "Run mode: controller or worker (overrides config)")
+	fs.BoolVar(&opts.withWorker, "with-worker", false, "Enable embedded worker when running in controller mode")
+}
+
 func main() {
-	var (
-		showVersion bool
-		mode        string
-		withWorker  bool
-	)
-	flag.BoolVar(&showVersion, "version", false, "Show version information")
-	flag.StringVar(&mode, "mode", "controller", "Run mode: controller or worker (overrides config)")
-	flag.BoolVar(&withWorker, "with-worker", false, "Enable embedded worker when running in controller mode")
+	var opts cliOptions
+	bindFlags(flag.CommandLine, &opts)
 	flag.Parse()
 
-	if showVersion {
+	if opts.showVersion {
 		fmt.Printf("Kinetic %s (commit: %s, built: %s)\n", version, commit, date)
 		os.Exit(0)
 	}
 
 	cfg, err := config.Load()
 	if err != nil {
-		log.Fatalf("Failed to load config: %v", err)
+		logrus.WithError(err).Fatal("Failed to load config")
 	}
 
-	if mode != "" {
-		cfg.Mode = config.Mode(mode)
+	if opts.mode != "" {
+		cfg.Mode = config.Mode(opts.mode)
 	}
-	if withWorker {
+	if opts.withWorker {
 		cfg.Controller.EmbeddedWorkerEnabled = true
 	}
 
-	logrus.SetLevel(logrus.DebugLevel)
-	logrus.Infof("Starting Kinetic in %s mode...", cfg.Mode)
+	configureLogger(cfg.Log)
+	logrus.WithFields(logrus.Fields{
+		"mode":              cfg.Mode,
+		"embedded_worker":   cfg.Controller.EmbeddedWorkerEnabled,
+		"api_addr":          cfg.APIAddr(),
+		"database_type":     cfg.Database.Type,
+		"database_path":     cfg.Database.Path,
+		"worker_controller": cfg.Worker.ControllerURL,
+	}).Info("Starting Kinetic")
 
 	switch cfg.Mode {
 	case config.ModeController:
@@ -59,19 +71,35 @@ func main() {
 	case config.ModeWorker:
 		runWorker(cfg)
 	default:
-		log.Fatalf("Unknown mode: %s", cfg.Mode)
+		logrus.WithField("mode", cfg.Mode).Fatal("Unknown mode")
+	}
+}
+
+func configureLogger(cfg config.LogConfig) {
+	level, err := logrus.ParseLevel(cfg.Level)
+	if err != nil {
+		logrus.WithError(err).Warn("Invalid log level, falling back to info")
+		level = logrus.InfoLevel
+	}
+	logrus.SetLevel(level)
+
+	switch cfg.Format {
+	case "json":
+		logrus.SetFormatter(&logrus.JSONFormatter{})
+	default:
+		logrus.SetFormatter(&logrus.TextFormatter{FullTimestamp: true})
 	}
 }
 
 func runController(cfg *config.Config) {
 	ctrl, err := controller.NewController(cfg)
 	if err != nil {
-		log.Fatalf("Failed to create controller: %v", err)
+		logrus.WithError(err).Fatal("Failed to create controller")
 	}
 
 	go func() {
 		if err := ctrl.Run(); err != nil {
-			log.Fatalf("Controller error: %v", err)
+			logrus.WithError(err).Fatal("Controller error")
 		}
 	}()
 
@@ -83,7 +111,7 @@ func runController(cfg *config.Config) {
 	defer cancel()
 
 	if err := ctrl.Shutdown(ctx); err != nil {
-		log.Fatalf("Controller shutdown error: %v", err)
+		logrus.WithError(err).Fatal("Controller shutdown error")
 	}
 }
 
@@ -95,7 +123,7 @@ func runWorker(cfg *config.Config) {
 	// 启动 Worker
 	go func() {
 		if err := w.Run(); err != nil {
-			log.Fatalf("Worker error: %v", err)
+			logrus.WithError(err).Fatal("Worker error")
 		}
 	}()
 
@@ -109,6 +137,6 @@ func runWorker(cfg *config.Config) {
 	defer cancel()
 
 	if err := w.Shutdown(ctx); err != nil {
-		log.Fatalf("Worker shutdown error: %v", err)
+		logrus.WithError(err).Fatal("Worker shutdown error")
 	}
 }

@@ -110,31 +110,28 @@ func ginLogger() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		startTime := time.Now()
 		c.Next()
-		endTime := time.Now()
-		latencyTime := endTime.Sub(startTime)
-		reqMethod := c.Request.Method
-		reqUri := c.Request.RequestURI
-		statusCode := c.Writer.Status()
-		clientIP := c.ClientIP()
+		latencyTime := time.Since(startTime)
+		entry := logrus.WithFields(logrus.Fields{
+			"status":    c.Writer.Status(),
+			"method":    c.Request.Method,
+			"path":      c.Request.RequestURI,
+			"client_ip": c.ClientIP(),
+			"latency":   latencyTime,
+		})
 
 		if len(c.Errors) > 0 {
-			logrus.Error(c.Errors.String())
+			entry = entry.WithField("errors", c.Errors.String())
 		} else {
-			msg := fmt.Sprintf("[%d] %s %s | %s | %s",
-				statusCode,
-				reqMethod,
-				reqUri,
-				clientIP,
-				latencyTime,
-			)
+			entry = entry.WithField("errors", "")
+		}
 
-			if statusCode >= 500 {
-				logrus.Error(msg)
-			} else if statusCode >= 400 {
-				logrus.Warn(msg)
-			} else {
-				logrus.Info(msg)
-			}
+		statusCode := c.Writer.Status()
+		if statusCode >= 500 {
+			entry.Error("http request completed")
+		} else if statusCode >= 400 {
+			entry.Warn("http request completed")
+		} else {
+			entry.Info("http request completed")
 		}
 	}
 }
