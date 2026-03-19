@@ -13,10 +13,13 @@ type APIServer struct {
 	staticHandler   *StaticHandler
 }
 
-func NewAPIServer(db database.Database, scheduler *scheduler.Scheduler, r *router.Router) *APIServer {
+func NewAPIServer(db database.Database, scheduler *scheduler.Scheduler, r *router.Router, runService RunStarter) *APIServer {
+	workflowHandler := NewWorkflowHandler(db)
+	workflowHandler.SetRunService(runService)
+
 	apiServer := &APIServer{
 		scheduler:       scheduler,
-		workflowHandler: NewWorkflowHandler(db),
+		workflowHandler: workflowHandler,
 		staticHandler:   NewStaticHandler(),
 	}
 

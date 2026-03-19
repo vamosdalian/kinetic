@@ -20,7 +20,7 @@ import { Play, Save, LoaderCircle, Plus, CloudCheck, Settings } from "lucide-rea
 import { useReactFlow } from "@xyflow/react";
 import { ReactFlowProvider } from "@xyflow/react";
 import { v7 as uuidv7 } from "uuid";
-import { useParams, useSearchParams } from "react-router-dom";
+import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { defaultTaskNode, type WorkflowDetail, type WorkflowData, type TaskNode } from "./types";
 import { apiClient } from "@/lib/api";
 import { cn } from "@/lib/utils";
@@ -42,6 +42,7 @@ import { toast } from "sonner";
 function WorkflowGraph() {
   // URL 中的 workflowId
   const { workflowId: urlWorkflowId } = useParams();
+  const navigate = useNavigate();
   // URL 查询参数，action=create 表示新建，否则为更新
   const [searchParams] = useSearchParams();
   const action = searchParams.get("action");
@@ -344,6 +345,30 @@ function WorkflowGraph() {
     }
   }, [workflowId, workflowData, taskNodes, edges, markClean]);
 
+  const onRun = React.useCallback(async () => {
+    if (!workflowId) {
+      toast.error("Workflow ID is missing");
+      return;
+    }
+
+    setRunning(true);
+    try {
+      const response = await apiClient<{ run_id: string }>(`/api/workflows/${workflowId}/run`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+      });
+      toast.success("Workflow run started successfully");
+      navigate(`/record/${response.run_id}`);
+    } catch (error) {
+      toast.error("Failed to start workflow run");
+      console.error("Error running workflow:", error);
+    } finally {
+      setRunning(false);
+    }
+  }, [workflowId, navigate]);
+
   // 显示加载状态
   if (loading) {
     return (
@@ -413,7 +438,7 @@ function WorkflowGraph() {
               Running...
             </Button>
           ) : (
-            <Button variant="default" onClick={() => setRunning(true)} disabled={isDirty}>
+            <Button variant="default" onClick={onRun} disabled={isDirty}>
               <Play />
               Run Workflow
             </Button>

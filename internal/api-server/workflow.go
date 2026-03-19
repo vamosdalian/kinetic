@@ -13,11 +13,20 @@ import (
 )
 
 type WorkflowHandler struct {
-	db database.Database
+	db         database.Database
+	runService RunStarter
 }
 
 func NewWorkflowHandler(db database.Database) *WorkflowHandler {
 	return &WorkflowHandler{db: db}
+}
+
+type RunStarter interface {
+	StartWorkflowRun(workflowID string) (string, error)
+}
+
+func (h *WorkflowHandler) SetRunService(runService RunStarter) {
+	h.runService = runService
 }
 
 type PageQuerys struct {

@@ -16,6 +16,8 @@ func NewSqliteDB(dbPath string) (*SqliteDB, error) {
 	if err != nil {
 		return nil, err
 	}
+	db.SetMaxOpenConns(1)
+	db.SetMaxIdleConns(1)
 	s := &SqliteDB{
 		dbPath: dbPath,
 		db:     db,

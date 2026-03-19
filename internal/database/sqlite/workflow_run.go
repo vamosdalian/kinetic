@@ -14,6 +14,16 @@ func (s *SqliteDB) CreateWorkflowRun(workflowID string, runID string) error {
 		return err
 	}
 
+	tasks, err := s.ListTasks(workflowID)
+	if err != nil {
+		return err
+	}
+
+	edges, err := s.ListEdges(workflowID)
+	if err != nil {
+		return err
+	}
+
 	now := time.Now().Format("2006-01-02 15:04:05")
 
 	tx, err := s.db.Begin()
@@ -32,12 +42,6 @@ func (s *SqliteDB) CreateWorkflowRun(workflowID string, runID string) error {
 		return err
 	}
 
-	// Create TaskRuns for each task in the workflow
-	tasks, err := s.ListTasks(workflowID)
-	if err != nil {
-		return err
-	}
-
 	for _, task := range tasks {
 		_, err = tx.Exec(`
 			INSERT INTO task_runs (
@@ -50,12 +54,6 @@ func (s *SqliteDB) CreateWorkflowRun(workflowID string, runID string) error {
 		if err != nil {
 			return err
 		}
-	}
-
-	// Create EdgeRuns for each edge in the workflow
-	edges, err := s.ListEdges(workflowID)
-	if err != nil {
-		return err
 	}
 
 	for _, edge := range edges {
@@ -120,6 +118,7 @@ func (s *SqliteDB) GetTaskRuns(runID string) ([]entity.TaskRunEntity, error) {
 		task_type, task_config, task_position, task_node_type, 
 		status, created_at, started_at, finished_at, exit_code, output 
 		FROM task_runs WHERE run_id = ?
+		ORDER BY task_id ASC
 	`, runID)
 	if err != nil {
 		return nil, err
@@ -153,6 +152,7 @@ func (s *SqliteDB) GetEdgeRuns(runID string) ([]entity.EdgeRunEntity, error) {
 		SELECT run_id, edge_id, workflow_id, edge_source, edge_target, 
 		edge_source_handle, edge_target_handle, created_at 
 		FROM edge_runs WHERE run_id = ?
+		ORDER BY edge_id ASC
 	`, runID)
 	if err != nil {
 		return nil, err
@@ -181,7 +181,9 @@ func (s *SqliteDB) ListWorkflowRuns(offset int, limit int) ([]entity.WorkflowRun
 	rows, err := s.db.Query(`
 		SELECT run_id, workflow_id, workflow_name, workflow_description, workflow_version, 
 		status, created_at, started_at, finished_at 
-		FROM workflow_runs LIMIT ? OFFSET ?
+		FROM workflow_runs
+		ORDER BY datetime(created_at) DESC, run_id DESC
+		LIMIT ? OFFSET ?
 	`, limit, offset)
 	if err != nil {
 		return nil, err
@@ -205,4 +207,49 @@ func (s *SqliteDB) ListWorkflowRuns(offset int, limit int) ([]entity.WorkflowRun
 		runs = append(runs, run)
 	}
 	return runs, nil
+}
+
+func (s *SqliteDB) MarkWorkflowRunRunning(runID string) error {
+	_, err := s.db.Exec(`
+		UPDATE workflow_runs
+		SET status = 'running', started_at = DATETIME('now'), finished_at = NULL
+		WHERE run_id = ?
+	`, runID)
+	return err
+}
+
+func (s *SqliteDB) FinishWorkflowRun(runID string, status string) error {
+	_, err := s.db.Exec(`
+		UPDATE workflow_runs
+		SET status = ?, finished_at = DATETIME('now')
+		WHERE run_id = ?
+	`, status, runID)
+	return err
+}
+
+func (s *SqliteDB) MarkTaskRunRunning(runID string, taskID string) error {
+	_, err := s.db.Exec(`
+		UPDATE task_runs
+		SET status = 'running', started_at = DATETIME('now'), finished_at = NULL
+		WHERE run_id = ? AND task_id = ?
+	`, runID, taskID)
+	return err
+}
+
+func (s *SqliteDB) FinishTaskRun(runID string, taskID string, status string, exitCode int, output string) error {
+	_, err := s.db.Exec(`
+		UPDATE task_runs
+		SET status = ?, finished_at = DATETIME('now'), exit_code = ?, output = ?
+		WHERE run_id = ? AND task_id = ?
+	`, status, exitCode, output, runID, taskID)
+	return err
+}
+
+func (s *SqliteDB) SkipPendingTaskRuns(runID string, output string) error {
+	_, err := s.db.Exec(`
+		UPDATE task_runs
+		SET status = 'skipped', finished_at = DATETIME('now'), output = ?
+		WHERE run_id = ? AND status = 'pending'
+	`, output, runID)
+	return err
 }

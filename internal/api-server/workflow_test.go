@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
-	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -19,14 +19,13 @@ import (
 )
 
 func setupTestDB(t *testing.T) database.Database {
-	dbPath := "test_workflow_" + uuid.New().String() + ".db"
+	dbPath := filepath.Join(t.TempDir(), "test_workflow_"+uuid.New().String()+".db")
 	db, err := sqlite.NewSqliteDB(dbPath)
 	if err != nil {
 		t.Fatalf("Failed to create test database: %v", err)
 	}
 	t.Cleanup(func() {
-		db.Close()
-		os.Remove(dbPath)
+		_ = db.Close()
 	})
 	return db
 }

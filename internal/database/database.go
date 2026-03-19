@@ -33,5 +33,9 @@ type Database interface {
 	GetTaskRuns(runID string) ([]entity.TaskRunEntity, error)
 	GetEdgeRuns(runID string) ([]entity.EdgeRunEntity, error)
 	ListWorkflowRuns(offset int, limit int) ([]entity.WorkflowRunEntity, error)
-	// UpdateWorkflowRunStatus(runID string, status string) error
+	MarkWorkflowRunRunning(runID string) error
+	FinishWorkflowRun(runID string, status string) error
+	MarkTaskRunRunning(runID string, taskID string) error
+	FinishTaskRun(runID string, taskID string, status string, exitCode int, output string) error
+	SkipPendingTaskRuns(runID string, output string) error
 }

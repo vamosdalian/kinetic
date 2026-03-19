@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"github.com/google/uuid"
 	"github.com/vamosdalian/kinetic/internal/model/dto"
 )
 
@@ -17,8 +16,12 @@ func (h *WorkflowHandler) Run(c *gin.Context) {
 		return
 	}
 
-	runID := uuid.New().String()
-	err := h.db.CreateWorkflowRun(workflowID, runID)
+	if h.runService == nil {
+		ResponseError(c, http.StatusInternalServerError, ErrorCodeInternalError, "Run service is not configured")
+		return
+	}
+
+	runID, err := h.runService.StartWorkflowRun(workflowID)
 	if err != nil {
 		ResponseError(c, http.StatusInternalServerError, ErrorCodeInternalError, err.Error())
 		return
@@ -126,6 +129,7 @@ func (h *WorkflowHandler) GetRun(c *gin.Context) {
 			StartedAt:   safeFormatTime(t.StartedAt),
 			FinishedAt:  safeFormatTime(t.FinishedAt),
 			ExitCode:    t.ExitCode,
+			Output:      t.Output,
 		}
 	}
 

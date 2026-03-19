@@ -13,6 +13,11 @@ type Executor struct {
 	wg             sync.WaitGroup
 }
 
+type TaskResult struct {
+	Output   string
+	ExitCode int
+}
+
 // NewExecutor 创建执行器
 func NewExecutor(maxConcurrency int) *Executor {
 	if maxConcurrency <= 0 {
@@ -28,28 +33,29 @@ func NewExecutor(maxConcurrency int) *Executor {
 type Task interface {
 	ID() string
 	Type() string
-	Execute(ctx context.Context) error
+	Execute(ctx context.Context) (TaskResult, error)
 }
 
 // Execute 执行任务
-func (e *Executor) Execute(ctx context.Context, task Task) error {
+func (e *Executor) Execute(ctx context.Context, task Task) (TaskResult, error) {
 	// 获取信号量
 	select {
 	case e.semaphore <- struct{}{}:
 	case <-ctx.Done():
-		return ctx.Err()
+		return TaskResult{}, ctx.Err()
 	}
 	defer func() { <-e.semaphore }()
 
 	log.Printf("Executing task %s (type: %s)", task.ID(), task.Type())
 
-	if err := task.Execute(ctx); err != nil {
+	result, err := task.Execute(ctx)
+	if err != nil {
 		log.Printf("Task %s failed: %v", task.ID(), err)
-		return err
+		return result, err
 	}
 
 	log.Printf("Task %s completed", task.ID())
-	return nil
+	return result, nil
 }
 
 // ExecuteAsync 异步执行任务
@@ -57,7 +63,7 @@ func (e *Executor) ExecuteAsync(ctx context.Context, task Task) {
 	e.wg.Add(1)
 	go func() {
 		defer e.wg.Done()
-		e.Execute(ctx, task)
+		_, _ = e.Execute(ctx, task)
 	}()
 }
 
@@ -65,4 +71,3 @@ func (e *Executor) ExecuteAsync(ctx context.Context, task Task) {
 func (e *Executor) Wait() {
 	e.wg.Wait()
 }
-

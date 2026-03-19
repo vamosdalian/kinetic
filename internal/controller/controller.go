@@ -12,6 +12,7 @@ import (
 	"github.com/vamosdalian/kinetic/internal/database/sqlite"
 	"github.com/vamosdalian/kinetic/internal/router"
 	"github.com/vamosdalian/kinetic/internal/scheduler"
+	"github.com/vamosdalian/kinetic/internal/service"
 )
 
 type Controller struct {
@@ -31,8 +32,9 @@ func NewController(cfg *config.Config) (*Controller, error) {
 	r := router.New(router.WithAddr(cfg.APIAddr()))
 
 	sched := scheduler.NewScheduler()
+	runService := service.NewRunService(db, cfg.Worker.MaxConcurrency)
 
-	apiServer := apiserver.NewAPIServer(db, sched, r)
+	apiServer := apiserver.NewAPIServer(db, sched, r, runService)
 
 	return &Controller{
 		cfg:       cfg,

@@ -97,7 +97,7 @@ func (s *SqliteDB) DeleteWorkflow(id string) error {
 }
 
 func (s *SqliteDB) ListTasks(workflowID string) ([]entity.TaskEntity, error) {
-	rows, err := s.db.Query("SELECT id, workflow_id, name, type, description, config, position, node_type FROM tasks WHERE workflow_id = ?", workflowID)
+	rows, err := s.db.Query("SELECT id, workflow_id, name, type, description, config, position, node_type FROM tasks WHERE workflow_id = ? ORDER BY id ASC", workflowID)
 	if err != nil {
 		return nil, err
 	}
@@ -152,7 +152,7 @@ func (s *SqliteDB) DeleteTask(id string) error {
 }
 
 func (s *SqliteDB) ListEdges(workflowID string) ([]entity.EdgeEntity, error) {
-	rows, err := s.db.Query("SELECT id, workflow_id, source, target, source_handle, target_handle FROM edges WHERE workflow_id = ?", workflowID)
+	rows, err := s.db.Query("SELECT id, workflow_id, source, target, source_handle, target_handle FROM edges WHERE workflow_id = ? ORDER BY id ASC", workflowID)
 	if err != nil {
 		return nil, err
 	}
