@@ -1,0 +1,126 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build ${{ matrix.goos }}-${{ matrix.goarch }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - goos: darwin
+            goarch: amd64
+            asset_name: kinetic_${{ github.ref_name }}_darwin_x86_64.tar.gz
+            binary_name: kinetic
+          - goos: darwin
+            goarch: arm64
+            asset_name: kinetic_${{ github.ref_name }}_darwin_arm64.tar.gz
+            binary_name: kinetic
+          - goos: linux
+            goarch: amd64
+            asset_name: kinetic_${{ github.ref_name }}_linux_x86_64.tar.gz
+            binary_name: kinetic
+          - goos: linux
+            goarch: arm64
+            asset_name: kinetic_${{ github.ref_name }}_linux_arm64.tar.gz
+            binary_name: kinetic
+          - goos: windows
+            goarch: amd64
+            asset_name: kinetic_${{ github.ref_name }}_windows_x86_64.zip
+            binary_name: kinetic.exe
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Build frontend assets
+        working-directory: web
+        run: |
+          npm ci
+          npm run build
+
+      - name: Build binary
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          CGO_ENABLED: 0
+          VERSION: ${{ github.ref_name }}
+          COMMIT: ${{ github.sha }}
+        run: |
+          DATE=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+          mkdir -p dist
+          go build \
+            -trimpath \
+            -ldflags "-s -w -X main.version=${VERSION} -X main.commit=${COMMIT} -X main.date=${DATE}" \
+            -o "dist/${{ matrix.binary_name }}" \
+            ./cmd/kinetic
+
+      - name: Package unix artifact
+        if: matrix.goos != 'windows'
+        run: |
+          tar -C dist -czf "dist/${{ matrix.asset_name }}" "${{ matrix.binary_name }}"
+
+      - name: Package windows artifact
+        if: matrix.goos == 'windows'
+        run: |
+          cd dist
+          zip -9 "${{ matrix.asset_name }}" "${{ matrix.binary_name }}"
+
+      - name: Upload packaged artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.asset_name }}
+          path: dist/${{ matrix.asset_name }}
+          if-no-files-found: error
+
+  release:
+    name: Publish Release
+    runs-on: ubuntu-latest
+    needs: build
+
+    steps:
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: release-assets
+
+      - name: Flatten artifacts and generate checksums
+        run: |
+          mkdir -p release-dist
+          find release-assets -maxdepth 2 -type f -exec mv {} release-dist/ \;
+          cd release-dist
+          sha256sum * > checksums.txt
+
+      - name: Create GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: ${{ github.ref_name }}
+          prerelease: ${{ contains(github.ref_name, '-') }}
+          generate_release_notes: true
+          files: |
+            release-dist/*
