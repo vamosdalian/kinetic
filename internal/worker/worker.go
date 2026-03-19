@@ -5,8 +5,11 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"log"
+	"net"
 	"net/http"
 	"strings"
 	"sync"
@@ -81,7 +84,11 @@ func (w *Worker) Run() error {
 			case <-w.stopCh:
 				return nil
 			default:
-				log.Printf("worker stream disconnected: %v", err)
+				if isExpectedStreamDisconnect(err) {
+					log.Printf("worker stream closed, reconnecting: %v", err)
+				} else {
+					log.Printf("worker stream disconnected: %v", err)
+				}
 			}
 		}
 
@@ -464,4 +471,11 @@ func taskKey(runID string, taskID string) string {
 
 func errorsIsDeadline(ctx context.Context) bool {
 	return ctx.Err() == context.DeadlineExceeded
+}
+
+func isExpectedStreamDisconnect(err error) bool {
+	return errors.Is(err, io.EOF) ||
+		errors.Is(err, io.ErrUnexpectedEOF) ||
+		errors.Is(err, context.Canceled) ||
+		errors.Is(err, net.ErrClosed)
 }

@@ -152,6 +152,7 @@ func (h *WorkflowHandler) RunEvents(c *gin.Context) {
 	c.Writer.Header().Set("Cache-Control", "no-cache")
 	c.Writer.Header().Set("Connection", "keep-alive")
 	c.Writer.Header().Set("X-Accel-Buffering", "no")
+	disableStreamingWriteDeadline(c)
 
 	writeSSEEvent(c, "snapshot", snapshot)
 	if isTerminalRunStatus(snapshot.Status) {
@@ -262,6 +263,11 @@ func writeSSEEvent(c *gin.Context, event string, payload any) {
 	_, _ = fmt.Fprintf(c.Writer, "event: %s\n", event)
 	_, _ = fmt.Fprintf(c.Writer, "data: %s\n\n", data)
 	c.Writer.Flush()
+}
+
+func disableStreamingWriteDeadline(c *gin.Context) {
+	controller := http.NewResponseController(c.Writer)
+	_ = controller.SetWriteDeadline(time.Time{})
 }
 
 func isTerminalRunStatus(status string) bool {
