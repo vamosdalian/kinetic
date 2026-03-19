@@ -1,3 +1,4 @@
+import * as React from "react";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import {
@@ -11,7 +12,17 @@ import { Label } from "@/components/ui/label";
 import { ShellEditor } from "./shell_editor";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
-import type { TaskNode, TaskType, ShellConfig } from "./types";
+import {
+  createTaskConfig,
+  type ConditionConfig,
+  type HttpConfig,
+  type PythonConfig,
+  type ShellConfig,
+  type TaskConfig,
+  type TaskNode,
+  type TaskPolicy,
+  type TaskType,
+} from "./types";
 
 interface TaskFormProps {
   taskId: string;
@@ -28,12 +39,36 @@ export function Taskform({ taskId, node, onUpdate }: TaskFormProps) {
     );
   }
 
+  const config = React.useMemo(
+    () => (node.config ?? createTaskConfig(node.type)) as TaskConfig,
+    [node.config, node.type]
+  );
+
+  const updateConfig = React.useCallback(
+    (nextConfig: TaskConfig) => {
+      onUpdate(taskId, { config: nextConfig });
+    },
+    [onUpdate, taskId]
+  );
+
+  const updatePolicy = React.useCallback(
+    (field: keyof TaskPolicy, value: string) => {
+      const nextValue = value === "" ? undefined : Number(value);
+      updateConfig({
+        ...config,
+        [field]: Number.isFinite(nextValue) ? nextValue : undefined,
+      });
+    },
+    [config, updateConfig]
+  );
+
   return (
     <div className="grid gap-6 m-4">
       <div className="grid gap-2">
         <h1 className="text-xl">Task Node</h1>
-        <Separator style={{ margin: "0" }}></Separator>
+        <Separator style={{ margin: "0" }} />
       </div>
+
       <div className="grid gap-2">
         <Label htmlFor="task_name">Task Name</Label>
         <Input
@@ -45,6 +80,7 @@ export function Taskform({ taskId, node, onUpdate }: TaskFormProps) {
           }}
         />
       </div>
+
       <div className="grid gap-2">
         <Label htmlFor="description">Description</Label>
         <Textarea
@@ -56,23 +92,13 @@ export function Taskform({ taskId, node, onUpdate }: TaskFormProps) {
           }}
         />
       </div>
+
       <div className="grid gap-2">
         <Label htmlFor="task_type">Task Type</Label>
         <Select
           value={node.type}
           onValueChange={(value: TaskType) => {
-            // 切换类型时，重置 config
-            let newConfig = {};
-            if (value === "shell") {
-              newConfig = { script: "" } as ShellConfig;
-            } else if (value === "http") {
-              newConfig = { url: "", method: "GET" };
-            } else if (value === "python") {
-              newConfig = { script: "", requirements: [] };
-            } else if (value === "condition") {
-              newConfig = { expression: "" };
-            }
-            onUpdate(taskId, { type: value, config: newConfig });
+            onUpdate(taskId, { type: value, config: createTaskConfig(value) });
           }}
         >
           <SelectTrigger id="task_type" className="w-full">
@@ -87,14 +113,13 @@ export function Taskform({ taskId, node, onUpdate }: TaskFormProps) {
         </Select>
       </div>
 
-      {/* Shell Config */}
       {node.type === "shell" && (
         <div className="grid gap-2">
           <Label>Script</Label>
           <ShellEditor
-            value={node.config?.script}
-            onChange={(val) =>
-              onUpdate(taskId, { config: { ...node.config, script: val } })
+            value={(config as ShellConfig).script}
+            onChange={(value) =>
+              updateConfig({ ...(config as ShellConfig), script: value })
             }
           >
             <Button variant="outline" className="w-full">
@@ -104,7 +129,6 @@ export function Taskform({ taskId, node, onUpdate }: TaskFormProps) {
         </div>
       )}
 
-      {/* HTTP Config */}
       {node.type === "http" && (
         <>
           <div className="grid gap-2">
@@ -112,21 +136,21 @@ export function Taskform({ taskId, node, onUpdate }: TaskFormProps) {
             <Input
               id="http_url"
               placeholder="https://api.example.com/endpoint"
-              value={node.config?.url || ""}
+              value={(config as HttpConfig).url || ""}
               onChange={(e) => {
-                onUpdate(taskId, {
-                  config: { ...node.config, url: e.target.value },
-                });
+                updateConfig({ ...(config as HttpConfig), url: e.target.value });
               }}
             />
           </div>
+
           <div className="grid gap-2">
             <Label htmlFor="http_method">Method</Label>
             <Select
-              value={node.config?.method || "GET"}
+              value={(config as HttpConfig).method || "GET"}
               onValueChange={(value) => {
-                onUpdate(taskId, {
-                  config: { ...node.config, method: value },
+                updateConfig({
+                  ...(config as HttpConfig),
+                  method: value as "GET" | "POST" | "PUT" | "DELETE",
                 });
               }}
             >
@@ -141,44 +165,101 @@ export function Taskform({ taskId, node, onUpdate }: TaskFormProps) {
               </SelectContent>
             </Select>
           </div>
+
+          <div className="grid gap-2">
+            <Label htmlFor="http_body">Body</Label>
+            <Textarea
+              id="http_body"
+              placeholder='{"hello":"world"}'
+              value={(config as HttpConfig).body || ""}
+              onChange={(e) => {
+                updateConfig({ ...(config as HttpConfig), body: e.target.value });
+              }}
+              className="font-mono min-h-[120px]"
+            />
+          </div>
         </>
       )}
 
-      {/* Python Config */}
       {node.type === "python" && (
         <div className="grid gap-2">
           <Label>Python Script</Label>
           <Textarea
             placeholder="Enter Python code..."
-            value={node.config?.script || ""}
+            value={(config as PythonConfig).script || ""}
             onChange={(e) => {
-              onUpdate(taskId, {
-                config: { ...node.config, script: e.target.value },
-              });
+              updateConfig({ ...(config as PythonConfig), script: e.target.value });
             }}
             className="font-mono min-h-[200px]"
           />
         </div>
       )}
 
-      {/* Condition Config */}
       {node.type === "condition" && (
         <div className="grid gap-2">
           <Label htmlFor="condition_expr">Condition Expression</Label>
           <Input
             id="condition_expr"
-            placeholder="e.g., {{ input.status }} == 'success'"
-            value={node.config?.expression || ""}
+            placeholder='e.g., json.ok == true'
+            value={(config as ConditionConfig).expression || ""}
             onChange={(e) => {
-              onUpdate(taskId, {
-                config: { ...node.config, expression: e.target.value },
+              updateConfig({
+                ...(config as ConditionConfig),
+                expression: e.target.value,
               });
             }}
           />
+          <p className="text-xs text-muted-foreground">
+            Supported fields: <code>status</code>, <code>exit_code</code>, <code>output</code>, <code>json</code>, <code>json.field</code>
+          </p>
         </div>
       )}
 
+      <div className="grid gap-3">
+        <div className="grid gap-1">
+          <h2 className="text-sm font-medium">Execution Policy</h2>
+          <p className="text-xs text-muted-foreground">
+            Timeout and retry settings are applied per task run.
+          </p>
+        </div>
+        <div className="grid grid-cols-3 gap-3">
+          <div className="grid gap-2">
+            <Label htmlFor="timeout_seconds">Timeout (s)</Label>
+            <Input
+              id="timeout_seconds"
+              type="number"
+              min="0"
+              placeholder="0"
+              value={config.timeout_seconds ?? ""}
+              onChange={(e) => updatePolicy("timeout_seconds", e.target.value)}
+            />
+          </div>
 
+          <div className="grid gap-2">
+            <Label htmlFor="retry_count">Retry Count</Label>
+            <Input
+              id="retry_count"
+              type="number"
+              min="0"
+              placeholder="0"
+              value={config.retry_count ?? ""}
+              onChange={(e) => updatePolicy("retry_count", e.target.value)}
+            />
+          </div>
+
+          <div className="grid gap-2">
+            <Label htmlFor="retry_backoff_seconds">Retry Backoff (s)</Label>
+            <Input
+              id="retry_backoff_seconds"
+              type="number"
+              min="0"
+              placeholder="0"
+              value={config.retry_backoff_seconds ?? ""}
+              onChange={(e) => updatePolicy("retry_backoff_seconds", e.target.value)}
+            />
+          </div>
+        </div>
+      </div>
     </div>
   );
 }

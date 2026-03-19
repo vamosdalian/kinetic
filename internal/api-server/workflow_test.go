@@ -44,29 +44,26 @@ func TestWorkflowHandler_Save(t *testing.T) {
 		{
 			name:       "成功保存新工作流",
 			workflowID: uuid.New().String(),
-			requestBody: dto.Workflow{
-				Name:        "测试工作流",
-				Description: "这是一个测试工作流",
-				Version:     1,
-				Enable:      true,
-				TaskNodes: []dto.TaskNode{
-					{
-						ID:       uuid.New().String(),
-						Name:     "任务1",
-						Type:     dto.TaskTypeShell,
-						Config:   json.RawMessage(`{"command": "echo hello"}`),
-						Position: dto.Position{X: 100, Y: 200},
-						NodeType: "default",
+			requestBody: func() dto.Workflow {
+				taskID := uuid.New().String()
+				return dto.Workflow{
+					Name:        "测试工作流",
+					Description: "这是一个测试工作流",
+					Version:     1,
+					Enable:      true,
+					TaskNodes: []dto.TaskNode{
+						{
+							ID:       taskID,
+							Name:     "任务1",
+							Type:     dto.TaskTypeShell,
+							Config:   json.RawMessage(`{"script":"echo hello"}`),
+							Position: dto.Position{X: 100, Y: 200},
+							NodeType: "default",
+						},
 					},
-				},
-				Edges: []dto.Edge{
-					{
-						ID:     uuid.New().String(),
-						Source: "start",
-						Target: "task1",
-					},
-				},
-			},
+					Edges: []dto.Edge{},
+				}
+			}(),
 			expectedStatus: http.StatusOK,
 			validateResponse: func(t *testing.T, response *httptest.ResponseRecorder) {
 				var apiResponse APIResponse
@@ -172,6 +169,8 @@ func TestWorkflowHandler_Save_WithTasksAndEdges(t *testing.T) {
 	router.PUT("/api/workflows/:id", handler.Save)
 
 	workflowID := uuid.New().String()
+	task1ID := uuid.New().String()
+	task2ID := uuid.New().String()
 	requestBody := dto.Workflow{
 		Name:        "完整工作流测试",
 		Description: "包含任务和边的完整工作流",
@@ -179,15 +178,15 @@ func TestWorkflowHandler_Save_WithTasksAndEdges(t *testing.T) {
 		Enable:      true,
 		TaskNodes: []dto.TaskNode{
 			{
-				ID:       uuid.New().String(),
+				ID:       task1ID,
 				Name:     "Shell任务",
 				Type:     dto.TaskTypeShell,
-				Config:   json.RawMessage(`{"command": "echo 'Hello World'"}`),
+				Config:   json.RawMessage(`{"script":"echo 'Hello World'"}`),
 				Position: dto.Position{X: 100, Y: 100},
 				NodeType: "default",
 			},
 			{
-				ID:       uuid.New().String(),
+				ID:       task2ID,
 				Name:     "HTTP任务",
 				Type:     dto.TaskTypeHTTP,
 				Config:   json.RawMessage(`{"url": "https://api.example.com", "method": "GET"}`),
@@ -198,8 +197,8 @@ func TestWorkflowHandler_Save_WithTasksAndEdges(t *testing.T) {
 		Edges: []dto.Edge{
 			{
 				ID:     uuid.New().String(),
-				Source: "task1",
-				Target: "task2",
+				Source: task1ID,
+				Target: task2ID,
 			},
 		},
 	}

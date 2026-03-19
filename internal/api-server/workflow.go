@@ -10,22 +10,26 @@ import (
 	"github.com/vamosdalian/kinetic/internal/database"
 	"github.com/vamosdalian/kinetic/internal/model/dto"
 	"github.com/vamosdalian/kinetic/internal/model/entity"
+	workflowcfg "github.com/vamosdalian/kinetic/internal/workflow"
 )
 
 type WorkflowHandler struct {
 	db         database.Database
-	runService RunStarter
+	runService RunManager
 }
 
 func NewWorkflowHandler(db database.Database) *WorkflowHandler {
 	return &WorkflowHandler{db: db}
 }
 
-type RunStarter interface {
+type RunManager interface {
 	StartWorkflowRun(workflowID string) (string, error)
+	RerunWorkflowRun(runID string) (string, error)
+	CancelWorkflowRun(runID string) error
+	SubscribeRunEvents(runID string) (<-chan dto.WorkflowRunEvent, func(), error)
 }
 
-func (h *WorkflowHandler) SetRunService(runService RunStarter) {
+func (h *WorkflowHandler) SetRunService(runService RunManager) {
 	h.runService = runService
 }
 
@@ -141,6 +145,39 @@ func (h *WorkflowHandler) Save(c *gin.Context) {
 	}
 	req.ID = c.Param("id")
 
+	taskEntities := []entity.TaskEntity{}
+	for _, task := range req.TaskNodes {
+		config, _ := task.Config.MarshalJSON()
+		position, _ := json.Marshal(task.Position)
+		taskEntities = append(taskEntities, entity.TaskEntity{
+			ID:          task.ID,
+			WorkflowID:  req.ID,
+			Name:        task.Name,
+			Description: task.Description,
+			Type:        string(task.Type),
+			Config:      string(config),
+			Position:    string(position),
+			NodeType:    task.NodeType,
+		})
+	}
+
+	edgeEntities := []entity.EdgeEntity{}
+	for _, edge := range req.Edges {
+		edgeEntities = append(edgeEntities, entity.EdgeEntity{
+			ID:           edge.ID,
+			WorkflowID:   req.ID,
+			Source:       edge.Source,
+			Target:       edge.Target,
+			SourceHandle: edge.SourceHandle,
+			TargetHandle: edge.TargetHandle,
+		})
+	}
+
+	if err := workflowcfg.ValidateDefinition(taskEntities, edgeEntities); err != nil {
+		ResponseErrorWithDetails(c, http.StatusBadRequest, ErrorCodeInvalidWorkflow, "Workflow validation failed", err.Error())
+		return
+	}
+
 	workflowEntity := entity.WorkflowEntity{
 		ID:          req.ID,
 		Name:        req.Name,
@@ -153,35 +190,21 @@ func (h *WorkflowHandler) Save(c *gin.Context) {
 		return
 	}
 
-	taskEntities := []entity.TaskEntity{}
-	for _, task := range req.TaskNodes {
-		config, _ := task.Config.MarshalJSON()
-		position, _ := json.Marshal(task.Position)
-		taskEntities = append(taskEntities, entity.TaskEntity{
-			ID:         task.ID,
-			WorkflowID: req.ID,
-			Name:       task.Name,
-			Type:       string(task.Type),
-			Config:     string(config),
-			Position:   string(position),
-			NodeType:   task.NodeType,
-		})
+	if err := h.db.DeleteTasks(req.ID); err != nil {
+		ResponseError(c, http.StatusInternalServerError, ErrorCodeInternalError, err.Error())
+		return
 	}
+	if err := h.db.DeleteEdges(req.ID); err != nil {
+		ResponseError(c, http.StatusInternalServerError, ErrorCodeInternalError, err.Error())
+		return
+	}
+
 	_, err = h.db.SaveTasks(taskEntities)
 	if err != nil {
 		ResponseError(c, http.StatusInternalServerError, ErrorCodeInternalError, err.Error())
 		return
 	}
 
-	edgeEntities := []entity.EdgeEntity{}
-	for _, edge := range req.Edges {
-		edgeEntities = append(edgeEntities, entity.EdgeEntity{
-			ID:         edge.ID,
-			WorkflowID: req.ID,
-			Source:     edge.Source,
-			Target:     edge.Target,
-		})
-	}
 	_, err = h.db.SaveEdges(edgeEntities)
 	if err != nil {
 		ResponseError(c, http.StatusInternalServerError, ErrorCodeInternalError, err.Error())

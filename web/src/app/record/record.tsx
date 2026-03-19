@@ -1,15 +1,16 @@
 import * as React from "react";
 import { useNavigate } from "react-router-dom";
-import {
-  type ColumnDef,
-} from "@tanstack/react-table";
+import { type ColumnDef } from "@tanstack/react-table";
 import {
   ArrowUpDown,
-  MoreHorizontal,
   Eye,
+  MoreHorizontal,
+  RotateCcw,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Badge } from "@/components/ui/badge";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -17,27 +18,96 @@ import {
   DropdownMenuLabel,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { apiClient } from "@/lib/api";
 import { CommonTable } from "@/components/common-table";
 import { type WorkflowRunListItem } from "./types";
+import {
+  getRunRowClassName,
+  getStatusBadgeClassName,
+} from "./status";
+import { toast } from "sonner";
+
+const statusOptions = [
+  { value: "all", label: "All Status" },
+  { value: "created", label: "Created" },
+  { value: "running", label: "Running" },
+  { value: "success", label: "Success" },
+  { value: "failed", label: "Failed" },
+  { value: "cancelled", label: "Cancelled" },
+];
 
 export function Record() {
   const navigate = useNavigate();
   const [data, setData] = React.useState<WorkflowRunListItem[]>([]);
+  const [workflowQuery, setWorkflowQuery] = React.useState("");
+  const [runQuery, setRunQuery] = React.useState("");
+  const [statusFilter, setStatusFilter] = React.useState("all");
+  const [rerunningRunId, setRerunningRunId] = React.useState<string | null>(null);
+
+  const fetchRuns = React.useCallback(async () => {
+    try {
+      const runs = await apiClient<WorkflowRunListItem[]>(
+        "/api/workflow_runs?page=1&pageSize=100"
+      );
+      setData(runs);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Failed to load workflow runs");
+    }
+  }, []);
 
   React.useEffect(() => {
-    // Note: Pagination support is available in API but for now we fetch all/defaults
-    apiClient<WorkflowRunListItem[]>("/api/workflow_runs").then((data) => {
-      setData(data);
+    void fetchRuns();
+  }, [fetchRuns]);
+
+  const handleRerun = React.useCallback(
+    async (runID: string) => {
+      setRerunningRunId(runID);
+      try {
+        const response = await apiClient<{ run_id: string }>(
+          `/api/workflow_runs/${runID}/rerun`,
+          {
+            method: "POST",
+          }
+        );
+        toast.success("Workflow run restarted");
+        navigate(`/record/${response.run_id}`);
+      } catch (error) {
+        toast.error(error instanceof Error ? error.message : "Failed to rerun workflow");
+      } finally {
+        setRerunningRunId(null);
+      }
+    },
+    [navigate]
+  );
+
+  const filteredData = React.useMemo(() => {
+    return data.filter((run) => {
+      const workflowMatch = run.name
+        .toLowerCase()
+        .includes(workflowQuery.trim().toLowerCase());
+      const runMatch = run.run_id
+        .toLowerCase()
+        .includes(runQuery.trim().toLowerCase());
+      const statusMatch = statusFilter === "all" || run.status === statusFilter;
+      return workflowMatch && runMatch && statusMatch;
     });
-  }, []);
+  }, [data, runQuery, statusFilter, workflowQuery]);
 
   const columns = React.useMemo<ColumnDef<WorkflowRunListItem>[]>(
     () => [
       {
         accessorKey: "run_id",
         header: "Run ID",
-        cell: ({ row }) => <div className="font-mono text-xs">{row.getValue("run_id")}</div>,
+        cell: ({ row }) => (
+          <div className="font-mono text-xs">{row.getValue("run_id")}</div>
+        ),
       },
       {
         accessorKey: "name",
@@ -54,22 +124,25 @@ export function Record() {
             </Button>
           );
         },
-        cell: ({ row }) => (
-          <div className="capitalize pl-3">{row.getValue("name")}</div>
-        ),
+        cell: ({ row }) => <div className="pl-3">{row.getValue("name")}</div>,
       },
       {
         accessorKey: "version",
         header: "Version",
-        cell: ({ row }) => (
-          <div className="capitalize">{row.getValue("version")}</div>
-        ),
+        cell: ({ row }) => <div>{row.getValue("version")}</div>,
       },
       {
         accessorKey: "status",
         header: "Status",
         cell: ({ row }) => (
-          <div className="capitalize">{row.getValue("status")}</div>
+          <Badge
+            variant="outline"
+            className={`capitalize ${getStatusBadgeClassName(
+              row.getValue("status")
+            )}`}
+          >
+            {row.getValue("status")}
+          </Badge>
         ),
       },
       {
@@ -87,23 +160,17 @@ export function Record() {
             </Button>
           );
         },
-        cell: ({ row }) => (
-          <div className="capitalize pl-3">{row.getValue("create_at")}</div>
-        ),
+        cell: ({ row }) => <div className="pl-3">{row.getValue("create_at")}</div>,
       },
-       {
+      {
         accessorKey: "started_at",
         header: "Started At",
-        cell: ({ row }) => (
-          <div className="capitalize">{row.getValue("started_at")}</div>
-        ),
+        cell: ({ row }) => <div>{row.getValue("started_at") || "-"}</div>,
       },
-       {
+      {
         accessorKey: "finished_at",
         header: "Finished At",
-        cell: ({ row }) => (
-          <div className="capitalize">{row.getValue("finished_at")}</div>
-        ),
+        cell: ({ row }) => <div>{row.getValue("finished_at") || "-"}</div>,
       },
       {
         id: "actions",
@@ -111,6 +178,7 @@ export function Record() {
         enableHiding: false,
         cell: ({ row }) => {
           const run = row.original;
+          const isRerunning = rerunningRunId === run.run_id;
 
           return (
             <div className="flex items-center space-x-1">
@@ -122,6 +190,14 @@ export function Record() {
                 }}
               >
                 <Eye className="h-4 w-4" />
+              </Button>
+              <Button
+                variant="ghost"
+                className="h-8 w-8 p-0"
+                disabled={isRerunning}
+                onClick={() => void handleRerun(run.run_id)}
+              >
+                <RotateCcw className="h-4 w-4" />
               </Button>
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
@@ -137,6 +213,9 @@ export function Record() {
                   >
                     Copy Run ID
                   </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => void handleRerun(run.run_id)}>
+                    Rerun
+                  </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
             </div>
@@ -144,8 +223,45 @@ export function Record() {
         },
       },
     ],
-    [navigate]
+    [handleRerun, navigate, rerunningRunId]
   );
 
-  return <CommonTable columns={columns} data={data} />;
+  return (
+    <CommonTable
+      columns={columns}
+      data={filteredData}
+      getRowClassName={(row) => getRunRowClassName(row.status)}
+      renderToolbarActions={() => (
+        <>
+          <Input
+            className="w-[220px]"
+            placeholder="Search workflow..."
+            value={workflowQuery}
+            onChange={(e) => setWorkflowQuery(e.target.value)}
+          />
+          <Input
+            className="w-[220px]"
+            placeholder="Search run ID..."
+            value={runQuery}
+            onChange={(e) => setRunQuery(e.target.value)}
+          />
+          <Select value={statusFilter} onValueChange={setStatusFilter}>
+            <SelectTrigger className="w-[170px]">
+              <SelectValue placeholder="Filter status" />
+            </SelectTrigger>
+            <SelectContent>
+              {statusOptions.map((option) => (
+                <SelectItem key={option.value} value={option.value}>
+                  {option.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Button variant="outline" onClick={() => void fetchRuns()}>
+            Refresh
+          </Button>
+        </>
+      )}
+    />
+  );
 }

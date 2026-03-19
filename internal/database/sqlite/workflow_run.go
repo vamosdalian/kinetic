@@ -147,6 +147,30 @@ func (s *SqliteDB) GetTaskRuns(runID string) ([]entity.TaskRunEntity, error) {
 	return tasks, nil
 }
 
+func (s *SqliteDB) GetTaskRun(runID string, taskID string) (entity.TaskRunEntity, error) {
+	var task entity.TaskRunEntity
+	var createdAtStr string
+	var startedAtStr, finishedAtStr sql.NullString
+	err := s.db.QueryRow(`
+		SELECT run_id, task_id, workflow_id, task_name, task_description,
+		task_type, task_config, task_position, task_node_type,
+		status, created_at, started_at, finished_at, exit_code, output
+		FROM task_runs WHERE run_id = ? AND task_id = ?
+	`, runID, taskID).Scan(
+		&task.RunID, &task.TaskID, &task.WorkflowID, &task.TaskName, &task.TaskDescription,
+		&task.TaskType, &task.TaskConfig, &task.TaskPosition, &task.TaskNodeType,
+		&task.Status, &createdAtStr, &startedAtStr, &finishedAtStr,
+		&task.ExitCode, &task.Output,
+	)
+	if err != nil {
+		return entity.TaskRunEntity{}, err
+	}
+	task.CreatedAt, _ = parseTime(createdAtStr)
+	task.StartedAt = parseNullableTime(startedAtStr)
+	task.FinishedAt = parseNullableTime(finishedAtStr)
+	return task, nil
+}
+
 func (s *SqliteDB) GetEdgeRuns(runID string) ([]entity.EdgeRunEntity, error) {
 	rows, err := s.db.Query(`
 		SELECT run_id, edge_id, workflow_id, edge_source, edge_target, 
@@ -251,5 +275,23 @@ func (s *SqliteDB) SkipPendingTaskRuns(runID string, output string) error {
 		SET status = 'skipped', finished_at = DATETIME('now'), output = ?
 		WHERE run_id = ? AND status = 'pending'
 	`, output, runID)
+	return err
+}
+
+func (s *SqliteDB) CancelPendingTaskRuns(runID string, output string) error {
+	_, err := s.db.Exec(`
+		UPDATE task_runs
+		SET status = 'cancelled', finished_at = DATETIME('now'), output = ?
+		WHERE run_id = ? AND status = 'pending'
+	`, output, runID)
+	return err
+}
+
+func (s *SqliteDB) AppendTaskRunOutput(runID string, taskID string, chunk string) error {
+	_, err := s.db.Exec(`
+		UPDATE task_runs
+		SET output = COALESCE(output, '') || ?
+		WHERE run_id = ? AND task_id = ?
+	`, chunk, runID, taskID)
 	return err
 }

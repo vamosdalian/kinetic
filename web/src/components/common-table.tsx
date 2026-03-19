@@ -30,6 +30,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { cn } from "@/lib/utils";
 
 interface CommonTableProps<TData, TValue> {
   columns: ColumnDef<TData, TValue>[];
@@ -43,6 +44,7 @@ interface CommonTableProps<TData, TValue> {
 
   // Extra
   renderToolbarActions?: () => React.ReactNode;
+  getRowClassName?: (row: TData) => string | undefined;
 }
 
 export function CommonTable<TData, TValue>({
@@ -53,6 +55,7 @@ export function CommonTable<TData, TValue>({
   onPaginationChange,
   manualPagination = false,
   renderToolbarActions,
+  getRowClassName,
 }: CommonTableProps<TData, TValue>) {
   const [sorting, setSorting] = React.useState<SortingState>([]);
   const [columnFilters, setColumnFilters] = React.useState<ColumnFiltersState>(
@@ -141,6 +144,7 @@ export function CommonTable<TData, TValue>({
                 <TableRow
                   key={row.id}
                   data-state={row.getIsSelected() && "selected"}
+                  className={cn(getRowClassName?.(row.original))}
                 >
                   {row.getVisibleCells().map((cell) => (
                     <TableCell key={cell.id}>

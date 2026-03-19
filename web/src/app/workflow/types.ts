@@ -1,29 +1,49 @@
+import { type Edge } from "@xyflow/react";
+
 // ============ Task Type Configs ============
 
 export type TaskType = "shell" | "http" | "python" | "condition";
 
-export interface ShellConfig {
+export interface TaskPolicy {
+  timeout_seconds?: number;
+  retry_count?: number;
+  retry_backoff_seconds?: number;
+}
+
+export interface ShellConfig extends TaskPolicy {
   script: string;
 }
 
-export interface HttpConfig {
+export interface HttpConfig extends TaskPolicy {
   url: string;
   method: "GET" | "POST" | "PUT" | "DELETE";
   headers?: Record<string, string>;
   body?: string;
 }
 
-export interface PythonConfig {
+export interface PythonConfig extends TaskPolicy {
   script: string;
   requirements?: string[];
 }
 
-export interface ConditionConfig {
+export interface ConditionConfig extends TaskPolicy {
   expression: string;
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export type TaskConfig = any;
+export type TaskConfig = ShellConfig | HttpConfig | PythonConfig | ConditionConfig;
+
+export function createTaskConfig(type: TaskType): TaskConfig {
+  switch (type) {
+    case "shell":
+      return { script: "" };
+    case "http":
+      return { url: "", method: "GET" };
+    case "python":
+      return { script: "", requirements: [] };
+    case "condition":
+      return { expression: "" };
+  }
+}
 
 // ============ TaskNode (merged Node + Task) ============
 
@@ -45,7 +65,7 @@ export const defaultTaskNode: Omit<TaskNode, "id" | "position"> = {
   name: "New Task",
   description: "",
   type: "shell",
-  config: { script: "" } as ShellConfig,
+  config: createTaskConfig("shell"),
   nodeType: "baseNodeFull",
 };
 
@@ -57,8 +77,6 @@ export interface WorkflowData {
 }
 
 // ============ Workflow Detail (API response) ============
-
-import { type Edge } from "@xyflow/react";
 
 export interface WorkflowDetail {
   id: string;

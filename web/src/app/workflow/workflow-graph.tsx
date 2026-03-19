@@ -38,6 +38,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { useBlocker } from "react-router-dom";
 import { toast } from "sonner";
+import { validateWorkflowDefinition } from "./validation";
 
 function WorkflowGraph() {
   // URL 中的 workflowId
@@ -211,7 +212,6 @@ function WorkflowGraph() {
     setLoading(true);
     try {
       const data = await apiClient<WorkflowDetail>(`/api/workflows/${id}`);
-      console.log("Workflow loaded:", data);
       loadWorkflowData(data);
       // 加载完成后调整视图以适应所有节点
       setTimeout(() => {
@@ -225,7 +225,6 @@ function WorkflowGraph() {
   }, [loadWorkflowData, fitView]);
 
   React.useEffect(() => {
-    console.log("Workflow ID from URL:", urlWorkflowId, "action:", action);
     if (!isReady || !urlWorkflowId) {
       return;
     }
@@ -314,6 +313,12 @@ function WorkflowGraph() {
   }, [setSelectedTaskId]);
 
   const onSave = React.useCallback(async () => {
+    const validation = validateWorkflowDefinition(taskNodes, edges);
+    if (!validation.valid) {
+      toast.error(validation.errors[0] || "Workflow validation failed");
+      return;
+    }
+
     setSaving(true);
 
     try {
@@ -323,10 +328,7 @@ function WorkflowGraph() {
         taskNodes: Object.values(taskNodes),
         edges: edges,
       };
-
-      console.log("Saving workflow...", workflowId, payload);
-
-      const savedWorkflow = await apiClient(`/api/workflows/${workflowId}`, {
+      await apiClient(`/api/workflows/${workflowId}`, {
         method: "PUT",
         headers: {
           "Content-Type": "application/json",
@@ -334,12 +336,10 @@ function WorkflowGraph() {
         body: JSON.stringify(payload),
       });
 
-      console.log("Workflow saved:", savedWorkflow);
       toast.success("Workflow saved successfully");
       markClean();
     } catch (error) {
-      toast.error("Failed to save workflow");
-      console.error("Error saving workflow:", error);
+      toast.error(error instanceof Error ? error.message : "Failed to save workflow");
     } finally {
       setSaving(false);
     }
@@ -362,8 +362,7 @@ function WorkflowGraph() {
       toast.success("Workflow run started successfully");
       navigate(`/record/${response.run_id}`);
     } catch (error) {
-      toast.error("Failed to start workflow run");
-      console.error("Error running workflow:", error);
+      toast.error(error instanceof Error ? error.message : "Failed to start workflow run");
     } finally {
       setRunning(false);
     }

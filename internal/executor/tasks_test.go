@@ -18,7 +18,7 @@ func TestShellTaskSuccess(t *testing.T) {
 	})
 	assert.NoError(t, err)
 
-	result, err := task.Execute(context.Background())
+	result, err := task.Execute(context.Background(), nil)
 	assert.NoError(t, err)
 	assert.Equal(t, 0, result.ExitCode)
 	assert.Equal(t, "hello", result.Output)
@@ -32,7 +32,7 @@ func TestShellTaskFailure(t *testing.T) {
 	})
 	assert.NoError(t, err)
 
-	result, err := task.Execute(context.Background())
+	result, err := task.Execute(context.Background(), nil)
 	assert.Error(t, err)
 	assert.Equal(t, 3, result.ExitCode)
 }
@@ -48,7 +48,7 @@ func TestShellTaskTimeout(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
 	defer cancel()
 
-	_, err = task.Execute(ctx)
+	_, err = task.Execute(ctx, nil)
 	assert.Error(t, err)
 	assert.ErrorIs(t, ctx.Err(), context.DeadlineExceeded)
 }
@@ -68,7 +68,7 @@ func TestHTTPTaskSuccess(t *testing.T) {
 	})
 	assert.NoError(t, err)
 
-	result, err := task.Execute(context.Background())
+	result, err := task.Execute(context.Background(), nil)
 	assert.NoError(t, err)
 	assert.Equal(t, 200, result.ExitCode)
 	assert.Contains(t, result.Output, "HTTP 200")
@@ -89,7 +89,7 @@ func TestHTTPTaskFailureStatus(t *testing.T) {
 	})
 	assert.NoError(t, err)
 
-	result, err := task.Execute(context.Background())
+	result, err := task.Execute(context.Background(), nil)
 	assert.Error(t, err)
 	assert.Equal(t, 502, result.ExitCode)
 	assert.Contains(t, result.Output, "bad gateway")
@@ -103,7 +103,7 @@ func TestHTTPTaskConnectionFailure(t *testing.T) {
 	})
 	assert.NoError(t, err)
 
-	result, err := task.Execute(context.Background())
+	result, err := task.Execute(context.Background(), nil)
 	assert.Error(t, err)
 	assert.Equal(t, -1, result.ExitCode)
 }

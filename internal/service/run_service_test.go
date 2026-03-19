@@ -1,6 +1,7 @@
 package service
 
 import (
+	"path"
 	"path/filepath"
 	"testing"
 	"time"
@@ -264,5 +265,158 @@ func TestRunService_CycleFailsRun(t *testing.T) {
 			assert.Equal(t, "skipped", taskRun.Status)
 			assert.Contains(t, taskRun.Output, "workflow graph is invalid")
 		}
+	}
+}
+
+func TestRunService_CancelWorkflowRun(t *testing.T) {
+	db := setupRunServiceDB(t)
+	service := NewRunService(db, 2)
+
+	taskID := uuid.New().String()
+	workflowID := seedWorkflow(t, db, []entity.TaskEntity{
+		{
+			ID:       taskID,
+			Name:     "long-task",
+			Type:     "shell",
+			Config:   `{"script":"sleep 5"}`,
+			Position: `{"x":0,"y":0}`,
+			NodeType: "baseNodeFull",
+		},
+	}, nil)
+
+	runID, err := service.StartWorkflowRun(workflowID)
+	assert.NoError(t, err)
+
+	time.Sleep(150 * time.Millisecond)
+	err = service.CancelWorkflowRun(runID)
+	assert.NoError(t, err)
+
+	_ = waitForRunStatus(t, db, runID, "cancelled")
+
+	taskRun, err := db.GetTaskRun(runID, taskID)
+	assert.NoError(t, err)
+	assert.Equal(t, "cancelled", taskRun.Status)
+}
+
+func TestRunService_RetryEventuallySucceeds(t *testing.T) {
+	db := setupRunServiceDB(t)
+	service := NewRunService(db, 2)
+
+	marker := path.Join(t.TempDir(), "retry-marker")
+	taskID := uuid.New().String()
+	workflowID := seedWorkflow(t, db, []entity.TaskEntity{
+		{
+			ID:       taskID,
+			Name:     "retry-task",
+			Type:     "shell",
+			Config:   `{"script":"if [ -f '` + marker + `' ]; then printf 'ok'; else touch '` + marker + `'; printf 'fail'; exit 1; fi","retry_count":1}`,
+			Position: `{"x":0,"y":0}`,
+			NodeType: "baseNodeFull",
+		},
+	}, nil)
+
+	runID, err := service.StartWorkflowRun(workflowID)
+	assert.NoError(t, err)
+
+	_ = waitForRunStatus(t, db, runID, "success")
+
+	taskRun, err := db.GetTaskRun(runID, taskID)
+	assert.NoError(t, err)
+	assert.Equal(t, "success", taskRun.Status)
+	assert.Contains(t, taskRun.Output, "[retry 1/1]")
+	assert.Contains(t, taskRun.Output, "ok")
+}
+
+func TestRunService_TimeoutFailsTask(t *testing.T) {
+	db := setupRunServiceDB(t)
+	service := NewRunService(db, 2)
+
+	taskID := uuid.New().String()
+	workflowID := seedWorkflow(t, db, []entity.TaskEntity{
+		{
+			ID:       taskID,
+			Name:     "timeout-task",
+			Type:     "shell",
+			Config:   `{"script":"sleep 2","timeout_seconds":1}`,
+			Position: `{"x":0,"y":0}`,
+			NodeType: "baseNodeFull",
+		},
+	}, nil)
+
+	runID, err := service.StartWorkflowRun(workflowID)
+	assert.NoError(t, err)
+
+	_ = waitForRunStatus(t, db, runID, "failed")
+
+	taskRun, err := db.GetTaskRun(runID, taskID)
+	assert.NoError(t, err)
+	assert.Equal(t, "failed", taskRun.Status)
+	assert.Contains(t, taskRun.Output, "Task timed out")
+}
+
+func TestRunService_ConditionRoutesTrueBranch(t *testing.T) {
+	db := setupRunServiceDB(t)
+	service := NewRunService(db, 2)
+
+	rootID := uuid.New().String()
+	conditionID := uuid.New().String()
+	trueID := uuid.New().String()
+	falseID := uuid.New().String()
+
+	workflowID := seedWorkflow(t, db, []entity.TaskEntity{
+		{
+			ID:       rootID,
+			Name:     "root",
+			Type:     "shell",
+			Config:   `{"script":"printf '{\"ok\":true}'"}`,
+			Position: `{"x":0,"y":0}`,
+			NodeType: "baseNodeFull",
+		},
+		{
+			ID:       conditionID,
+			Name:     "condition",
+			Type:     "condition",
+			Config:   `{"expression":"json.ok == true"}`,
+			Position: `{"x":1,"y":0}`,
+			NodeType: "baseNodeFull",
+		},
+		{
+			ID:       trueID,
+			Name:     "true-branch",
+			Type:     "shell",
+			Config:   `{"script":"printf 'true'"}`,
+			Position: `{"x":2,"y":0}`,
+			NodeType: "baseNodeFull",
+		},
+		{
+			ID:       falseID,
+			Name:     "false-branch",
+			Type:     "shell",
+			Config:   `{"script":"printf 'false'"}`,
+			Position: `{"x":3,"y":0}`,
+			NodeType: "baseNodeFull",
+		},
+	}, []entity.EdgeEntity{
+		{ID: uuid.New().String(), Source: rootID, Target: conditionID},
+		{ID: uuid.New().String(), Source: conditionID, Target: trueID, SourceHandle: "true"},
+		{ID: uuid.New().String(), Source: conditionID, Target: falseID, SourceHandle: "false"},
+	})
+
+	runID, err := service.StartWorkflowRun(workflowID)
+	assert.NoError(t, err)
+
+	_ = waitForRunStatus(t, db, runID, "success")
+
+	taskRuns, err := db.GetTaskRuns(runID)
+	assert.NoError(t, err)
+	if assert.Len(t, taskRuns, 4) {
+		runsByTaskID := make(map[string]entity.TaskRunEntity, len(taskRuns))
+		for _, taskRun := range taskRuns {
+			runsByTaskID[taskRun.TaskID] = taskRun
+		}
+		assert.Equal(t, "success", runsByTaskID[conditionID].Status)
+		assert.Contains(t, runsByTaskID[conditionID].Output, "evaluated to true")
+		assert.Equal(t, "success", runsByTaskID[trueID].Status)
+		assert.Equal(t, "skipped", runsByTaskID[falseID].Status)
 	}
 }

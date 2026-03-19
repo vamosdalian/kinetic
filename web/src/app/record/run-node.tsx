@@ -17,6 +17,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { getStatusBadgeClassName } from "./status";
+import { cn } from "@/lib/utils";
 
 interface NodeData {
   name: string;
@@ -24,6 +25,16 @@ interface NodeData {
   status: string;
   exit_code?: number;
 }
+
+const handleStyle = {
+  width: "8px",
+  height: "8px",
+  background: "#F1F5F9",
+  border: "1px solid #CCD6E3",
+  borderRadius: "50%",
+  zIndex: 10,
+  pointerEvents: "auto" as const,
+};
 
 const TypeIcon = ({ type }: { type: string }) => {
   switch (type) {
@@ -40,6 +51,29 @@ const TypeIcon = ({ type }: { type: string }) => {
   }
 };
 
+const SourceHandles = ({ type }: { type: string }) => {
+  if (type === "condition") {
+    return (
+      <>
+        <Handle
+          type="source"
+          id="true"
+          position={Position.Bottom}
+          style={{ ...handleStyle, left: "38%" }}
+        />
+        <Handle
+          type="source"
+          id="false"
+          position={Position.Bottom}
+          style={{ ...handleStyle, left: "66%" }}
+        />
+      </>
+    );
+  }
+
+  return <Handle type="source" position={Position.Bottom} style={handleStyle} />;
+};
+
 export const RunNode = memo((props: NodeProps) => {
   const { selected } = props;
   const data = React.useMemo(
@@ -48,9 +82,12 @@ export const RunNode = memo((props: NodeProps) => {
   );
 
   return (
-    <BaseNode className={`relative rounded-xs w-48 h-8 transition-all ${
+    <BaseNode
+      className={cn(
+        "relative rounded-xs w-48 h-8 transition-all",
         selected ? "ring ring-blue-500" : ""
-      }`}>
+      )}
+    >
       <BaseNodeContent className="text-xs p-2 flex items-center justify-between w-full h-full">
         <div className="flex items-center gap-2 min-w-0 w-full">
           <TypeIcon type={data.type} />
@@ -79,32 +116,8 @@ export const RunNode = memo((props: NodeProps) => {
         </div>
       </BaseNodeContent>
 
-      <Handle
-        type="source"
-        position={Position.Bottom}
-        style={{
-          width: "8px",
-          height: "8px",
-          background: "#F1F5F9",
-          border: "1px solid #CCD6E3",
-          borderRadius: "50%",
-          zIndex: 10,
-          pointerEvents: "auto",
-        }}
-      />
-      <Handle
-        type="target"
-        position={Position.Top}
-        style={{
-          width: "8px",
-          height: "8px",
-          background: "#F1F5F9",
-          border: "1px solid #CCD6E3",
-          borderRadius: "50%",
-          zIndex: 10,
-          pointerEvents: "auto",
-        }}
-      />
+      <SourceHandles type={data.type} />
+      <Handle type="target" position={Position.Top} style={handleStyle} />
     </BaseNode>
   );
 });

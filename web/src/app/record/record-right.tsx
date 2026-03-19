@@ -9,6 +9,11 @@ interface RecordRightProps {
 }
 
 export function RecordRight({ task }: RecordRightProps) {
+  const exitCode =
+    task.status === "success" || task.status === "failed" || task.status === "cancelled"
+      ? task.exit_code ?? "-"
+      : "-";
+
   return (
     <ScrollArea className="h-full">
       <div className="grid gap-6 m-4">
@@ -43,7 +48,7 @@ export function RecordRight({ task }: RecordRightProps) {
             </div>
             <div className="rounded-lg border bg-muted/30 p-3">
               <div className="text-muted-foreground">Exit Code</div>
-              <div className="font-medium">{task.exit_code}</div>
+              <div className="font-medium">{exitCode}</div>
             </div>
             <div className="rounded-lg border bg-muted/30 p-3">
               <div className="text-muted-foreground">Created</div>

@@ -9,6 +9,17 @@ export interface WorkflowRunListItem {
   finished_at: string;
 }
 
+export interface WorkflowRunEvent {
+  type: "snapshot" | "run_status" | "task_status" | "task_output" | "keepalive";
+  run_id?: string;
+  task_id?: string;
+  status?: string;
+  started_at?: string;
+  finished_at?: string;
+  output?: string;
+  exit_code?: number;
+}
+
 export interface TaskNodeRun {
   run_id: string;
   task_id: string;
@@ -25,7 +36,7 @@ export interface TaskNodeRun {
   created_at: string;
   started_at: string;
   finished_at: string;
-  exit_code: number;
+  exit_code?: number;
   output?: string;
 }
 

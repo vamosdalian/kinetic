@@ -13,7 +13,7 @@ type APIServer struct {
 	staticHandler   *StaticHandler
 }
 
-func NewAPIServer(db database.Database, scheduler *scheduler.Scheduler, r *router.Router, runService RunStarter) *APIServer {
+func NewAPIServer(db database.Database, scheduler *scheduler.Scheduler, r *router.Router, runService RunManager) *APIServer {
 	workflowHandler := NewWorkflowHandler(db)
 	workflowHandler.SetRunService(runService)
 
@@ -56,6 +56,9 @@ func (a *APIServer) RegisterRoutes(engine *gin.Engine) {
 		{
 			runs.GET("", a.workflowHandler.ListRuns)
 			runs.GET("/:run_id", a.workflowHandler.GetRun)
+			runs.GET("/:run_id/events", a.workflowHandler.RunEvents)
+			runs.POST("/:run_id/rerun", a.workflowHandler.Rerun)
+			runs.POST("/:run_id/cancel", a.workflowHandler.Cancel)
 		}
 	}
 }

@@ -8,21 +8,42 @@ import {
   Controls,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
-import { LoaderCircle, ArrowLeft, SquarePen } from "lucide-react";
+import {
+  LoaderCircle,
+  ArrowLeft,
+  SquarePen,
+  RotateCcw,
+  Square,
+} from "lucide-react";
 
 import { apiClient } from "@/lib/api";
 import { cn } from "@/lib/utils";
-import { type WorkflowRunDetail } from "./types";
+import {
+  type WorkflowRunDetail,
+  type WorkflowRunEvent,
+} from "./types";
 import { RunNode } from "./run-node";
 import { RecordRight } from "./record-right";
-import { getStatusBadgeClassName } from "./status";
+import {
+  getStatusBadgeClassName,
+  isTerminalRunStatus,
+} from "./status";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
+import { toast } from "sonner";
 
 const nodeTypes = {
   runNode: RunNode,
 };
+
+function parseEventData<T>(event: MessageEvent<string>) {
+  try {
+    return JSON.parse(event.data) as T;
+  } catch {
+    return null;
+  }
+}
 
 export function RecordDetail() {
   const { runId } = useParams();
@@ -30,10 +51,14 @@ export function RecordDetail() {
   const [loading, setLoading] = React.useState(true);
   const [runData, setRunData] = React.useState<WorkflowRunDetail | null>(null);
   const [selectedTaskId, setSelectedTaskId] = React.useState("");
+  const [rerunning, setRerunning] = React.useState(false);
+  const [cancelling, setCancelling] = React.useState(false);
 
   const fetchRunDetail = React.useCallback(
     async (showLoader: boolean) => {
-      if (!runId) return;
+      if (!runId) {
+        return;
+      }
 
       if (showLoader) {
         setLoading(true);
@@ -42,8 +67,8 @@ export function RecordDetail() {
       try {
         const data = await apiClient<WorkflowRunDetail>(`/api/workflow_runs/${runId}`);
         setRunData(data);
-      } catch (err) {
-        console.error("Failed to fetch run detail:", err);
+      } catch (error) {
+        toast.error(error instanceof Error ? error.message : "Failed to load workflow run");
       } finally {
         if (showLoader) {
           setLoading(false);
@@ -54,22 +79,112 @@ export function RecordDetail() {
   );
 
   React.useEffect(() => {
-    fetchRunDetail(true);
+    void fetchRunDetail(true);
   }, [fetchRunDetail]);
 
+  const applyTaskUpdate = React.useCallback(
+    (
+      taskID: string,
+      updater: (task: WorkflowRunDetail["taskNodes"][number]) => WorkflowRunDetail["taskNodes"][number]
+    ) => {
+      setRunData((prev) => {
+        if (!prev) {
+          return prev;
+        }
+        return {
+          ...prev,
+          taskNodes: prev.taskNodes.map((task) =>
+            task.task_id === taskID ? updater(task) : task
+          ),
+        };
+      });
+    },
+    []
+  );
+
   React.useEffect(() => {
-    if (!runId || !runData || !["created", "running"].includes(runData.status)) {
+    if (!runId || !runData || isTerminalRunStatus(runData.status)) {
       return;
     }
 
-    const timer = window.setInterval(() => {
-      void fetchRunDetail(false);
-    }, 2000);
+    const source = new EventSource(`/api/workflow_runs/${runId}/events`);
+
+    source.addEventListener("snapshot", (event) => {
+      const payload = parseEventData<WorkflowRunDetail>(
+        event as MessageEvent<string>
+      );
+      if (!payload) {
+        return;
+      }
+      setRunData(payload);
+      setLoading(false);
+      if (isTerminalRunStatus(payload.status)) {
+        source.close();
+      }
+    });
+
+    source.addEventListener("run_status", (event) => {
+      const payload = parseEventData<WorkflowRunEvent>(
+        event as MessageEvent<string>
+      );
+      if (!payload?.status) {
+        return;
+      }
+      setRunData((prev) => {
+        if (!prev) {
+          return prev;
+        }
+        return {
+          ...prev,
+          status: payload.status || prev.status,
+          started_at: payload.started_at ?? prev.started_at,
+          finished_at: payload.finished_at ?? prev.finished_at,
+        };
+      });
+      if (isTerminalRunStatus(payload.status)) {
+        source.close();
+      }
+    });
+
+    source.addEventListener("task_status", (event) => {
+      const payload = parseEventData<WorkflowRunEvent>(
+        event as MessageEvent<string>
+      );
+      if (!payload?.task_id) {
+        return;
+      }
+      applyTaskUpdate(payload.task_id, (task) => ({
+        ...task,
+        status: payload.status ?? task.status,
+        started_at: payload.started_at ?? task.started_at,
+        finished_at: payload.finished_at ?? task.finished_at,
+        exit_code: payload.exit_code ?? task.exit_code,
+      }));
+    });
+
+    source.addEventListener("task_output", (event) => {
+      const payload = parseEventData<WorkflowRunEvent>(
+        event as MessageEvent<string>
+      );
+      if (!payload?.task_id || payload.output === undefined) {
+        return;
+      }
+      applyTaskUpdate(payload.task_id, (task) => ({
+        ...task,
+        output: `${task.output || ""}${payload.output || ""}`,
+      }));
+    });
+
+    source.onerror = () => {
+      if (source.readyState === EventSource.CLOSED) {
+        void fetchRunDetail(false);
+      }
+    };
 
     return () => {
-      window.clearInterval(timer);
+      source.close();
     };
-  }, [fetchRunDetail, runData, runId]);
+  }, [applyTaskUpdate, fetchRunDetail, runData?.status, runId]);
 
   const selectedTask = React.useMemo(() => {
     return runData?.taskNodes.find((task) => task.task_id === selectedTaskId) ?? null;
@@ -118,6 +233,47 @@ export function RecordDetail() {
     setSelectedTaskId("");
   }, [selectedTask, selectedTaskId]);
 
+  const handleRerun = React.useCallback(async () => {
+    if (!runData) {
+      return;
+    }
+
+    setRerunning(true);
+    try {
+      const response = await apiClient<{ run_id: string }>(
+        `/api/workflow_runs/${runData.run_id}/rerun`,
+        {
+          method: "POST",
+        }
+      );
+      toast.success("Workflow run restarted");
+      navigate(`/record/${response.run_id}`);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Failed to rerun workflow");
+    } finally {
+      setRerunning(false);
+    }
+  }, [navigate, runData]);
+
+  const handleCancel = React.useCallback(async () => {
+    if (!runData) {
+      return;
+    }
+
+    setCancelling(true);
+    try {
+      await apiClient(`/api/workflow_runs/${runData.run_id}/cancel`, {
+        method: "POST",
+      });
+      toast.success("Workflow run cancellation requested");
+      await fetchRunDetail(false);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Failed to cancel workflow");
+    } finally {
+      setCancelling(false);
+    }
+  }, [fetchRunDetail, runData]);
+
   if (loading) {
     return (
       <div className="flex h-full w-full items-center justify-center">
@@ -163,14 +319,15 @@ export function RecordDetail() {
           </div>
           <div>
             <span className="text-muted-foreground">Started:</span>{" "}
-            <span className="font-medium">{runData.started_at}</span>
+            <span className="font-medium">{runData.started_at || "-"}</span>
           </div>
           <div>
             <span className="text-muted-foreground">Finished:</span>{" "}
-            <span className="font-medium">{runData.finished_at}</span>
+            <span className="font-medium">{runData.finished_at || "-"}</span>
           </div>
         </div>
       </div>
+
       <div className="flex-1 min-h-0 bg-muted/20 relative overflow-hidden">
         <ReactFlow
           nodes={nodes}
@@ -190,8 +347,8 @@ export function RecordDetail() {
 
         <div
           className={cn(
-            "absolute top-4 right-4 z-10 transition-transform duration-300 ease-in-out",
-            selectedTask ? "-translate-x-[510px]" : "translate-x-0"
+            "absolute top-4 right-4 z-10 flex gap-2 transition-transform duration-300 ease-in-out",
+            selectedTask ? "-translate-x-[660px]" : "translate-x-0"
           )}
         >
           <Button
@@ -202,6 +359,36 @@ export function RecordDetail() {
             <SquarePen className="w-4 h-4" />
             Edit
           </Button>
+
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={rerunning}
+            onClick={() => void handleRerun()}
+          >
+            {rerunning ? (
+              <LoaderCircle className="w-4 h-4 animate-spin" />
+            ) : (
+              <RotateCcw className="w-4 h-4" />
+            )}
+            Rerun
+          </Button>
+
+          {!isTerminalRunStatus(runData.status) ? (
+            <Button
+              variant="destructive"
+              size="sm"
+              disabled={cancelling}
+              onClick={() => void handleCancel()}
+            >
+              {cancelling ? (
+                <LoaderCircle className="w-4 h-4 animate-spin" />
+              ) : (
+                <Square className="w-4 h-4" />
+              )}
+              Cancel
+            </Button>
+          ) : null}
         </div>
 
         <Card

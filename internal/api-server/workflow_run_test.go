@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -18,11 +19,31 @@ type stubRunStarter struct {
 	runID      string
 	workflowID string
 	err        error
+	events     chan dto.WorkflowRunEvent
 }
 
 func (s *stubRunStarter) StartWorkflowRun(workflowID string) (string, error) {
 	s.workflowID = workflowID
 	return s.runID, s.err
+}
+
+func (s *stubRunStarter) RerunWorkflowRun(runID string) (string, error) {
+	s.workflowID = runID
+	return s.runID, s.err
+}
+
+func (s *stubRunStarter) CancelWorkflowRun(runID string) error {
+	s.workflowID = runID
+	return s.err
+}
+
+func (s *stubRunStarter) SubscribeRunEvents(runID string) (<-chan dto.WorkflowRunEvent, func(), error) {
+	if s.events == nil {
+		s.events = make(chan dto.WorkflowRunEvent, 4)
+	}
+	return s.events, func() {
+		close(s.events)
+	}, s.err
 }
 
 func TestWorkflowHandler_Run(t *testing.T) {
@@ -162,4 +183,123 @@ func TestWorkflowHandler_GetRun(t *testing.T) {
 		assert.Equal(t, "success", run.TaskNodes[0].Status)
 		assert.Equal(t, "hello\n", run.TaskNodes[0].Output)
 	}
+}
+
+func TestWorkflowHandler_Rerun(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	db := setupTestDB(t)
+	handler := NewWorkflowHandler(db)
+	starter := &stubRunStarter{runID: "rerun-456"}
+	handler.SetRunService(starter)
+
+	router := gin.New()
+	router.POST("/api/workflow_runs/:run_id/rerun", handler.Rerun)
+
+	req, _ := http.NewRequest("POST", "/api/workflow_runs/run-old/rerun", nil)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+
+	var response APIResponse
+	err := json.Unmarshal(w.Body.Bytes(), &response)
+	assert.NoError(t, err)
+	assert.True(t, response.Success)
+
+	dataMap := response.Data.(map[string]interface{})
+	assert.Equal(t, "rerun-456", dataMap["run_id"])
+	assert.Equal(t, "run-old", starter.workflowID)
+}
+
+func TestWorkflowHandler_Cancel(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	db := setupTestDB(t)
+	handler := NewWorkflowHandler(db)
+	starter := &stubRunStarter{}
+	handler.SetRunService(starter)
+
+	router := gin.New()
+	router.POST("/api/workflow_runs/:run_id/cancel", handler.Cancel)
+
+	req, _ := http.NewRequest("POST", "/api/workflow_runs/run-cancel/cancel", nil)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+
+	var response APIResponse
+	err := json.Unmarshal(w.Body.Bytes(), &response)
+	assert.NoError(t, err)
+	assert.True(t, response.Success)
+	assert.Equal(t, "run-cancel", starter.workflowID)
+}
+
+func TestWorkflowHandler_RunEvents(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	db := setupTestDB(t)
+	workflowID := uuid.New().String()
+	runID := uuid.New().String()
+	taskID := uuid.New().String()
+
+	err := db.SaveWorkflow(entity.WorkflowEntity{
+		ID:          workflowID,
+		Name:        "Events Workflow",
+		Description: "Desc",
+		Version:     1,
+		CreatedAt:   time.Now(),
+		UpdatedAt:   time.Now(),
+	})
+	assert.NoError(t, err)
+
+	_, err = db.SaveTasks([]entity.TaskEntity{
+		{
+			ID:          taskID,
+			WorkflowID:  workflowID,
+			Name:        "Task 1",
+			Description: "Task desc",
+			Type:        "shell",
+			Config:      `{"script":"echo hello"}`,
+			Position:    `{"x":10,"y":20}`,
+			NodeType:    "baseNodeFull",
+		},
+	})
+	assert.NoError(t, err)
+
+	err = db.CreateWorkflowRun(workflowID, runID)
+	assert.NoError(t, err)
+	err = db.MarkWorkflowRunRunning(runID)
+	assert.NoError(t, err)
+
+	starter := &stubRunStarter{
+		events: make(chan dto.WorkflowRunEvent, 4),
+	}
+	starter.events <- dto.WorkflowRunEvent{
+		Type:   "task_output",
+		RunID:  runID,
+		TaskID: taskID,
+		Output: "hello\n",
+	}
+	starter.events <- dto.WorkflowRunEvent{
+		Type:   "run_status",
+		RunID:  runID,
+		Status: "success",
+	}
+
+	handler := NewWorkflowHandler(db)
+	handler.SetRunService(starter)
+	router := gin.New()
+	router.GET("/api/workflow_runs/:run_id/events", handler.RunEvents)
+
+	req, _ := http.NewRequest("GET", "/api/workflow_runs/"+runID+"/events", nil)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+	body := w.Body.String()
+	assert.True(t, strings.Contains(body, "event: snapshot"))
+	assert.True(t, strings.Contains(body, "event: task_output"))
+	assert.True(t, strings.Contains(body, "event: run_status"))
 }

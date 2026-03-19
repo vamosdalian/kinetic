@@ -18,6 +18,8 @@ type TaskResult struct {
 	ExitCode int
 }
 
+type OutputFunc func(chunk string)
+
 // NewExecutor 创建执行器
 func NewExecutor(maxConcurrency int) *Executor {
 	if maxConcurrency <= 0 {
@@ -33,11 +35,11 @@ func NewExecutor(maxConcurrency int) *Executor {
 type Task interface {
 	ID() string
 	Type() string
-	Execute(ctx context.Context) (TaskResult, error)
+	Execute(ctx context.Context, onOutput OutputFunc) (TaskResult, error)
 }
 
 // Execute 执行任务
-func (e *Executor) Execute(ctx context.Context, task Task) (TaskResult, error) {
+func (e *Executor) Execute(ctx context.Context, task Task, onOutput OutputFunc) (TaskResult, error) {
 	// 获取信号量
 	select {
 	case e.semaphore <- struct{}{}:
@@ -48,7 +50,7 @@ func (e *Executor) Execute(ctx context.Context, task Task) (TaskResult, error) {
 
 	log.Printf("Executing task %s (type: %s)", task.ID(), task.Type())
 
-	result, err := task.Execute(ctx)
+	result, err := task.Execute(ctx, onOutput)
 	if err != nil {
 		log.Printf("Task %s failed: %v", task.ID(), err)
 		return result, err
@@ -63,7 +65,7 @@ func (e *Executor) ExecuteAsync(ctx context.Context, task Task) {
 	e.wg.Add(1)
 	go func() {
 		defer e.wg.Done()
-		_, _ = e.Execute(ctx, task)
+		_, _ = e.Execute(ctx, task, nil)
 	}()
 }
 

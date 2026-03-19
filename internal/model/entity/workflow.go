@@ -1,6 +1,7 @@
 package entity
 
 import (
+	"strings"
 	"time"
 )
 
@@ -23,6 +24,13 @@ type TaskEntity struct {
 	Config      string // json string
 	Position    string // json string
 	NodeType    string
+}
+
+func (t TaskEntity) NameOrID() string {
+	if strings.TrimSpace(t.Name) != "" {
+		return t.Name
+	}
+	return t.ID
 }
 
 type EdgeEntity struct {

@@ -8,23 +8,16 @@ import (
 	"io"
 	"net/http"
 	"os/exec"
+	"strings"
+	"sync"
+
+	workflowcfg "github.com/vamosdalian/kinetic/internal/workflow"
 )
 
 type TaskEntity struct {
 	ID     string
 	Type   string
 	Config string
-}
-
-type shellConfig struct {
-	Script string `json:"script"`
-}
-
-type httpConfig struct {
-	URL     string            `json:"url"`
-	Method  string            `json:"method"`
-	Headers map[string]string `json:"headers"`
-	Body    string            `json:"body"`
 }
 
 type shellTask struct {
@@ -46,10 +39,43 @@ type unsupportedTask struct {
 	taskType string
 }
 
+type outputCollector struct {
+	mu       sync.Mutex
+	buffer   bytes.Buffer
+	onOutput OutputFunc
+}
+
+func (c *outputCollector) append(chunk []byte) {
+	if len(chunk) == 0 {
+		return
+	}
+	c.mu.Lock()
+	c.buffer.Write(chunk)
+	c.mu.Unlock()
+	if c.onOutput != nil {
+		c.onOutput(string(chunk))
+	}
+}
+
+func (c *outputCollector) String() string {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.buffer.String()
+}
+
+type collectorWriter struct {
+	collector *outputCollector
+}
+
+func (w collectorWriter) Write(p []byte) (int, error) {
+	w.collector.append(p)
+	return len(p), nil
+}
+
 func NewTask(task TaskEntity) (Task, error) {
 	switch task.Type {
 	case "shell":
-		var cfg shellConfig
+		var cfg workflowcfg.ShellConfig
 		if err := json.Unmarshal([]byte(task.Config), &cfg); err != nil {
 			return nil, fmt.Errorf("invalid shell config: %w", err)
 		}
@@ -58,7 +84,7 @@ func NewTask(task TaskEntity) (Task, error) {
 		}
 		return &shellTask{id: task.ID, script: cfg.Script}, nil
 	case "http":
-		var cfg httpConfig
+		var cfg workflowcfg.HTTPConfig
 		if err := json.Unmarshal([]byte(task.Config), &cfg); err != nil {
 			return nil, fmt.Errorf("invalid http config: %w", err)
 		}
@@ -91,16 +117,41 @@ func (t *shellTask) Type() string {
 	return "shell"
 }
 
-func (t *shellTask) Execute(ctx context.Context) (TaskResult, error) {
+func (t *shellTask) Execute(ctx context.Context, onOutput OutputFunc) (TaskResult, error) {
 	cmd := exec.CommandContext(ctx, "sh", "-c", t.script)
 
-	var buffer bytes.Buffer
-	cmd.Stdout = &buffer
-	cmd.Stderr = &buffer
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		return TaskResult{ExitCode: -1}, err
+	}
+	stderr, err := cmd.StderrPipe()
+	if err != nil {
+		return TaskResult{ExitCode: -1}, err
+	}
 
-	err := cmd.Run()
+	collector := &outputCollector{onOutput: onOutput}
+	writer := collectorWriter{collector: collector}
+
+	if err := cmd.Start(); err != nil {
+		return TaskResult{ExitCode: -1}, err
+	}
+
+	var wg sync.WaitGroup
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		_, _ = io.Copy(writer, stdout)
+	}()
+	go func() {
+		defer wg.Done()
+		_, _ = io.Copy(writer, stderr)
+	}()
+
+	err = cmd.Wait()
+	wg.Wait()
+
 	result := TaskResult{
-		Output:   buffer.String(),
+		Output:   collector.String(),
 		ExitCode: 0,
 	}
 
@@ -124,7 +175,7 @@ func (t *httpTask) Type() string {
 	return "http"
 }
 
-func (t *httpTask) Execute(ctx context.Context) (TaskResult, error) {
+func (t *httpTask) Execute(ctx context.Context, onOutput OutputFunc) (TaskResult, error) {
 	req, err := http.NewRequestWithContext(ctx, t.method, t.url, bytes.NewBufferString(t.body))
 	if err != nil {
 		return TaskResult{ExitCode: -1}, err
@@ -145,7 +196,15 @@ func (t *httpTask) Execute(ctx context.Context) (TaskResult, error) {
 		return TaskResult{ExitCode: resp.StatusCode}, err
 	}
 
-	output := fmt.Sprintf("HTTP %d\n%s", resp.StatusCode, string(body))
+	statusLine := fmt.Sprintf("HTTP %d\n", resp.StatusCode)
+	if onOutput != nil {
+		onOutput(statusLine)
+	}
+	bodyString := string(body)
+	if onOutput != nil && bodyString != "" {
+		onOutput(bodyString)
+	}
+	output := statusLine + bodyString
 	result := TaskResult{
 		Output:   output,
 		ExitCode: resp.StatusCode,
@@ -165,10 +224,14 @@ func (t *unsupportedTask) Type() string {
 	return t.taskType
 }
 
-func (t *unsupportedTask) Execute(ctx context.Context) (TaskResult, error) {
+func (t *unsupportedTask) Execute(ctx context.Context, onOutput OutputFunc) (TaskResult, error) {
 	_ = ctx
+	message := fmt.Sprintf("%s task is not implemented", t.taskType)
+	if onOutput != nil {
+		onOutput(message)
+	}
 	return TaskResult{
-		Output:   fmt.Sprintf("%s task is not implemented", t.taskType),
+		Output:   strings.TrimSpace(message),
 		ExitCode: -1,
 	}, fmt.Errorf("%s task is not implemented", t.taskType)
 }
