@@ -14,6 +14,15 @@ type Database interface {
 	GetWorkflowByID(id string) (entity.WorkflowEntity, error)
 	SaveWorkflow(req entity.WorkflowEntity) error
 	DeleteWorkflow(id string) error
+	ListNodes() ([]entity.NodeEntity, error)
+	GetNodeByID(nodeID string) (entity.NodeEntity, error)
+	UpsertNode(node entity.NodeEntity) error
+	SetNodeStatus(nodeID string, status string) error
+	UpdateNodeHeartbeat(nodeID string) error
+	UpdateNodeStream(nodeID string) error
+	ListNodeTags(nodeID string) ([]entity.NodeTagEntity, error)
+	SaveNodeTag(tag entity.NodeTagEntity) error
+	DeleteNodeTag(nodeID string, tag string) error
 
 	// Task
 	ListTasks(workflowID string) ([]entity.TaskEntity, error)
@@ -36,9 +45,18 @@ type Database interface {
 	ListWorkflowRuns(offset int, limit int) ([]entity.WorkflowRunEntity, error)
 	MarkWorkflowRunRunning(runID string) error
 	FinishWorkflowRun(runID string, status string) error
+	UpdateWorkflowRunStatus(runID string, status string) error
 	MarkTaskRunRunning(runID string, taskID string) error
+	QueueTaskRun(runID string, taskID string, effectiveTag string) error
+	AssignTaskRun(runID string, taskID string, nodeID string) error
+	ResetAssignedTaskRun(runID string, taskID string) error
+	MarkTaskRunUnknown(runID string, taskID string, output string) error
 	FinishTaskRun(runID string, taskID string, status string, exitCode int, output string) error
 	SkipPendingTaskRuns(runID string, output string) error
 	CancelPendingTaskRuns(runID string, output string) error
 	AppendTaskRunOutput(runID string, taskID string, chunk string) error
+	ListQueuedTaskRuns(limit int) ([]entity.TaskRunEntity, error)
+	ListNodeActiveTaskRuns(nodeID string) ([]entity.TaskRunEntity, error)
+	IncrementNodeRunningCount(nodeID string) error
+	DecrementNodeRunningCount(nodeID string) error
 }

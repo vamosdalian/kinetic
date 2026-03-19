@@ -24,9 +24,12 @@ type RunService struct {
 	db               database.Database
 	executor         *executor.Executor
 	mu               sync.RWMutex
+	stateMu          sync.Mutex
 	cancels          map[string]context.CancelCauseFunc
 	subscribers      map[string]map[int]chan dto.WorkflowRunEvent
 	nextSubscriberID int
+	distributed      bool
+	commandHub       *WorkerStreamHub
 }
 
 type edgeState string
@@ -75,10 +78,39 @@ func NewRunService(db database.Database, maxConcurrency int) *RunService {
 	}
 }
 
+func (s *RunService) EnableDistributed(hub *WorkerStreamHub) {
+	s.stateMu.Lock()
+	defer s.stateMu.Unlock()
+	s.distributed = true
+	s.commandHub = hub
+}
+
 func (s *RunService) StartWorkflowRun(workflowID string) (string, error) {
 	runID := uuid.New().String()
 	if err := s.db.CreateWorkflowRun(workflowID, runID); err != nil {
 		return "", err
+	}
+
+	if s.distributed {
+		if err := s.db.MarkWorkflowRunRunning(runID); err != nil {
+			return "", err
+		}
+		s.publishRunStatus(runID)
+		taskRuns, err := s.db.GetTaskRuns(runID)
+		if err != nil {
+			return "", err
+		}
+		if len(taskRuns) == 0 {
+			if err := s.finishWorkflowRun(runID, "success"); err != nil {
+				return "", err
+			}
+			return runID, nil
+		}
+		if err := s.queueReadyTasks(runID); err != nil {
+			s.failRun(runID, "Skipped because workflow graph is invalid.", err)
+			return runID, nil
+		}
+		return runID, nil
 	}
 
 	ctx, cancel := context.WithCancelCause(context.Background())
@@ -103,6 +135,42 @@ func (s *RunService) CancelWorkflowRun(runID string) error {
 	}
 	if run.Status != "created" && run.Status != "running" {
 		return fmt.Errorf("workflow run %s is already in terminal state %s", runID, run.Status)
+	}
+
+	if s.distributed {
+		s.stateMu.Lock()
+		defer s.stateMu.Unlock()
+
+		taskRuns, err := s.db.GetTaskRuns(runID)
+		if err != nil {
+			return err
+		}
+		for _, task := range taskRuns {
+			switch task.Status {
+			case "pending", "queued", "assigned", "running", "unknown":
+				output := task.Output
+				if !strings.Contains(output, "Cancelled by user.") {
+					if output != "" && !strings.HasSuffix(output, "\n") {
+						output += "\n"
+					}
+					output += "Cancelled by user."
+				}
+				if err := s.db.FinishTaskRun(runID, task.TaskID, "cancelled", task.ExitCode, output); err != nil {
+					return err
+				}
+				if task.AssignedNodeID != "" {
+					_ = s.db.DecrementNodeRunningCount(task.AssignedNodeID)
+					if s.commandHub != nil && (task.Status == "assigned" || task.Status == "running") {
+						s.commandHub.Publish(task.AssignedNodeID, dto.NodeCommand{
+							Type: "cancel",
+							Task: &dto.AssignedTask{RunID: runID, TaskID: task.TaskID},
+						})
+					}
+				}
+				s.publishTaskStatus(runID, task.TaskID)
+			}
+		}
+		return s.finishWorkflowRun(runID, "cancelled")
 	}
 
 	cancel := s.getCancel(runID)
@@ -618,13 +686,16 @@ func (s *RunService) publishTaskStatus(runID string, taskID string) {
 	}
 	exitCode := task.ExitCode
 	s.publishEvent(dto.WorkflowRunEvent{
-		Type:       "task_status",
-		RunID:      runID,
-		TaskID:     taskID,
-		Status:     task.Status,
-		StartedAt:  formatTimePointer(task.StartedAt),
-		FinishedAt: formatTimePointer(task.FinishedAt),
-		ExitCode:   &exitCode,
+		Type:           "task_status",
+		RunID:          runID,
+		TaskID:         taskID,
+		Status:         task.Status,
+		AssignedNodeID: task.AssignedNodeID,
+		EffectiveTag:   task.EffectiveTag,
+		AssignedAt:     formatTimePointer(task.AssignedAt),
+		StartedAt:      formatTimePointer(task.StartedAt),
+		FinishedAt:     formatTimePointer(task.FinishedAt),
+		ExitCode:       &exitCode,
 	})
 }
 
@@ -633,4 +704,361 @@ func formatTimePointer(value *time.Time) string {
 		return ""
 	}
 	return value.Format(time.RFC3339)
+}
+
+func (s *RunService) PrepareAssignedTask(runID string, taskID string) (*dto.AssignedTask, error) {
+	task, err := s.db.GetTaskRun(runID, taskID)
+	if err != nil {
+		return nil, err
+	}
+
+	assigned := &dto.AssignedTask{
+		RunID:  runID,
+		TaskID: taskID,
+		Name:   task.TaskName,
+		Type:   dto.TaskType(task.TaskType),
+		Config: json.RawMessage(task.TaskConfig),
+	}
+
+	if task.TaskType == "condition" {
+		input, err := s.conditionInputForTask(runID, taskID)
+		if err != nil {
+			return nil, err
+		}
+		if input != nil {
+			assigned.ConditionInput = &dto.ConditionInput{
+				Status:   input.Status,
+				ExitCode: input.ExitCode,
+				Output:   input.Output,
+			}
+		}
+	}
+
+	return assigned, nil
+}
+
+func (s *RunService) HandleWorkerTaskEvent(nodeID string, event dto.WorkerTaskEvent) error {
+	s.stateMu.Lock()
+	defer s.stateMu.Unlock()
+
+	task, err := s.db.GetTaskRun(event.RunID, event.TaskID)
+	if err != nil {
+		return err
+	}
+	if task.AssignedNodeID != "" && task.AssignedNodeID != nodeID {
+		return nil
+	}
+	if isTerminalTaskStatus(task.Status) {
+		return nil
+	}
+
+	switch event.Type {
+	case "started":
+		if err := s.db.MarkTaskRunRunning(event.RunID, event.TaskID); err != nil {
+			return err
+		}
+		s.publishTaskStatus(event.RunID, event.TaskID)
+		return nil
+	case "output":
+		if event.Output == "" {
+			return nil
+		}
+		if err := s.db.AppendTaskRunOutput(event.RunID, event.TaskID, event.Output); err != nil {
+			return err
+		}
+		s.publishEvent(dto.WorkflowRunEvent{
+			Type:   "task_output",
+			RunID:  event.RunID,
+			TaskID: event.TaskID,
+			Output: event.Output,
+		})
+		return nil
+	case "finished", "failed", "cancelled":
+		if event.Output != "" {
+			if err := s.db.AppendTaskRunOutput(event.RunID, event.TaskID, event.Output); err != nil {
+				return err
+			}
+		}
+
+		updatedTask, err := s.db.GetTaskRun(event.RunID, event.TaskID)
+		if err != nil {
+			return err
+		}
+
+		finalStatus := mapWorkerEventStatus(event.Type)
+		exitCode := updatedTask.ExitCode
+		if event.ExitCode != nil {
+			exitCode = *event.ExitCode
+		}
+		if err := s.db.FinishTaskRun(event.RunID, event.TaskID, finalStatus, exitCode, updatedTask.Output); err != nil {
+			return err
+		}
+		if updatedTask.AssignedNodeID != "" {
+			_ = s.db.DecrementNodeRunningCount(updatedTask.AssignedNodeID)
+		}
+		s.publishTaskStatus(event.RunID, event.TaskID)
+
+		switch finalStatus {
+		case "success":
+			return s.queueReadyTasks(event.RunID)
+		case "failed":
+			if err := s.db.SkipPendingTaskRuns(event.RunID, "Skipped because another task in the workflow failed."); err != nil {
+				return err
+			}
+			taskRuns, err := s.db.GetTaskRuns(event.RunID)
+			if err == nil {
+				for _, openTask := range taskRuns {
+					if openTask.Status == "queued" {
+						s.publishTaskStatus(event.RunID, openTask.TaskID)
+					}
+				}
+			}
+			return s.finishWorkflowRun(event.RunID, "failed")
+		case "cancelled":
+			run, err := s.db.GetWorkflowRun(event.RunID)
+			if err != nil {
+				return err
+			}
+			if run.Status == "cancelled" {
+				return nil
+			}
+			return s.queueReadyTasks(event.RunID)
+		}
+	}
+
+	return nil
+}
+
+func (s *RunService) HandleNodeOffline(nodeID string) error {
+	s.stateMu.Lock()
+	defer s.stateMu.Unlock()
+
+	tasks, err := s.db.ListNodeActiveTaskRuns(nodeID)
+	if err != nil {
+		return err
+	}
+
+	for _, task := range tasks {
+		switch task.Status {
+		case "assigned":
+			if err := s.db.DecrementNodeRunningCount(nodeID); err != nil {
+				return err
+			}
+			if err := s.db.ResetAssignedTaskRun(task.RunID, task.TaskID); err != nil {
+				return err
+			}
+			s.publishTaskStatus(task.RunID, task.TaskID)
+		case "running":
+			if err := s.db.MarkTaskRunUnknown(task.RunID, task.TaskID, "\nWorker went offline.\n"); err != nil {
+				return err
+			}
+			s.publishTaskStatus(task.RunID, task.TaskID)
+		}
+	}
+
+	return nil
+}
+
+func (s *RunService) queueReadyTasks(runID string) error {
+	taskRuns, err := s.db.GetTaskRuns(runID)
+	if err != nil {
+		return err
+	}
+	edgeRuns, err := s.db.GetEdgeRuns(runID)
+	if err != nil {
+		return err
+	}
+	run, err := s.db.GetWorkflowRun(runID)
+	if err != nil {
+		return err
+	}
+	if run.Status == "failed" || run.Status == "cancelled" {
+		return nil
+	}
+
+	graph, err := buildRunGraph(taskRuns, edgeRuns)
+	if err != nil {
+		return err
+	}
+	completed := make(map[string]completedTaskState, len(taskRuns))
+	taskByID := make(map[string]entity.TaskRunEntity, len(taskRuns))
+	for _, task := range taskRuns {
+		taskByID[task.TaskID] = task
+		if task.Status == "success" {
+			completed[task.TaskID] = completedTaskState{
+				Status:   task.Status,
+				ExitCode: task.ExitCode,
+				Output:   task.Output,
+			}
+		}
+	}
+
+	for _, task := range taskRuns {
+		if task.Status != "success" {
+			continue
+		}
+		selectedBranch := ""
+		if task.TaskType == "condition" {
+			input, err := graph.nodes[task.TaskID].buildConditionInput(completed)
+			if err != nil {
+				return err
+			}
+			selectedBranch, err = resolveConditionBranch(task, input)
+			if err != nil {
+				return err
+			}
+		}
+		graph.activateOutbound(task.TaskID, selectedBranch)
+	}
+
+	skippedAny := false
+	for _, node := range graph.nodes {
+		task := taskByID[node.task.TaskID]
+		switch task.Status {
+		case "success", "failed", "skipped", "cancelled", "running", "assigned", "queued", "unknown":
+			continue
+		}
+
+		activeCount := 0
+		unknownCount := 0
+		for _, edge := range node.inbound {
+			switch edge.state {
+			case edgeStateActive:
+				activeCount++
+			case edgeStateUnknown:
+				unknownCount++
+			}
+		}
+
+		if len(node.inbound) == 0 || (unknownCount == 0 && activeCount > 0) {
+			effectiveTag := task.TaskTag
+			if effectiveTag == "" {
+				effectiveTag = run.WorkflowTag
+			}
+			if err := s.db.QueueTaskRun(runID, task.TaskID, effectiveTag); err != nil {
+				return err
+			}
+			s.publishTaskStatus(runID, task.TaskID)
+			continue
+		}
+
+		if len(node.inbound) > 0 && unknownCount == 0 && activeCount == 0 {
+			if err := s.db.FinishTaskRun(runID, task.TaskID, "skipped", task.ExitCode, "Skipped because the condition branch was not activated."); err != nil {
+				return err
+			}
+			s.publishTaskStatus(runID, task.TaskID)
+			skippedAny = true
+		}
+	}
+
+	if skippedAny {
+		return s.queueReadyTasks(runID)
+	}
+
+	taskRuns, err = s.db.GetTaskRuns(runID)
+	if err != nil {
+		return err
+	}
+	allDone := true
+	for _, task := range taskRuns {
+		switch task.Status {
+		case "success", "skipped":
+		default:
+			allDone = false
+		}
+	}
+	if allDone {
+		return s.finishWorkflowRun(runID, "success")
+	}
+	return nil
+}
+
+func (s *RunService) conditionInputForTask(runID string, taskID string) (*workflowcfg.ConditionInput, error) {
+	taskRuns, err := s.db.GetTaskRuns(runID)
+	if err != nil {
+		return nil, err
+	}
+	edgeRuns, err := s.db.GetEdgeRuns(runID)
+	if err != nil {
+		return nil, err
+	}
+
+	graph, err := buildRunGraph(taskRuns, edgeRuns)
+	if err != nil {
+		return nil, err
+	}
+	completed := make(map[string]completedTaskState, len(taskRuns))
+	for _, task := range taskRuns {
+		if task.Status == "success" {
+			completed[task.TaskID] = completedTaskState{
+				Status:   task.Status,
+				ExitCode: task.ExitCode,
+				Output:   task.Output,
+			}
+		}
+	}
+	for _, task := range taskRuns {
+		if task.Status != "success" {
+			continue
+		}
+		selectedBranch := ""
+		if task.TaskType == "condition" {
+			input, err := graph.nodes[task.TaskID].buildConditionInput(completed)
+			if err != nil {
+				return nil, err
+			}
+			selectedBranch, err = resolveConditionBranch(task, input)
+			if err != nil {
+				return nil, err
+			}
+		}
+		graph.activateOutbound(task.TaskID, selectedBranch)
+	}
+	node := graph.nodes[taskID]
+	if node == nil {
+		return nil, fmt.Errorf("task %s not found in run graph", taskID)
+	}
+	return node.buildConditionInput(completed)
+}
+
+func resolveConditionBranch(task entity.TaskRunEntity, input *workflowcfg.ConditionInput) (string, error) {
+	if task.TaskType != "condition" {
+		return "", nil
+	}
+	if input == nil {
+		return "", fmt.Errorf("condition task %s requires input", task.TaskName)
+	}
+	var cfg workflowcfg.ConditionConfig
+	if err := json.Unmarshal([]byte(task.TaskConfig), &cfg); err != nil {
+		return "", err
+	}
+	expr, err := workflowcfg.ParseConditionExpression(cfg.Expression)
+	if err != nil {
+		return "", err
+	}
+	matched, err := expr.Evaluate(*input)
+	if err != nil {
+		return "", err
+	}
+	if matched {
+		return "true", nil
+	}
+	return "false", nil
+}
+
+func mapWorkerEventStatus(eventType string) string {
+	switch eventType {
+	case "finished":
+		return "success"
+	case "failed":
+		return "failed"
+	case "cancelled":
+		return "cancelled"
+	default:
+		return ""
+	}
+}
+
+func isTerminalTaskStatus(status string) bool {
+	return status == "success" || status == "failed" || status == "skipped" || status == "cancelled"
 }

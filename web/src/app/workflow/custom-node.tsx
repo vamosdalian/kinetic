@@ -101,7 +101,7 @@ export const ActionBarNodeDemo = memo((props: NodeProps) => {
         selected ? "ring ring-blue-500" : ""
       )}
     >
-      <BaseNodeContent className="text-xs p-2 flex items-center justify-between w-full">
+      <BaseNodeContent className="text-xs p-2 flex items-center justify-between w-full h-full">
         <div className="flex items-center gap-2 min-w-0 w-full">
           <TypeIcon type={data.type} />
 

@@ -8,6 +8,7 @@ type WorkflowRunEntity struct {
 	WorkflowName        string
 	WorkflowDescription string
 	WorkflowVersion     int
+	WorkflowTag         string
 	Status              string
 	CreatedAt           time.Time
 	StartedAt           *time.Time
@@ -22,10 +23,14 @@ type TaskRunEntity struct {
 	TaskDescription string
 	TaskType        string
 	TaskConfig      string // json string
+	TaskTag         string
 	TaskPosition    string // json string
 	TaskNodeType    string
+	EffectiveTag    string
+	AssignedNodeID  string
 	Status          string
 	CreatedAt       time.Time
+	AssignedAt      *time.Time
 	StartedAt       *time.Time
 	FinishedAt      *time.Time
 	ExitCode        int

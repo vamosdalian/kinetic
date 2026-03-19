@@ -26,11 +26,12 @@ const (
 )
 
 type Config struct {
-	Mode     Mode           `yaml:"mode"     env:"KINETIC_MODE, overwrite"`
-	API      APIConfig      `yaml:"api"      env:", prefix=KINETIC_API_"`
-	Database DatabaseConfig `yaml:"database" env:", prefix=KINETIC_DATABASE_"`
-	Worker   WorkerConfig   `yaml:"worker"   env:", prefix=KINETIC_WORKER_"`
-	Log      LogConfig      `yaml:"log"      env:", prefix=KINETIC_LOG_"`
+	Mode       Mode             `yaml:"mode"       env:"KINETIC_MODE, overwrite"`
+	API        APIConfig        `yaml:"api"        env:", prefix=KINETIC_API_"`
+	Database   DatabaseConfig   `yaml:"database"   env:", prefix=KINETIC_DATABASE_"`
+	Controller ControllerConfig `yaml:"controller" env:", prefix=KINETIC_CONTROLLER_"`
+	Worker     WorkerConfig     `yaml:"worker"     env:", prefix=KINETIC_WORKER_"`
+	Log        LogConfig        `yaml:"log"        env:", prefix=KINETIC_LOG_"`
 }
 
 type APIConfig struct {
@@ -48,9 +49,18 @@ type DatabaseConfig struct {
 	Path     string       `yaml:"path"     env:"PATH, overwrite"`
 }
 
+type ControllerConfig struct {
+	EmbeddedWorkerEnabled bool `yaml:"embedded_worker_enabled" env:"EMBEDDED_WORKER_ENABLED, overwrite"`
+}
+
 type WorkerConfig struct {
-	ControllerURL  string `yaml:"controller_url"  env:"CONTROLLER_URL, overwrite"`
-	MaxConcurrency int    `yaml:"max_concurrency" env:"MAX_CONCURRENCY, overwrite"`
+	ID                     string `yaml:"id"                       env:"ID, overwrite"`
+	Name                   string `yaml:"name"                     env:"NAME, overwrite"`
+	ControllerURL          string `yaml:"controller_url"           env:"CONTROLLER_URL, overwrite"`
+	AdvertiseIP            string `yaml:"advertise_ip"             env:"ADVERTISE_IP, overwrite"`
+	HeartbeatInterval      int    `yaml:"heartbeat_interval"       env:"HEARTBEAT_INTERVAL, overwrite"`
+	StreamReconnectSeconds int    `yaml:"stream_reconnect_interval" env:"STREAM_RECONNECT_INTERVAL, overwrite"`
+	MaxConcurrency         int    `yaml:"max_concurrency"          env:"MAX_CONCURRENCY, overwrite"`
 }
 
 type LogConfig struct {
@@ -60,6 +70,10 @@ type LogConfig struct {
 
 func DefaultConfig() *Config {
 	homeDir, _ := os.UserHomeDir()
+	hostName, _ := os.Hostname()
+	if hostName == "" {
+		hostName = "node-local"
+	}
 	return &Config{
 		Mode: ModeController,
 		API: APIConfig{
@@ -70,9 +84,17 @@ func DefaultConfig() *Config {
 			Type: DBTypeSQLite,
 			Path: filepath.Join(homeDir, ".kinetic", "kinetic.db"),
 		},
+		Controller: ControllerConfig{
+			EmbeddedWorkerEnabled: true,
+		},
 		Worker: WorkerConfig{
-			ControllerURL:  "http://localhost:8080",
-			MaxConcurrency: 10,
+			ID:                     hostName,
+			Name:                   hostName,
+			ControllerURL:          "http://localhost:8080",
+			AdvertiseIP:            "",
+			HeartbeatInterval:      5,
+			StreamReconnectSeconds: 5,
+			MaxConcurrency:         10,
 		},
 		Log: LogConfig{
 			Level:  "info",
@@ -136,7 +158,9 @@ func (c *Config) save(path string) error {
 #
 # Environment variables can override any setting:
 #   KINETIC_MODE, KINETIC_API_HOST, KINETIC_API_PORT,
-#   KINETIC_DATABASE_TYPE, KINETIC_DATABASE_PATH, etc.
+#   KINETIC_DATABASE_TYPE, KINETIC_DATABASE_PATH,
+#   KINETIC_CONTROLLER_EMBEDDED_WORKER_ENABLED,
+#   KINETIC_WORKER_ID, KINETIC_WORKER_NAME, etc.
 #
 
 `

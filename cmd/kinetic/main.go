@@ -26,9 +26,11 @@ func main() {
 	var (
 		showVersion bool
 		mode        string
+		withWorker  bool
 	)
 	flag.BoolVar(&showVersion, "version", false, "Show version information")
 	flag.StringVar(&mode, "mode", "controller", "Run mode: controller or worker (overrides config)")
+	flag.BoolVar(&withWorker, "with-worker", false, "Enable embedded worker when running in controller mode")
 	flag.Parse()
 
 	if showVersion {
@@ -43,6 +45,9 @@ func main() {
 
 	if mode != "" {
 		cfg.Mode = config.Mode(mode)
+	}
+	if withWorker {
+		cfg.Controller.EmbeddedWorkerEnabled = true
 	}
 
 	logrus.SetLevel(logrus.DebugLevel)
@@ -85,7 +90,7 @@ func runController(cfg *config.Config) {
 // runWorker 以 Worker 模式运行
 // Worker 包含: Executor
 func runWorker(cfg *config.Config) {
-	w := worker.NewWorker(cfg)
+	w := worker.NewWorker(cfg, "remote")
 
 	// 启动 Worker
 	go func() {

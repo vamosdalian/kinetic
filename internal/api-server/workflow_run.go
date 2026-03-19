@@ -207,6 +207,7 @@ func (h *WorkflowHandler) buildRunDTO(runID string) (dto.WorkflowRun, error) {
 			FinishedAt: safeFormatTime(run.FinishedAt),
 		},
 		Description: run.WorkflowDescription,
+		Tag:         run.WorkflowTag,
 		TaskNodes:   make([]dto.TaskNodeRun, len(taskRuns)),
 		Edges:       make([]dto.EdgeRun, len(edgeRuns)),
 	}
@@ -218,20 +219,24 @@ func (h *WorkflowHandler) buildRunDTO(runID string) (dto.WorkflowRun, error) {
 		}
 
 		runDto.TaskNodes[i] = dto.TaskNodeRun{
-			RunID:       t.RunID,
-			TaskID:      t.TaskID,
-			Name:        t.TaskName,
-			Description: t.TaskDescription,
-			Type:        dto.TaskType(t.TaskType),
-			Config:      json.RawMessage(t.TaskConfig),
-			Position:    pos,
-			NodeType:    t.TaskNodeType,
-			Status:      t.Status,
-			CreatedAt:   formatTime(t.CreatedAt),
-			StartedAt:   safeFormatTime(t.StartedAt),
-			FinishedAt:  safeFormatTime(t.FinishedAt),
-			ExitCode:    t.ExitCode,
-			Output:      t.Output,
+			RunID:          t.RunID,
+			TaskID:         t.TaskID,
+			Name:           t.TaskName,
+			Description:    t.TaskDescription,
+			Type:           dto.TaskType(t.TaskType),
+			Config:         json.RawMessage(t.TaskConfig),
+			Tag:            t.TaskTag,
+			EffectiveTag:   t.EffectiveTag,
+			AssignedNodeID: t.AssignedNodeID,
+			Position:       pos,
+			NodeType:       t.TaskNodeType,
+			Status:         t.Status,
+			CreatedAt:      formatTime(t.CreatedAt),
+			AssignedAt:     safeFormatTime(t.AssignedAt),
+			StartedAt:      safeFormatTime(t.StartedAt),
+			FinishedAt:     safeFormatTime(t.FinishedAt),
+			ExitCode:       t.ExitCode,
+			Output:         t.Output,
 		}
 	}
 

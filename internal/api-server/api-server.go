@@ -10,16 +10,18 @@ import (
 type APIServer struct {
 	scheduler       *scheduler.Scheduler
 	workflowHandler *WorkflowHandler
+	nodeHandler     *NodeHandler
 	staticHandler   *StaticHandler
 }
 
-func NewAPIServer(db database.Database, scheduler *scheduler.Scheduler, r *router.Router, runService RunManager) *APIServer {
+func NewAPIServer(db database.Database, scheduler *scheduler.Scheduler, r *router.Router, runService RunManager, nodeService NodeManager) *APIServer {
 	workflowHandler := NewWorkflowHandler(db)
 	workflowHandler.SetRunService(runService)
 
 	apiServer := &APIServer{
 		scheduler:       scheduler,
 		workflowHandler: workflowHandler,
+		nodeHandler:     NewNodeHandler(nodeService),
 		staticHandler:   NewStaticHandler(),
 	}
 
@@ -59,6 +61,22 @@ func (a *APIServer) RegisterRoutes(engine *gin.Engine) {
 			runs.GET("/:run_id/events", a.workflowHandler.RunEvents)
 			runs.POST("/:run_id/rerun", a.workflowHandler.Rerun)
 			runs.POST("/:run_id/cancel", a.workflowHandler.Cancel)
+		}
+
+		nodes := api.Group("/nodes")
+		{
+			nodes.GET("", a.nodeHandler.List)
+			nodes.GET("/:id", a.nodeHandler.Get)
+			nodes.POST("/:id/tags", a.nodeHandler.AddTag)
+			nodes.DELETE("/:id/tags/:tag", a.nodeHandler.DeleteTag)
+		}
+
+		internal := api.Group("/internal")
+		{
+			internal.POST("/nodes/register", a.nodeHandler.Register)
+			internal.GET("/nodes/:id/stream", a.nodeHandler.Stream)
+			internal.POST("/nodes/:id/heartbeat", a.nodeHandler.Heartbeat)
+			internal.POST("/nodes/:id/task-events", a.nodeHandler.TaskEvents)
 		}
 	}
 }

@@ -59,9 +59,11 @@ function WorkflowGraph() {
   const [workflowData, setWorkflowData] = React.useState<WorkflowData>({
     name: "",
     description: "",
+    tag: "",
   });
   const [taskNodes, setTaskNodes] = React.useState<Record<string, TaskNode>>({});
   const [edges, setEdges] = React.useState<Edge[]>([]);
+  const [availableTags, setAvailableTags] = React.useState<string[]>([]);
 
   const [isDirty, setIsDirty] = React.useState(false);
   const markDirty = React.useCallback(() => setIsDirty(true), []);
@@ -112,7 +114,7 @@ function WorkflowGraph() {
 
   const clear = React.useCallback(() => {
     setWorkflowId("");
-    setWorkflowData({ name: "", description: "" });
+    setWorkflowData({ name: "", description: "", tag: "" });
     setTaskNodes({});
     setEdges([]);
     markClean();
@@ -130,11 +132,31 @@ function WorkflowGraph() {
     setWorkflowData({
       name: data.name,
       description: data.description,
+      tag: data.tag || "",
     });
     setTaskNodes(taskNodesRecord);
     setEdges(data.edges || []);
     markClean();
   }, [markClean]);
+
+  const fetchAvailableTags = React.useCallback(async () => {
+    try {
+      const nodes = await apiClient<
+        Array<{ tags: Array<{ tag: string }> }>
+      >("/api/nodes");
+      const tagSet = new Set<string>();
+      for (const node of nodes) {
+        for (const tag of node.tags || []) {
+          if (tag.tag) {
+            tagSet.add(tag.tag);
+          }
+        }
+      }
+      setAvailableTags(Array.from(tagSet).sort((left, right) => left.localeCompare(right)));
+    } catch (error) {
+      console.error("Failed to load node tags:", error);
+    }
+  }, []);
 
   // React Router blocker for navigation protection
   const blocker = useBlocker(
@@ -215,7 +237,7 @@ function WorkflowGraph() {
       loadWorkflowData(data);
       // 加载完成后调整视图以适应所有节点
       setTimeout(() => {
-        fitView({ padding: 0.2, duration: 0 });
+        fitView({ padding: 0.12, minZoom: 0.85, duration: 0 });
       }, 0);
     } catch (error) {
       console.error("Failed to load workflow:", error);
@@ -237,6 +259,10 @@ function WorkflowGraph() {
       fetchWorkflow(urlWorkflowId);
     }
   }, [urlWorkflowId, action, isReady, initNewWorkflow, fetchWorkflow]);
+
+  React.useEffect(() => {
+    void fetchAvailableTags();
+  }, [fetchAvailableTags]);
 
   React.useEffect(() => {
     const updateColorMode = () => {
@@ -325,6 +351,7 @@ function WorkflowGraph() {
       const payload = {
         name: workflowData.name || "Untitled Workflow",
         description: workflowData.description || "",
+        tag: workflowData.tag || "",
         taskNodes: Object.values(taskNodes),
         edges: edges,
       };
@@ -344,6 +371,19 @@ function WorkflowGraph() {
       setSaving(false);
     }
   }, [workflowId, workflowData, taskNodes, edges, markClean]);
+
+  const tagOptions = React.useMemo(() => {
+    const tags = new Set(availableTags);
+    if (workflowData.tag) {
+      tags.add(workflowData.tag);
+    }
+    for (const task of Object.values(taskNodes)) {
+      if (task.tag) {
+        tags.add(task.tag);
+      }
+    }
+    return Array.from(tags).sort((left, right) => left.localeCompare(right));
+  }, [availableTags, taskNodes, workflowData.tag]);
 
   const onRun = React.useCallback(async () => {
     if (!workflowId) {
@@ -457,6 +497,7 @@ function WorkflowGraph() {
         <WorkflowRight
           selectedTaskId={selectedTaskId}
           workflowData={workflowData}
+          tagOptions={tagOptions}
           onUpdateWorkflowData={updateWorkflowData}
           taskNodes={taskNodes}
           onUpdateTaskNode={updateTaskNode}

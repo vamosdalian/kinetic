@@ -13,7 +13,7 @@ import {
   ArrowLeft,
   SquarePen,
   RotateCcw,
-  Square,
+  SquareX,
 } from "lucide-react";
 
 import { apiClient } from "@/lib/api";
@@ -156,6 +156,9 @@ export function RecordDetail() {
       applyTaskUpdate(payload.task_id, (task) => ({
         ...task,
         status: payload.status ?? task.status,
+        assigned_node_id: payload.assigned_node_id ?? task.assigned_node_id,
+        effective_tag: payload.effective_tag ?? task.effective_tag,
+        assigned_at: payload.assigned_at ?? task.assigned_at,
         started_at: payload.started_at ?? task.started_at,
         finished_at: payload.finished_at ?? task.finished_at,
         exit_code: payload.exit_code ?? task.exit_code,
@@ -204,6 +207,8 @@ export function RecordDetail() {
         type: task.type,
         status: task.status,
         exit_code: task.exit_code,
+        assigned_node_id: task.assigned_node_id,
+        effective_tag: task.effective_tag,
       },
       draggable: false,
       selectable: true,
@@ -384,7 +389,7 @@ export function RecordDetail() {
               {cancelling ? (
                 <LoaderCircle className="w-4 h-4 animate-spin" />
               ) : (
-                <Square className="w-4 h-4" />
+                <SquareX className="w-4 h-4" />
               )}
               Cancel
             </Button>
@@ -400,7 +405,7 @@ export function RecordDetail() {
           )}
         >
           {selectedTask ? (
-            <RecordRight task={selectedTask} />
+            <RecordRight task={selectedTask} workflowTag={runData.tag} />
           ) : (
             <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
               Select a task to inspect its runtime details.

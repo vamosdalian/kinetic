@@ -9,6 +9,7 @@ type WorkflowEntity struct {
 	ID          string
 	Name        string
 	Description string
+	Tag         string
 	Version     int
 	Enable      bool
 	CreatedAt   time.Time
@@ -22,6 +23,7 @@ type TaskEntity struct {
 	Description string
 	Type        string
 	Config      string // json string
+	Tag         string
 	Position    string // json string
 	NodeType    string
 }
@@ -40,4 +42,25 @@ type EdgeEntity struct {
 	Target       string
 	SourceHandle string
 	TargetHandle string
+}
+
+type NodeEntity struct {
+	NodeID          string
+	Name            string
+	IP              string
+	Kind            string
+	Status          string
+	MaxConcurrency  int
+	RunningCount    int
+	LastHeartbeatAt *time.Time
+	LastStreamAt    *time.Time
+	CreatedAt       time.Time
+	UpdatedAt       time.Time
+}
+
+type NodeTagEntity struct {
+	NodeID        string
+	Tag           string
+	SystemManaged bool
+	CreatedAt     time.Time
 }

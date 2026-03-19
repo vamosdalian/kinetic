@@ -6,6 +6,7 @@ import type { WorkflowData, TaskNode } from "./types";
 interface WorkflowRightProps {
   selectedTaskId: string;
   workflowData: WorkflowData;
+  tagOptions: string[];
   onUpdateWorkflowData: (data: Partial<WorkflowData>) => void;
   taskNodes: Record<string, TaskNode>;
   onUpdateTaskNode: (id: string, data: Partial<Omit<TaskNode, "id">>) => void;
@@ -14,6 +15,7 @@ interface WorkflowRightProps {
 export function WorkflowRight({
   selectedTaskId,
   workflowData,
+  tagOptions,
   onUpdateWorkflowData,
   taskNodes,
   onUpdateTaskNode,
@@ -21,11 +23,17 @@ export function WorkflowRight({
   return (
     <ScrollArea className="h-full">
       {selectedTaskId === "ROOT" ? (
-        <Workflowform data={workflowData} onUpdate={onUpdateWorkflowData} />
+        <Workflowform
+          data={workflowData}
+          tagOptions={tagOptions}
+          onUpdate={onUpdateWorkflowData}
+        />
       ) : (
         <Taskform
           taskId={selectedTaskId}
           node={taskNodes[selectedTaskId]}
+          tagOptions={tagOptions}
+          workflowTag={workflowData.tag}
           onUpdate={onUpdateTaskNode}
         />
       )}

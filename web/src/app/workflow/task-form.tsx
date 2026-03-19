@@ -27,10 +27,20 @@ import {
 interface TaskFormProps {
   taskId: string;
   node: TaskNode;
+  tagOptions: string[];
+  workflowTag: string;
   onUpdate: (id: string, data: Partial<Omit<TaskNode, "id">>) => void;
 }
 
-export function Taskform({ taskId, node, onUpdate }: TaskFormProps) {
+const INHERIT_TAG_VALUE = "__inherit_workflow_tag__";
+
+export function Taskform({
+  taskId,
+  node,
+  tagOptions,
+  workflowTag,
+  onUpdate,
+}: TaskFormProps) {
   if (!node) {
     return (
       <div className="flex items-center justify-center h-full text-muted-foreground">
@@ -111,6 +121,37 @@ export function Taskform({ taskId, node, onUpdate }: TaskFormProps) {
             <SelectItem value="condition">Condition</SelectItem>
           </SelectContent>
         </Select>
+      </div>
+
+      <div className="grid gap-2">
+        <Label htmlFor="task_tag">Tag</Label>
+        <Select
+          value={node.tag || INHERIT_TAG_VALUE}
+          onValueChange={(value) => {
+            onUpdate(taskId, { tag: value === INHERIT_TAG_VALUE ? "" : value });
+          }}
+        >
+          <SelectTrigger id="task_tag" className="w-full">
+            <SelectValue placeholder="Select node tag" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value={INHERIT_TAG_VALUE}>
+              {workflowTag ? `Inherit workflow tag (${workflowTag})` : "Inherit workflow tag"}
+            </SelectItem>
+            {tagOptions.map((tag) => (
+              <SelectItem key={tag} value={tag}>
+                {tag}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <p className="text-xs text-muted-foreground">
+          {node.tag
+            ? "This task overrides the workflow-level routing tag."
+            : workflowTag
+              ? `This task will run on nodes tagged ${workflowTag}.`
+              : "This task can run on any healthy node unless you choose a tag."}
+        </p>
       </div>
 
       {node.type === "shell" && (

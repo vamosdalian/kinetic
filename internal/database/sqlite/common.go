@@ -23,7 +23,7 @@ func NewSqliteDB(dbPath string) (*SqliteDB, error) {
 		db:     db,
 	}
 
-	if s.Migrate() != nil {
+	if err := s.Migrate(); err != nil {
 		return nil, err
 	}
 

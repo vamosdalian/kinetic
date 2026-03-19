@@ -55,6 +55,7 @@ export interface TaskNode {
   description: string;
   type: TaskType;
   config: TaskConfig;
+  tag: string;
 
   // 视觉数据
   position: { x: number; y: number };
@@ -66,6 +67,7 @@ export const defaultTaskNode: Omit<TaskNode, "id" | "position"> = {
   description: "",
   type: "shell",
   config: createTaskConfig("shell"),
+  tag: "",
   nodeType: "baseNodeFull",
 };
 
@@ -74,6 +76,7 @@ export const defaultTaskNode: Omit<TaskNode, "id" | "position"> = {
 export interface WorkflowData {
   name: string;
   description: string;
+  tag: string;
 }
 
 // ============ Workflow Detail (API response) ============
@@ -82,6 +85,7 @@ export interface WorkflowDetail {
   id: string;
   name: string;
   description: string;
+  tag?: string;
   taskNodes: TaskNode[];
   edges: Edge[];
   version?: string;

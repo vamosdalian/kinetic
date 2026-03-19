@@ -76,6 +76,35 @@ CREATE TABLE IF NOT EXISTS edge_runs (
 	created_at TEXT
 );
 `,
+	3: `
+ALTER TABLE workflows ADD COLUMN tag TEXT DEFAULT '';
+ALTER TABLE tasks ADD COLUMN tag TEXT DEFAULT '';
+ALTER TABLE workflow_runs ADD COLUMN workflow_tag TEXT DEFAULT '';
+ALTER TABLE task_runs ADD COLUMN task_tag TEXT DEFAULT '';
+ALTER TABLE task_runs ADD COLUMN effective_tag TEXT DEFAULT '';
+ALTER TABLE task_runs ADD COLUMN assigned_node_id TEXT DEFAULT '';
+ALTER TABLE task_runs ADD COLUMN assigned_at TEXT;
+CREATE TABLE IF NOT EXISTS nodes (
+	node_id TEXT PRIMARY KEY,
+	name TEXT,
+	ip TEXT,
+	kind TEXT,
+	status TEXT,
+	max_concurrency INTEGER,
+	running_count INTEGER,
+	last_heartbeat_at TEXT,
+	last_stream_at TEXT,
+	created_at TEXT,
+	updated_at TEXT
+);
+CREATE TABLE IF NOT EXISTS node_tags (
+	node_id TEXT,
+	tag TEXT,
+	system_managed INTEGER,
+	created_at TEXT,
+	PRIMARY KEY (node_id, tag)
+);
+`,
 }
 
 func (s *SqliteDB) Migrate() error {

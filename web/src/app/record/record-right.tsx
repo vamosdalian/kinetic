@@ -6,13 +6,17 @@ import { getStatusBadgeClassName } from "./status";
 
 interface RecordRightProps {
   task: TaskNodeRun;
+  workflowTag?: string;
 }
 
-export function RecordRight({ task }: RecordRightProps) {
+export function RecordRight({ task, workflowTag }: RecordRightProps) {
   const exitCode =
-    task.status === "success" || task.status === "failed" || task.status === "cancelled"
+    task.status === "success" ||
+    task.status === "failed" ||
+    task.status === "cancelled"
       ? task.exit_code ?? "-"
       : "-";
+  const effectiveTag = task.effective_tag || task.tag || workflowTag || "Any node";
 
   return (
     <ScrollArea className="h-full">
@@ -47,6 +51,20 @@ export function RecordRight({ task }: RecordRightProps) {
               <div className="font-medium capitalize">{task.type}</div>
             </div>
             <div className="rounded-lg border bg-muted/30 p-3">
+              <div className="text-muted-foreground">Effective Tag</div>
+              <div className="font-medium break-words">{effectiveTag}</div>
+            </div>
+            <div className="rounded-lg border bg-muted/30 p-3">
+              <div className="text-muted-foreground">Assigned Node</div>
+              <div className="font-medium break-words">
+                {task.assigned_node_id || "-"}
+              </div>
+            </div>
+            <div className="rounded-lg border bg-muted/30 p-3">
+              <div className="text-muted-foreground">Assigned At</div>
+              <div className="font-medium break-words">{task.assigned_at || "-"}</div>
+            </div>
+            <div className="rounded-lg border bg-muted/30 p-3">
               <div className="text-muted-foreground">Exit Code</div>
               <div className="font-medium">{exitCode}</div>
             </div>
@@ -58,9 +76,21 @@ export function RecordRight({ task }: RecordRightProps) {
               <div className="text-muted-foreground">Started</div>
               <div className="font-medium break-words">{task.started_at || "-"}</div>
             </div>
-            <div className="rounded-lg border bg-muted/30 p-3 col-span-2">
+            <div className="rounded-lg border bg-muted/30 p-3">
               <div className="text-muted-foreground">Finished</div>
               <div className="font-medium break-words">{task.finished_at || "-"}</div>
+            </div>
+            <div className="rounded-lg border bg-muted/30 p-3 col-span-2">
+              <div className="text-muted-foreground">Requested Tag</div>
+              <div className="font-medium break-words">
+                {task.tag || (workflowTag ? "Inherit workflow tag" : "Inherit any node")}
+              </div>
+            </div>
+            <div className="rounded-lg border bg-muted/30 p-3 col-span-2">
+              <div className="text-muted-foreground">Output Size</div>
+              <div className="font-medium break-words">
+                {task.output ? `${task.output.length} chars` : "No output captured"}
+              </div>
             </div>
           </div>
         </div>

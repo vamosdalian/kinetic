@@ -14,6 +14,9 @@ export interface WorkflowRunEvent {
   run_id?: string;
   task_id?: string;
   status?: string;
+  assigned_node_id?: string;
+  effective_tag?: string;
+  assigned_at?: string;
   started_at?: string;
   finished_at?: string;
   output?: string;
@@ -27,6 +30,9 @@ export interface TaskNodeRun {
   description: string;
   type: string;
   config: unknown;
+  tag?: string;
+  effective_tag?: string;
+  assigned_node_id?: string;
   position: {
     x: number;
     y: number;
@@ -34,6 +40,7 @@ export interface TaskNodeRun {
   nodeType: string;
   status: string;
   created_at: string;
+  assigned_at?: string;
   started_at: string;
   finished_at: string;
   exit_code?: number;
@@ -51,6 +58,7 @@ export interface EdgeRun {
 
 export interface WorkflowRunDetail extends WorkflowRunListItem {
   description: string;
+  tag?: string;
   taskNodes: TaskNodeRun[];
   edges: EdgeRun[];
 }

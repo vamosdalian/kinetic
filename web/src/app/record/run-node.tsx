@@ -24,6 +24,8 @@ interface NodeData {
   type: string;
   status: string;
   exit_code?: number;
+  assigned_node_id?: string;
+  effective_tag?: string;
 }
 
 const handleStyle = {
@@ -103,6 +105,8 @@ export const RunNode = memo((props: NodeProps) => {
                <div className="text-xs text-muted-foreground space-y-1 mt-1">
                  <p>Type: {data.type}</p>
                  <p>Status: {data.status} {data.status === 'failed' && data.exit_code !== undefined ? `(${data.exit_code})` : ''}</p>
+                 <p>Tag: {data.effective_tag || "Any node"}</p>
+                 <p>Node: {data.assigned_node_id || "-"}</p>
                </div>
             </TooltipContent>
           </Tooltip>

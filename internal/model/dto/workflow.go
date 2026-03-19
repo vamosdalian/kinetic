@@ -14,6 +14,7 @@ type Workflow struct {
 	ID          string     `json:"id"`
 	Name        string     `json:"name"`
 	Description string     `json:"description"`
+	Tag         string     `json:"tag,omitempty"`
 	Version     int        `json:"version,string"`
 	Enable      bool       `json:"enable"`
 	TaskNodes   []TaskNode `json:"taskNodes"`
@@ -37,6 +38,7 @@ type TaskNode struct {
 	Description string          `json:"description,omitempty"`
 	Type        TaskType        `json:"type"`
 	Config      json.RawMessage `json:"config"`
+	Tag         string          `json:"tag,omitempty"`
 	Position    Position        `json:"position"`
 	NodeType    string          `json:"nodeType"`
 }

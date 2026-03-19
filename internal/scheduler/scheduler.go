@@ -3,36 +3,58 @@ package scheduler
 import (
 	"context"
 	"sync"
+	"time"
 
 	"github.com/sirupsen/logrus"
 )
 
-// Scheduler 任务调度器
-type Scheduler struct {
-	mu     sync.Mutex
-	stopCh chan struct{}
+type dispatcher interface {
+	DispatchQueuedTasks(ctx context.Context, limit int) error
+	SweepOfflineNodes(ctx context.Context) error
 }
 
-// NewScheduler 创建调度器
-func NewScheduler() *Scheduler {
+type Scheduler struct {
+	mu         sync.Mutex
+	stopCh     chan struct{}
+	dispatcher dispatcher
+	interval   time.Duration
+}
+
+func NewScheduler(dispatcher dispatcher) *Scheduler {
 	return &Scheduler{
-		stopCh: make(chan struct{}),
+		stopCh:     make(chan struct{}),
+		dispatcher: dispatcher,
+		interval:   2 * time.Second,
 	}
 }
 
-// Run 启动调度器
 func (s *Scheduler) Run() error {
 	logrus.Info("Starting scheduler...")
+	if s.dispatcher == nil {
+		<-s.stopCh
+		return nil
+	}
 
-	// TODO: 实现调度逻辑
-	// 1. 定期检查需要执行的定时任务
-	// 2. 将任务分发给 Worker
+	ticker := time.NewTicker(s.interval)
+	defer ticker.Stop()
 
-	<-s.stopCh
-	return nil
+	for {
+		select {
+		case <-s.stopCh:
+			return nil
+		case <-ticker.C:
+			ctx, cancel := context.WithTimeout(context.Background(), s.interval)
+			if err := s.dispatcher.SweepOfflineNodes(ctx); err != nil {
+				logrus.Warnf("scheduler sweep failed: %v", err)
+			}
+			if err := s.dispatcher.DispatchQueuedTasks(ctx, 64); err != nil {
+				logrus.Warnf("scheduler dispatch failed: %v", err)
+			}
+			cancel()
+		}
+	}
 }
 
-// Shutdown 停止调度器
 func (s *Scheduler) Shutdown(ctx context.Context) error {
 	logrus.Info("Shutting down scheduler...")
 	close(s.stopCh)

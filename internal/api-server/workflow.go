@@ -104,6 +104,7 @@ func (h *WorkflowHandler) Get(c *gin.Context) {
 		ID:          workflow.ID,
 		Name:        workflow.Name,
 		Description: workflow.Description,
+		Tag:         workflow.Tag,
 		Version:     workflow.Version,
 		Enable:      workflow.Enable,
 		CreatedAt:   workflow.CreatedAt,
@@ -118,6 +119,7 @@ func (h *WorkflowHandler) Get(c *gin.Context) {
 			Name:        task.Name,
 			Type:        dto.TaskType(task.Type),
 			Config:      json.RawMessage(task.Config),
+			Tag:         task.Tag,
 			Position:    position,
 			NodeType:    task.NodeType,
 			Description: task.Description,
@@ -156,6 +158,7 @@ func (h *WorkflowHandler) Save(c *gin.Context) {
 			Description: task.Description,
 			Type:        string(task.Type),
 			Config:      string(config),
+			Tag:         task.Tag,
 			Position:    string(position),
 			NodeType:    task.NodeType,
 		})
@@ -182,6 +185,7 @@ func (h *WorkflowHandler) Save(c *gin.Context) {
 		ID:          req.ID,
 		Name:        req.Name,
 		Description: req.Description,
+		Tag:         req.Tag,
 		Enable:      req.Enable,
 	}
 	err := h.db.SaveWorkflow(workflowEntity)
