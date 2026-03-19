@@ -42,15 +42,7 @@ export default defineConfig({
             return "analytics-vendor"
           }
 
-          if (id.includes("@radix-ui") || id.includes("lucide-react") || id.includes("sonner")) {
-            return "ui-vendor"
-          }
-
-          if (id.includes("react") || id.includes("react-dom") || id.includes("react-router-dom")) {
-            return "react-vendor"
-          }
-
-          return "vendor"
+          return undefined
         },
       },
     },
