@@ -8,13 +8,14 @@ import {
   Controls,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
-import { LoaderCircle, ArrowLeft } from "lucide-react";
+import { LoaderCircle, ArrowLeft, SquarePen } from "lucide-react";
 
 import { apiClient } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { type WorkflowRunDetail } from "./types";
 import { RunNode } from "./run-node";
 import { RecordRight } from "./record-right";
+import { getStatusBadgeClassName } from "./status";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
@@ -22,21 +23,6 @@ import { Card } from "@/components/ui/card";
 const nodeTypes = {
   runNode: RunNode,
 };
-
-function getStatusVariant(
-  status: string
-): "default" | "secondary" | "destructive" | "outline" {
-  switch (status) {
-    case "success":
-      return "default";
-    case "running":
-      return "secondary";
-    case "failed":
-      return "destructive";
-    default:
-      return "outline";
-  }
-}
 
 export function RecordDetail() {
   const { runId } = useParams();
@@ -164,7 +150,10 @@ export function RecordDetail() {
         <div className="flex gap-4 text-sm">
           <div className="flex items-center gap-2">
             <span className="text-muted-foreground">Status:</span>
-            <Badge variant={getStatusVariant(runData.status)} className="capitalize">
+            <Badge
+              variant="outline"
+              className={`capitalize ${getStatusBadgeClassName(runData.status)}`}
+            >
               {runData.status}
             </Badge>
           </div>
@@ -199,20 +188,20 @@ export function RecordDetail() {
           <Controls />
         </ReactFlow>
 
-        <div className="absolute left-4 top-4 z-10 rounded-lg border bg-background/95 px-3 py-2 text-xs text-muted-foreground shadow-sm backdrop-blur">
-          Click a task node to inspect status and output.
-        </div>
-
         <div
           className={cn(
-            "absolute top-4 right-4 z-10 rounded-lg border bg-background/95 px-3 py-2 text-xs shadow-sm backdrop-blur transition-transform duration-300 ease-in-out",
+            "absolute top-4 right-4 z-10 transition-transform duration-300 ease-in-out",
             selectedTask ? "-translate-x-[510px]" : "translate-x-0"
           )}
         >
-          <span className="text-muted-foreground mr-2">Tasks</span>
-          <Badge variant={getStatusVariant(runData.status)}>
-            {runData.taskNodes.length}
-          </Badge>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => navigate(`/workflow/${runData.workflow_id}`)}
+          >
+            <SquarePen className="w-4 h-4" />
+            Edit
+          </Button>
         </div>
 
         <Card

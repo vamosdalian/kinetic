@@ -2,29 +2,7 @@ import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import type { TaskNodeRun } from "./types";
-
-function getStatusVariant(
-  status: string
-): "default" | "secondary" | "destructive" | "outline" {
-  switch (status) {
-    case "success":
-      return "default";
-    case "running":
-      return "secondary";
-    case "failed":
-      return "destructive";
-    default:
-      return "outline";
-  }
-}
-
-function formatConfig(config: unknown) {
-  try {
-    return JSON.stringify(config, null, 2);
-  } catch {
-    return String(config);
-  }
-}
+import { getStatusBadgeClassName } from "./status";
 
 interface RecordRightProps {
   task: TaskNodeRun;
@@ -42,7 +20,7 @@ export function RecordRight({ task }: RecordRightProps) {
                 {task.task_id}
               </p>
             </div>
-            <Badge variant={getStatusVariant(task.status)} className="capitalize">
+            <Badge variant="outline" className={`capitalize ${getStatusBadgeClassName(task.status)}`}>
               {task.status}
             </Badge>
           </div>
@@ -86,13 +64,6 @@ export function RecordRight({ task }: RecordRightProps) {
           <h2 className="text-sm font-medium">Output</h2>
           <pre className="rounded-lg border bg-muted/40 p-3 text-xs whitespace-pre-wrap break-words overflow-x-auto min-h-48">
             {task.output || "No output captured."}
-          </pre>
-        </div>
-
-        <div className="grid gap-2">
-          <h2 className="text-sm font-medium">Config</h2>
-          <pre className="rounded-lg border bg-muted/20 p-3 text-xs whitespace-pre-wrap break-words overflow-x-auto">
-            {formatConfig(task.config)}
           </pre>
         </div>
       </div>

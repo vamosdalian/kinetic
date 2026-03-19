@@ -16,6 +16,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { getStatusBadgeClassName } from "./status";
 
 interface NodeData {
   name: string;
@@ -38,24 +39,6 @@ const TypeIcon = ({ type }: { type: string }) => {
       return <HelpCircle className="w-3 h-3 flex-shrink-0" />;
   }
 };
-
-const getBadgeVariant = (status: string): "default" | "secondary" | "destructive" | "outline" => {
-  switch (status) {
-    case "success":
-      return "default";
-    case "failed":
-      return "destructive";
-    case "running":
-      return "secondary";
-    default:
-      return "outline";
-  }
-};
-
-const getBadgeClassName = (status: string) => {
-   if (status === 'success') return "bg-green-500 hover:bg-green-600 border-transparent text-primary-foreground";
-   return "";
-}
 
 export const RunNode = memo((props: NodeProps) => {
   const { selected } = props;
@@ -88,8 +71,8 @@ export const RunNode = memo((props: NodeProps) => {
           </Tooltip>
           
           <Badge 
-            variant={getBadgeVariant(data.status)} 
-            className={`h-4 px-1 text-[9px] pointer-events-none capitalize ${getBadgeClassName(data.status)}`}
+            variant="outline"
+            className={`h-4 px-1 text-[9px] pointer-events-none capitalize ${getStatusBadgeClassName(data.status)}`}
           >
             {data.status}
           </Badge>
