@@ -26,6 +26,7 @@ type Worker struct {
 	executor     *executor.Executor
 	wg           sync.WaitGroup
 	stopCh       chan struct{}
+	stopOnce     sync.Once
 	client       *http.Client
 	kind         string
 	mu           sync.Mutex
@@ -101,7 +102,9 @@ func (w *Worker) Run() error {
 func (w *Worker) Shutdown(ctx context.Context) error {
 	logger := w.logger()
 	logger.Info("Shutting down worker")
-	close(w.stopCh)
+	w.stopOnce.Do(func() {
+		close(w.stopCh)
+	})
 
 	w.mu.Lock()
 	if w.streamCancel != nil {

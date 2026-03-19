@@ -16,6 +16,7 @@ type dispatcher interface {
 type Scheduler struct {
 	mu         sync.Mutex
 	stopCh     chan struct{}
+	closeOnce  sync.Once
 	dispatcher dispatcher
 	interval   time.Duration
 }
@@ -57,6 +58,8 @@ func (s *Scheduler) Run() error {
 
 func (s *Scheduler) Shutdown(ctx context.Context) error {
 	logrus.Info("Shutting down scheduler...")
-	close(s.stopCh)
+	s.closeOnce.Do(func() {
+		close(s.stopCh)
+	})
 	return nil
 }

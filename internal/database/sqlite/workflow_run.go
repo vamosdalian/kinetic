@@ -208,7 +208,7 @@ func (s *SqliteDB) ListWorkflowRuns(offset int, limit int) ([]entity.WorkflowRun
 		SELECT run_id, workflow_id, workflow_name, workflow_description, workflow_version, workflow_tag,
 		status, created_at, started_at, finished_at 
 		FROM workflow_runs
-		ORDER BY datetime(created_at) DESC, run_id DESC
+		ORDER BY created_at DESC, run_id DESC
 		LIMIT ? OFFSET ?
 	`, limit, offset)
 	if err != nil {
@@ -350,7 +350,7 @@ func (s *SqliteDB) ListQueuedTaskRuns(limit int) ([]entity.TaskRunEntity, error)
 		       status, created_at, started_at, finished_at, exit_code, output
 		FROM task_runs
 		WHERE status = 'queued'
-		ORDER BY datetime(created_at) ASC, task_id ASC
+		ORDER BY created_at ASC, task_id ASC
 		LIMIT ?
 	`, limit)
 	if err != nil {
@@ -386,7 +386,7 @@ func (s *SqliteDB) ListNodeActiveTaskRuns(nodeID string) ([]entity.TaskRunEntity
 		       status, created_at, started_at, finished_at, exit_code, output
 		FROM task_runs
 		WHERE assigned_node_id = ? AND status IN ('assigned', 'running', 'unknown')
-		ORDER BY datetime(created_at) ASC, task_id ASC
+		ORDER BY created_at ASC, task_id ASC
 	`, nodeID)
 	if err != nil {
 		return nil, err

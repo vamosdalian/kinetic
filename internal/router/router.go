@@ -13,9 +13,12 @@ import (
 type RouteRegistrar func(engine *gin.Engine)
 
 type Router struct {
-	engine     *gin.Engine
-	httpServer *http.Server
-	addr       string
+	engine       *gin.Engine
+	httpServer   *http.Server
+	addr         string
+	readTimeout  time.Duration
+	writeTimeout time.Duration
+	idleTimeout  time.Duration
 }
 
 type Option func(*Router)
@@ -28,17 +31,13 @@ func WithAddr(addr string) Option {
 
 func WithReadTimeout(d time.Duration) Option {
 	return func(r *Router) {
-		if r.httpServer != nil {
-			r.httpServer.ReadTimeout = d
-		}
+		r.readTimeout = d
 	}
 }
 
 func WithWriteTimeout(d time.Duration) Option {
 	return func(r *Router) {
-		if r.httpServer != nil {
-			r.httpServer.WriteTimeout = d
-		}
+		r.writeTimeout = d
 	}
 }
 
@@ -49,8 +48,11 @@ func New(opts ...Option) *Router {
 	engine.Use(ginLogger())
 
 	r := &Router{
-		engine: engine,
-		addr:   ":8080",
+		engine:       engine,
+		addr:         ":8080",
+		readTimeout:  30 * time.Second,
+		writeTimeout: 30 * time.Second,
+		idleTimeout:  60 * time.Second,
 	}
 
 	for _, opt := range opts {
@@ -82,9 +84,9 @@ func (r *Router) Run() error {
 	r.httpServer = &http.Server{
 		Addr:         r.addr,
 		Handler:      r.engine,
-		ReadTimeout:  30 * time.Second,
-		WriteTimeout: 30 * time.Second,
-		IdleTimeout:  60 * time.Second,
+		ReadTimeout:  r.readTimeout,
+		WriteTimeout: r.writeTimeout,
+		IdleTimeout:  r.idleTimeout,
 	}
 
 	logrus.Infof("HTTP server starting on %s", r.addr)

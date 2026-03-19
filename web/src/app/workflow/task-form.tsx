@@ -26,7 +26,7 @@ import {
 
 interface TaskFormProps {
   taskId: string;
-  node: TaskNode;
+  node: TaskNode | null;
   tagOptions: string[];
   workflowTag: string;
   onUpdate: (id: string, data: Partial<Omit<TaskNode, "id">>) => void;
@@ -41,28 +41,31 @@ export function Taskform({
   workflowTag,
   onUpdate,
 }: TaskFormProps) {
-  if (!node) {
-    return (
-      <div className="flex items-center justify-center h-full text-muted-foreground">
-        Select a task to edit
-      </div>
-    );
-  }
+  const config = React.useMemo(() => {
+    if (!node) {
+      return null;
+    }
 
-  const config = React.useMemo(
-    () => (node.config ?? createTaskConfig(node.type)) as TaskConfig,
-    [node.config, node.type]
-  );
+    return (node.config ?? createTaskConfig(node.type)) as TaskConfig;
+  }, [node]);
 
   const updateConfig = React.useCallback(
     (nextConfig: TaskConfig) => {
+      if (!node) {
+        return;
+      }
+
       onUpdate(taskId, { config: nextConfig });
     },
-    [onUpdate, taskId]
+    [node, onUpdate, taskId]
   );
 
   const updatePolicy = React.useCallback(
     (field: keyof TaskPolicy, value: string) => {
+      if (!config) {
+        return;
+      }
+
       const nextValue = value === "" ? undefined : Number(value);
       updateConfig({
         ...config,
@@ -71,6 +74,14 @@ export function Taskform({
     },
     [config, updateConfig]
   );
+
+  if (!node || !config) {
+    return (
+      <div className="flex items-center justify-center h-full text-muted-foreground">
+        Select a task to edit
+      </div>
+    );
+  }
 
   return (
     <div className="grid gap-6 m-4">

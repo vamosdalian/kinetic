@@ -143,3 +143,84 @@ func TestNodeService_SweepOfflineNodesResetsAssignedTasks(t *testing.T) {
 	assert.Equal(t, "queued", taskRuns[0].Status)
 	assert.Empty(t, taskRuns[0].AssignedNodeID)
 }
+
+func TestNodeService_DispatchQueuedTasksRespectsCapacityWithinBatch(t *testing.T) {
+	runService, nodeService := setupNodeService(t, 5*time.Second)
+
+	firstNode, err := nodeService.RegisterNode(dto.RegisterNodeRequest{
+		NodeID:         "node-1",
+		Name:           "Node 1",
+		MaxConcurrency: 1,
+	})
+	require.NoError(t, err)
+
+	secondNode, err := nodeService.RegisterNode(dto.RegisterNodeRequest{
+		NodeID:         "node-2",
+		Name:           "Node 2",
+		MaxConcurrency: 1,
+	})
+	require.NoError(t, err)
+
+	firstStream, firstCleanup, err := nodeService.SubscribeStream(firstNode.NodeID)
+	require.NoError(t, err)
+	defer firstCleanup()
+
+	secondStream, secondCleanup, err := nodeService.SubscribeStream(secondNode.NodeID)
+	require.NoError(t, err)
+	defer secondCleanup()
+
+	workflowID := seedWorkflow(t, runService.db, []entity.TaskEntity{
+		{
+			ID:       uuid.New().String(),
+			Name:     "task-1",
+			Type:     "shell",
+			Config:   `{"script":"printf 'one'"}`,
+			Position: `{"x":0,"y":0}`,
+			NodeType: "baseNodeFull",
+		},
+		{
+			ID:       uuid.New().String(),
+			Name:     "task-2",
+			Type:     "shell",
+			Config:   `{"script":"printf 'two'"}`,
+			Position: `{"x":1,"y":0}`,
+			NodeType: "baseNodeFull",
+		},
+	}, nil)
+
+	runID, err := runService.StartWorkflowRun(workflowID)
+	require.NoError(t, err)
+
+	require.NoError(t, nodeService.DispatchQueuedTasks(context.Background(), 64))
+
+	assignedNodes := make(map[string]int)
+	for i := 0; i < 2; i++ {
+		select {
+		case command := <-firstStream:
+			if command.Type == "assign" && command.Task != nil {
+				assignedNodes[firstNode.NodeID]++
+			}
+		case command := <-secondStream:
+			if command.Type == "assign" && command.Task != nil {
+				assignedNodes[secondNode.NodeID]++
+			}
+		case <-time.After(2 * time.Second):
+			t.Fatal("expected both tasks to be assigned within the dispatch batch")
+		}
+	}
+
+	assert.Equal(t, 1, assignedNodes[firstNode.NodeID])
+	assert.Equal(t, 1, assignedNodes[secondNode.NodeID])
+
+	taskRuns, err := runService.db.GetTaskRuns(runID)
+	require.NoError(t, err)
+	require.Len(t, taskRuns, 2)
+	assert.NotEqual(t, taskRuns[0].AssignedNodeID, taskRuns[1].AssignedNodeID)
+
+	updatedFirstNode, err := nodeService.GetNodeDTO(firstNode.NodeID)
+	require.NoError(t, err)
+	updatedSecondNode, err := nodeService.GetNodeDTO(secondNode.NodeID)
+	require.NoError(t, err)
+	assert.Equal(t, 1, updatedFirstNode.RunningCount)
+	assert.Equal(t, 1, updatedSecondNode.RunningCount)
+}

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -159,23 +160,27 @@ func (s *NodeService) DispatchQueuedTasks(ctx context.Context, limit int) error 
 		default:
 		}
 
-		candidates := s.matchingNodes(task.EffectiveTag, nodeMap, tagMap)
-		if len(candidates) == 0 {
+		selected, ok := s.selectNode(task.EffectiveTag, nodeMap, tagMap)
+		if !ok {
 			continue
 		}
 
-		selected := candidates[0]
 		if err := s.db.AssignTaskRun(task.RunID, task.TaskID, selected.NodeID); err != nil {
 			return err
 		}
 		if err := s.db.IncrementNodeRunningCount(selected.NodeID); err != nil {
+			_ = s.db.ResetAssignedTaskRun(task.RunID, task.TaskID)
 			return err
 		}
+		selected.RunningCount++
+		nodeMap[selected.NodeID] = selected
 
 		assignedTask, err := s.runService.PrepareAssignedTask(task.RunID, task.TaskID)
 		if err != nil {
 			_ = s.db.DecrementNodeRunningCount(selected.NodeID)
 			_ = s.db.ResetAssignedTaskRun(task.RunID, task.TaskID)
+			selected.RunningCount--
+			nodeMap[selected.NodeID] = selected
 			return err
 		}
 
@@ -183,6 +188,9 @@ func (s *NodeService) DispatchQueuedTasks(ctx context.Context, limit int) error 
 			_ = s.db.DecrementNodeRunningCount(selected.NodeID)
 			_ = s.db.ResetAssignedTaskRun(task.RunID, task.TaskID)
 			_ = s.db.SetNodeStatus(selected.NodeID, "offline")
+			selected.RunningCount--
+			selected.Status = "offline"
+			nodeMap[selected.NodeID] = selected
 			continue
 		}
 
@@ -250,6 +258,7 @@ func (s *NodeService) toNodeDTO(node entity.NodeEntity) dto.Node {
 			SystemManaged: tag.SystemManaged,
 		})
 	}
+	sortNodeTags(dtoTags)
 	return dto.Node{
 		NodeID:          node.NodeID,
 		Name:            node.Name,
@@ -264,8 +273,9 @@ func (s *NodeService) toNodeDTO(node entity.NodeEntity) dto.Node {
 	}
 }
 
-func (s *NodeService) matchingNodes(requiredTag string, nodes map[string]entity.NodeEntity, tags map[string]map[string]bool) []entity.NodeEntity {
-	candidates := make([]entity.NodeEntity, 0, len(nodes))
+func (s *NodeService) selectNode(requiredTag string, nodes map[string]entity.NodeEntity, tags map[string]map[string]bool) (entity.NodeEntity, bool) {
+	var selected entity.NodeEntity
+	found := false
 	for _, node := range nodes {
 		if node.Status != "online" {
 			continue
@@ -279,18 +289,23 @@ func (s *NodeService) matchingNodes(requiredTag string, nodes map[string]entity.
 		if requiredTag != "" && !tags[node.NodeID][requiredTag] {
 			continue
 		}
-		candidates = append(candidates, node)
-	}
-
-	for i := 0; i < len(candidates); i++ {
-		for j := i + 1; j < len(candidates); j++ {
-			if candidates[j].RunningCount < candidates[i].RunningCount ||
-				(candidates[j].RunningCount == candidates[i].RunningCount && candidates[j].NodeID < candidates[i].NodeID) {
-				candidates[i], candidates[j] = candidates[j], candidates[i]
-			}
+		if !found || node.RunningCount < selected.RunningCount ||
+			(node.RunningCount == selected.RunningCount && node.NodeID < selected.NodeID) {
+			selected = node
+			found = true
 		}
 	}
-	return candidates
+
+	return selected, found
+}
+
+func sortNodeTags(tags []dto.NodeTag) {
+	sort.Slice(tags, func(i, j int) bool {
+		if tags[i].Tag == tags[j].Tag {
+			return !tags[i].SystemManaged && tags[j].SystemManaged
+		}
+		return tags[i].Tag < tags[j].Tag
+	})
 }
 
 func formatDTOTime(value *time.Time) string {

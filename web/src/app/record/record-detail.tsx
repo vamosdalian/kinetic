@@ -53,6 +53,7 @@ export function RecordDetail() {
   const [selectedTaskId, setSelectedTaskId] = React.useState("");
   const [rerunning, setRerunning] = React.useState(false);
   const [cancelling, setCancelling] = React.useState(false);
+  const runStatus = runData?.status;
 
   const fetchRunDetail = React.useCallback(
     async (showLoader: boolean) => {
@@ -103,7 +104,7 @@ export function RecordDetail() {
   );
 
   React.useEffect(() => {
-    if (!runId || !runData || isTerminalRunStatus(runData.status)) {
+    if (!runId || !runStatus || isTerminalRunStatus(runStatus)) {
       return;
     }
 
@@ -187,7 +188,7 @@ export function RecordDetail() {
     return () => {
       source.close();
     };
-  }, [applyTaskUpdate, fetchRunDetail, runData?.status, runId]);
+  }, [applyTaskUpdate, fetchRunDetail, runId, runStatus]);
 
   const selectedTask = React.useMemo(() => {
     return runData?.taskNodes.find((task) => task.task_id === selectedTaskId) ?? null;

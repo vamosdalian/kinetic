@@ -70,3 +70,10 @@ func TestScheduler_RunWithoutDispatcherStopsCleanly(t *testing.T) {
 	require.NoError(t, scheduler.Shutdown(context.Background()))
 	require.NoError(t, <-done)
 }
+
+func TestScheduler_ShutdownIsIdempotent(t *testing.T) {
+	scheduler := NewScheduler(nil)
+
+	require.NoError(t, scheduler.Shutdown(context.Background()))
+	require.NoError(t, scheduler.Shutdown(context.Background()))
+}

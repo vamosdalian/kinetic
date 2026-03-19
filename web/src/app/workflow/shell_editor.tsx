@@ -131,7 +131,7 @@ export function ShellEditor({
         viewRef.current = null;
       }
     };
-  }, [open, isDark]);
+  }, [open, isDark, value]);
 
   const handleSave = () => {
     onChange(scriptContent);

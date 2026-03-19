@@ -105,6 +105,18 @@ CREATE TABLE IF NOT EXISTS node_tags (
 	PRIMARY KEY (node_id, tag)
 );
 `,
+	4: `
+CREATE INDEX IF NOT EXISTS idx_workflow_runs_created_at_run_id
+	ON workflow_runs(created_at DESC, run_id DESC);
+CREATE INDEX IF NOT EXISTS idx_task_runs_status_created_at_task_id
+	ON task_runs(status, created_at ASC, task_id ASC);
+CREATE INDEX IF NOT EXISTS idx_task_runs_assigned_node_status_created_at
+	ON task_runs(assigned_node_id, status, created_at ASC, task_id ASC);
+CREATE INDEX IF NOT EXISTS idx_task_runs_run_id_task_id
+	ON task_runs(run_id, task_id);
+CREATE INDEX IF NOT EXISTS idx_nodes_status_running_count_node_id
+	ON nodes(status, running_count ASC, node_id ASC);
+`,
 }
 
 func (s *SqliteDB) Migrate() error {
