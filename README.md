@@ -8,6 +8,8 @@
 
 Kinetic is a lightweight workflow orchestration system with a built-in web UI, HTTP API, scheduler, and distributed worker model. It is designed to be easy to deploy for small teams while still supporting controller/worker separation when you need to run tasks on remote nodes.
 
+![Kinetic workflow UI](./images/snapshort.jpg)
+
 ## Features
 
 - Built-in web UI served by the backend binary
