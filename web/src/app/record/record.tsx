@@ -25,7 +25,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { apiClient } from "@/lib/api";
+import { apiClient, apiClientFull } from "@/lib/api";
 import { CommonTable } from "@/components/common-table";
 import { SiteHeader } from "@/components/site-header";
 import { type WorkflowRunListItem } from "./types";
@@ -47,6 +47,11 @@ const statusOptions = [
 export function Record() {
   const navigate = useNavigate();
   const [data, setData] = React.useState<WorkflowRunListItem[]>([]);
+  const [pagination, setPagination] = React.useState({
+    pageIndex: 0,
+    pageSize: 10,
+  });
+  const [pageCount, setPageCount] = React.useState(-1);
   const [workflowQuery, setWorkflowQuery] = React.useState("");
   const [runQuery, setRunQuery] = React.useState("");
   const [statusFilter, setStatusFilter] = React.useState("all");
@@ -54,14 +59,15 @@ export function Record() {
 
   const fetchRuns = React.useCallback(async () => {
     try {
-      const runs = await apiClient<WorkflowRunListItem[]>(
-        "/api/workflow_runs?page=1&pageSize=100"
+      const response = await apiClientFull<WorkflowRunListItem[]>(
+        `/api/workflow_runs?page=${pagination.pageIndex + 1}&pageSize=${pagination.pageSize}`
       );
-      setData(runs);
+      setData(response.data);
+      setPageCount(response.meta?.totalPages ?? -1);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Failed to load workflow runs");
     }
-  }, []);
+  }, [pagination.pageIndex, pagination.pageSize]);
 
   React.useEffect(() => {
     void fetchRuns();
@@ -100,6 +106,12 @@ export function Record() {
       return workflowMatch && runMatch && statusMatch;
     });
   }, [data, runQuery, statusFilter, workflowQuery]);
+
+  React.useEffect(() => {
+    setPagination((current) =>
+      current.pageIndex === 0 ? current : { ...current, pageIndex: 0 }
+    );
+  }, [workflowQuery, runQuery, statusFilter]);
 
   const columns = React.useMemo<ColumnDef<WorkflowRunListItem>[]>(
     () => [
@@ -233,6 +245,10 @@ export function Record() {
       <CommonTable
         columns={columns}
         data={filteredData}
+        manualPagination={true}
+        pageCount={pageCount}
+        pagination={pagination}
+        onPaginationChange={setPagination}
         getRowClassName={(row) => getRunRowClassName(row.status)}
         renderToolbarActions={() => (
           <>

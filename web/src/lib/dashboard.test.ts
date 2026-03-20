@@ -1,9 +1,11 @@
 import { describe, expect, it, vi } from "vitest"
 
 import {
+  buildDashboardCardMetrics,
   buildDashboardPath,
   fetchDashboard,
   formatDashboardDuration,
+  formatDashboardRangeLabel,
   getDashboardTimezone,
 } from "./dashboard"
 
@@ -19,6 +21,35 @@ describe("dashboard helpers", () => {
     expect(formatDashboardDuration(18)).toBe("18s")
     expect(formatDashboardDuration(65)).toBe("1m 5s")
     expect(formatDashboardDuration(3600)).toBe("1h")
+  })
+
+  it("formats dashboard range labels", () => {
+    expect(formatDashboardRangeLabel("7d")).toBe("Last 7 days")
+    expect(formatDashboardRangeLabel("30d")).toBe("Last 30 days")
+    expect(formatDashboardRangeLabel("90d")).toBe("Last 90 days")
+  })
+
+  it("builds card metrics for the selected range", () => {
+    const metrics = buildDashboardCardMetrics(
+      {
+        workflow_runs: 12,
+        total_workflows: 4,
+        total_nodes: 3,
+        success_rate: 87.5,
+      },
+      "7d"
+    )
+
+    expect(metrics[0]).toMatchObject({
+      label: "Workflow Runs",
+      value: "12",
+      badge: "Last 7 days",
+    })
+    expect(metrics[3]).toMatchObject({
+      label: "Success Rate",
+      value: "87.5%",
+      badge: "Last 7 days",
+    })
   })
 
   it("falls back to UTC when the browser timezone is unavailable", () => {
@@ -44,10 +75,10 @@ describe("fetchDashboard", () => {
         success: true,
         data: {
           summary: {
-            workflow_runs_this_month: 1,
+            workflow_runs: 1,
             total_workflows: 2,
             total_nodes: 3,
-            success_rate_90d: 50,
+            success_rate: 50,
           },
           chart: {
             range: "30d",

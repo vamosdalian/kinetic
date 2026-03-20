@@ -107,6 +107,11 @@ func TestWorkflowHandler_ListRuns(t *testing.T) {
 	assert.NoError(t, err)
 	assert.True(t, response.Success)
 	assert.NotNil(t, response.Data)
+	assert.NotNil(t, response.Meta)
+	assert.Equal(t, 1, response.Meta.Page)
+	assert.Equal(t, 10, response.Meta.PageSize)
+	assert.Equal(t, 1, response.Meta.Total)
+	assert.Equal(t, 1, response.Meta.TotalPages)
 
 	rawItems, ok := response.Data.([]interface{})
 	assert.True(t, ok)

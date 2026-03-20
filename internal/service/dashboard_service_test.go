@@ -124,10 +124,10 @@ func TestDashboardService_GetDashboard(t *testing.T) {
 	response, err := service.GetDashboard("7d", "Asia/Shanghai")
 	require.NoError(t, err)
 
-	assert.Equal(t, 5, response.Summary.WorkflowRunsThisMonth)
+	assert.Equal(t, 4, response.Summary.WorkflowRuns)
 	assert.Equal(t, 5, response.Summary.TotalWorkflows)
 	assert.Equal(t, 3, response.Summary.TotalNodes)
-	assert.InDelta(t, 40.0, response.Summary.SuccessRate90d, 0.01)
+	assert.InDelta(t, 33.33, response.Summary.SuccessRate, 0.01)
 
 	require.Len(t, response.Chart.Points, 7)
 	assert.Equal(t, "7d", response.Chart.Range)

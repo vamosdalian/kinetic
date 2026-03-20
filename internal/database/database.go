@@ -46,6 +46,7 @@ type Database interface {
 	GetTaskRuns(runID string) ([]entity.TaskRunEntity, error)
 	GetEdgeRuns(runID string) ([]entity.EdgeRunEntity, error)
 	ListWorkflowRuns(offset int, limit int) ([]entity.WorkflowRunEntity, error)
+	CountWorkflowRuns() (int, error)
 	MarkWorkflowRunRunning(runID string) error
 	FinishWorkflowRun(runID string, status string) error
 	UpdateWorkflowRunStatus(runID string, status string) error

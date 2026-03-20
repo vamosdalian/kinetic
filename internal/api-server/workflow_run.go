@@ -52,6 +52,12 @@ func (h *WorkflowHandler) ListRuns(c *gin.Context) {
 		return
 	}
 
+	total, err := h.db.CountWorkflowRuns()
+	if err != nil {
+		ResponseError(c, http.StatusInternalServerError, ErrorCodeInternalError, err.Error())
+		return
+	}
+
 	dtos := make([]dto.WorkflowRunListItem, len(runs))
 	for i, run := range runs {
 		dtos[i] = dto.WorkflowRunListItem{
@@ -66,7 +72,7 @@ func (h *WorkflowHandler) ListRuns(c *gin.Context) {
 		}
 	}
 
-	ResponseSuccess(c, dtos)
+	ResponseSuccessWithPagination(c, dtos, query.Page, query.PageSize, total)
 }
 
 func (h *WorkflowHandler) GetRun(c *gin.Context) {

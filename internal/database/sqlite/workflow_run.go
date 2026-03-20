@@ -235,6 +235,17 @@ func (s *SqliteDB) ListWorkflowRuns(offset int, limit int) ([]entity.WorkflowRun
 	return runs, nil
 }
 
+func (s *SqliteDB) CountWorkflowRuns() (int, error) {
+	row := s.db.QueryRow(`SELECT COUNT(*) FROM workflow_runs`)
+
+	var count int
+	if err := row.Scan(&count); err != nil {
+		return 0, err
+	}
+
+	return count, nil
+}
+
 func (s *SqliteDB) MarkWorkflowRunRunning(runID string) error {
 	_, err := s.db.Exec(`
 		UPDATE workflow_runs
