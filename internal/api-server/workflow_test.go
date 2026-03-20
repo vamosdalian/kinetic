@@ -264,6 +264,17 @@ func TestWorkflowHandler_List(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, 2, apiResponse.Meta.Page)
 	assert.Equal(t, 5, apiResponse.Meta.PageSize)
+
+	req, _ = http.NewRequest("GET", "/api/workflows?query=workflow", nil)
+	w = httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+	err = json.Unmarshal(w.Body.Bytes(), &apiResponse)
+	assert.NoError(t, err)
+	assert.True(t, apiResponse.Success)
+	assert.NotNil(t, apiResponse.Meta)
+	assert.True(t, apiResponse.Meta.Total > 0)
 }
 
 func TestWorkflowHandler_Get(t *testing.T) {

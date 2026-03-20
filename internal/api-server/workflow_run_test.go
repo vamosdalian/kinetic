@@ -121,6 +121,17 @@ func TestWorkflowHandler_ListRuns(t *testing.T) {
 	assert.True(t, ok)
 	assert.Equal(t, runID, itemMap["run_id"])
 	assert.NotEmpty(t, itemMap["create_at"])
+
+	w = httptest.NewRecorder()
+	req, _ = http.NewRequest("GET", "/api/workflow_runs?page=1&pageSize=10&workflow=list%20test&status=created", nil)
+	router.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+	err = json.Unmarshal(w.Body.Bytes(), &response)
+	assert.NoError(t, err)
+	rawItems, ok = response.Data.([]interface{})
+	assert.True(t, ok)
+	assert.Len(t, rawItems, 1)
 }
 
 func TestWorkflowHandler_GetRun(t *testing.T) {

@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -43,23 +44,36 @@ export function Workflow() {
     pageSize: 20,
   });
   const [pageCount, setPageCount] = React.useState(-1);
+  const [query, setQuery] = React.useState("");
 
   const fetchWorkflows = React.useCallback(() => {
+    const params = new URLSearchParams({
+      page: String(pagination.pageIndex + 1),
+      pageSize: String(pagination.pageSize),
+    });
+    if (query.trim()) {
+      params.set("query", query.trim());
+    }
+
     apiClientFull<WorkflowListItem[]>(
-      `/api/workflows?page=${pagination.pageIndex + 1}&pageSize=${
-        pagination.pageSize
-      }`
+      `/api/workflows?${params.toString()}`
     ).then((res) => {
       setData(res.data);
       if (res.meta) {
         setPageCount(res.meta.totalPages);
       }
     });
-  }, [pagination]);
+  }, [pagination.pageIndex, pagination.pageSize, query]);
 
   React.useEffect(() => {
     fetchWorkflows();
   }, [fetchWorkflows]);
+
+  React.useEffect(() => {
+    setPagination((current) =>
+      current.pageIndex === 0 ? current : { ...current, pageIndex: 0 }
+    );
+  }, [query]);
 
   const columns: ColumnDef<WorkflowListItem>[] = [
     {
@@ -242,15 +256,26 @@ export function Workflow() {
         pagination={pagination}
         onPaginationChange={setPagination}
         renderToolbarActions={() => (
-          <Button
-            variant="outline"
-            onClick={() => {
-              const newId = uuidv7();
-              navigate(`/workflow/${newId}?action=create`);
-            }}
-          >
-            Create
-          </Button>
+          <>
+            <Input
+              className="w-[280px]"
+              placeholder="Search workflow name or ID..."
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+            />
+            <Button variant="outline" onClick={() => fetchWorkflows()}>
+              Refresh
+            </Button>
+            <Button
+              variant="outline"
+              onClick={() => {
+                const newId = uuidv7();
+                navigate(`/workflow/${newId}?action=create`);
+              }}
+            >
+              Create
+            </Button>
+          </>
         )}
       />
     </div>

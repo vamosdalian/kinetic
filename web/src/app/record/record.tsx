@@ -59,15 +59,29 @@ export function Record() {
 
   const fetchRuns = React.useCallback(async () => {
     try {
+      const params = new URLSearchParams({
+        page: String(pagination.pageIndex + 1),
+        pageSize: String(pagination.pageSize),
+      });
+      if (workflowQuery.trim()) {
+        params.set("workflow", workflowQuery.trim());
+      }
+      if (runQuery.trim()) {
+        params.set("run", runQuery.trim());
+      }
+      if (statusFilter !== "all") {
+        params.set("status", statusFilter);
+      }
+
       const response = await apiClientFull<WorkflowRunListItem[]>(
-        `/api/workflow_runs?page=${pagination.pageIndex + 1}&pageSize=${pagination.pageSize}`
+        `/api/workflow_runs?${params.toString()}`
       );
       setData(response.data);
       setPageCount(response.meta?.totalPages ?? -1);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Failed to load workflow runs");
     }
-  }, [pagination.pageIndex, pagination.pageSize]);
+  }, [pagination.pageIndex, pagination.pageSize, workflowQuery, runQuery, statusFilter]);
 
   React.useEffect(() => {
     void fetchRuns();
@@ -93,19 +107,6 @@ export function Record() {
     },
     [navigate]
   );
-
-  const filteredData = React.useMemo(() => {
-    return data.filter((run) => {
-      const workflowMatch = run.name
-        .toLowerCase()
-        .includes(workflowQuery.trim().toLowerCase());
-      const runMatch = run.run_id
-        .toLowerCase()
-        .includes(runQuery.trim().toLowerCase());
-      const statusMatch = statusFilter === "all" || run.status === statusFilter;
-      return workflowMatch && runMatch && statusMatch;
-    });
-  }, [data, runQuery, statusFilter, workflowQuery]);
 
   React.useEffect(() => {
     setPagination((current) =>
@@ -244,7 +245,7 @@ export function Record() {
       <SiteHeader breadcrumbs={[{ label: "Record", href: null }]} />
       <CommonTable
         columns={columns}
-        data={filteredData}
+        data={data}
         manualPagination={true}
         pageCount={pageCount}
         pagination={pagination}

@@ -38,8 +38,13 @@ type PageQuerys struct {
 	PageSize int `form:"pageSize" binding:"max=100"`
 }
 
+type WorkflowListQuery struct {
+	PageQuerys
+	Query string `form:"query"`
+}
+
 func (h *WorkflowHandler) List(c *gin.Context) {
-	var pageQuerys PageQuerys
+	var pageQuerys WorkflowListQuery
 	if err := c.ShouldBindQuery(&pageQuerys); err != nil {
 		ResponseError(c, http.StatusBadRequest, ErrorCodeInvalidRequest, err.Error())
 		return
@@ -54,13 +59,13 @@ func (h *WorkflowHandler) List(c *gin.Context) {
 		ResponseError(c, http.StatusBadRequest, ErrorCodeInvalidRequest, "pageSize must be <= 100")
 		return
 	}
-	workflows, err := h.db.ListWorkflows((page-1)*pageSize, pageSize)
+	workflows, err := h.db.ListWorkflowsFiltered((page-1)*pageSize, pageSize, pageQuerys.Query)
 	if err != nil {
 		ResponseError(c, http.StatusInternalServerError, ErrorCodeInternalError, err.Error())
 		return
 	}
 
-	count, err := h.db.CountWorkflows()
+	count, err := h.db.CountWorkflowsFiltered(pageQuerys.Query)
 	if err != nil {
 		ResponseError(c, http.StatusInternalServerError, ErrorCodeInternalError, err.Error())
 		return

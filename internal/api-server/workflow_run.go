@@ -4,11 +4,19 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/vamosdalian/kinetic/internal/model/dto"
 )
+
+type WorkflowRunListQuery struct {
+	PageQuerys
+	Workflow string `form:"workflow"`
+	Run      string `form:"run"`
+	Status   string `form:"status"`
+}
 
 func (h *WorkflowHandler) Run(c *gin.Context) {
 	workflowID := c.Param("id")
@@ -32,7 +40,7 @@ func (h *WorkflowHandler) Run(c *gin.Context) {
 }
 
 func (h *WorkflowHandler) ListRuns(c *gin.Context) {
-	var query PageQuerys
+	var query WorkflowRunListQuery
 	if err := c.ShouldBindQuery(&query); err != nil {
 		ResponseError(c, http.StatusBadRequest, ErrorCodeInvalidRequest, err.Error())
 		return
@@ -44,15 +52,18 @@ func (h *WorkflowHandler) ListRuns(c *gin.Context) {
 	if query.PageSize <= 0 {
 		query.PageSize = 10
 	}
+	if strings.EqualFold(query.Status, "all") {
+		query.Status = ""
+	}
 
 	offset := (query.Page - 1) * query.PageSize
-	runs, err := h.db.ListWorkflowRuns(offset, query.PageSize)
+	runs, err := h.db.ListWorkflowRunsFiltered(offset, query.PageSize, query.Workflow, query.Run, query.Status)
 	if err != nil {
 		ResponseError(c, http.StatusInternalServerError, ErrorCodeInternalError, err.Error())
 		return
 	}
 
-	total, err := h.db.CountWorkflowRuns()
+	total, err := h.db.CountWorkflowRunsFiltered(query.Workflow, query.Run, query.Status)
 	if err != nil {
 		ResponseError(c, http.StatusInternalServerError, ErrorCodeInternalError, err.Error())
 		return
