@@ -2,13 +2,14 @@ package main
 
 import (
 	"context"
-	"flag"
+	"errors"
 	"fmt"
 	"os"
 	"os/signal"
 	"syscall"
 	"time"
 
+	flags "github.com/jessevdk/go-flags"
 	"github.com/sirupsen/logrus"
 	"github.com/vamosdalian/kinetic/internal/config"
 	"github.com/vamosdalian/kinetic/internal/controller"
@@ -22,26 +23,30 @@ var (
 )
 
 type cliOptions struct {
-	showVersion bool
-	configPath  string
-	mode        string
-	withWorker  bool
+	ShowVersion bool   `long:"version" description:"Show version information"`
+	ConfigPath  string `short:"c" long:"config" value-name:"PATH" description:"Path to config.yml"`
+	Mode        string `long:"mode" choice:"controller" choice:"worker" description:"Run mode: controller or worker (overrides config)"`
+	WithWorker  bool   `long:"with-worker" description:"Enable embedded worker when running in controller mode"`
 }
 
-func bindFlags(fs *flag.FlagSet, opts *cliOptions) {
-	fs.BoolVar(&opts.showVersion, "version", false, "Show version information")
-	fs.StringVar(&opts.configPath, "c", "", "Path to config.yml")
-	fs.StringVar(&opts.configPath, "config", "", "Path to config.yml")
-	fs.StringVar(&opts.mode, "mode", "", "Run mode: controller or worker (overrides config)")
-	fs.BoolVar(&opts.withWorker, "with-worker", false, "Enable embedded worker when running in controller mode")
+func parseCLIOptions(args []string) (cliOptions, error) {
+	var opts cliOptions
+	parser := flags.NewParser(&opts, flags.Default)
+	_, err := parser.ParseArgs(args)
+	return opts, err
 }
 
 func main() {
-	var opts cliOptions
-	bindFlags(flag.CommandLine, &opts)
-	flag.Parse()
+	opts, err := parseCLIOptions(os.Args[1:])
+	if err != nil {
+		var flagErr *flags.Error
+		if errors.As(err, &flagErr) && flagErr.Type == flags.ErrHelp {
+			os.Exit(0)
+		}
+		logrus.WithError(err).Fatal("Failed to parse CLI options")
+	}
 
-	if opts.showVersion {
+	if opts.ShowVersion {
 		fmt.Printf("Kinetic %s (commit: %s, built: %s)\n", version, commit, date)
 		os.Exit(0)
 	}
@@ -81,7 +86,7 @@ func main() {
 }
 
 func loadRuntimeConfig(opts cliOptions) (*config.Config, string, bool, error) {
-	result, err := config.Load(opts.configPath)
+	result, err := config.Load(opts.ConfigPath)
 	if err != nil {
 		return nil, "", false, err
 	}
@@ -93,10 +98,10 @@ func loadRuntimeConfig(opts cliOptions) (*config.Config, string, bool, error) {
 }
 
 func applyCLIOverrides(cfg *config.Config, opts cliOptions) {
-	if opts.mode != "" {
-		cfg.Mode = config.Mode(opts.mode)
+	if opts.Mode != "" {
+		cfg.Mode = config.Mode(opts.Mode)
 	}
-	if opts.withWorker {
+	if opts.WithWorker {
 		cfg.Controller.EmbeddedWorkerEnabled = true
 	}
 }
