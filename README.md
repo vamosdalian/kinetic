@@ -30,23 +30,19 @@ For local development or a simple self-hosted install, the default controller mo
 
 ## Quick Start
 
-### Prerequisites
+### Run From Releases
 
-- Go `1.23+`
-- Node.js `22+`
-- npm
+Download the archive for your platform from [GitHub Releases](https://github.com/vamosdalian/kinetic/releases), extract it, and run the `kinetic` binary.
 
-### Run Locally
-
-Build the frontend first so the static assets can be embedded into the Go binary:
+Controller quick start:
 
 ```bash
-cd web
-npm ci
-npm run build
-cd ..
-go run ./cmd/kinetic --mode controller --with-worker
+KINETIC_MODE=controller \
+KINETIC_CONTROLLER_EMBEDDED_WORKER_ENABLED=true \
+./kinetic
 ```
+
+This starts the controller, scheduler, web UI, and an embedded local worker in a single process.
 
 Then open:
 
@@ -54,7 +50,35 @@ Then open:
 - Health check: [http://localhost:9898/healthz](http://localhost:9898/healthz)
 - Readiness check: [http://localhost:9898/readyz](http://localhost:9898/readyz)
 
+Worker quick start:
+
+```bash
+KINETIC_MODE=worker \
+KINETIC_WORKER_CONTROLLER_URL=http://controller-host:9898 \
+./kinetic
+```
+
 On first start, Kinetic creates a default config file at `~/.kinetic/config.yaml` and a SQLite database at `~/.kinetic/kinetic.db`.
+
+## Development
+
+### Prerequisites
+
+- Go `1.23+`
+- Node.js `22+`
+- npm
+
+### Build and Run Locally
+
+```bash
+cd web
+npm ci
+npm run build
+cd ..
+KINETIC_MODE=controller \
+KINETIC_CONTROLLER_EMBEDDED_WORKER_ENABLED=true \
+go run ./cmd/kinetic
+```
 
 ### Build a Binary
 
@@ -64,7 +88,9 @@ npm ci
 npm run build
 cd ..
 go build -o kinetic ./cmd/kinetic
-./kinetic --mode controller --with-worker
+KINETIC_MODE=controller \
+KINETIC_CONTROLLER_EMBEDDED_WORKER_ENABLED=true \
+./kinetic
 ```
 
 ## Deployment Modes
@@ -74,7 +100,9 @@ go build -o kinetic ./cmd/kinetic
 Run one controller with the embedded worker enabled:
 
 ```bash
-./kinetic --mode controller --with-worker
+KINETIC_MODE=controller \
+KINETIC_CONTROLLER_EMBEDDED_WORKER_ENABLED=true \
+./kinetic
 ```
 
 ### Distributed
@@ -160,71 +188,6 @@ Validation rules include:
 - workflow graphs must be acyclic
 
 Workflows and tasks can also carry tags so runs can be routed to matching worker nodes.
-
-## API Overview
-
-Main API groups:
-
-- `GET /healthz`
-- `GET /readyz`
-- `GET /api/workflows`
-- `GET /api/workflows/:id`
-- `PUT /api/workflows/:id`
-- `DELETE /api/workflows/:id`
-- `POST /api/workflows/:id/run`
-- `GET /api/workflow_runs`
-- `GET /api/workflow_runs/:run_id`
-- `GET /api/workflow_runs/:run_id/events`
-- `POST /api/workflow_runs/:run_id/rerun`
-- `POST /api/workflow_runs/:run_id/cancel`
-- `GET /api/nodes`
-
-## Development
-
-### Backend
-
-Run tests:
-
-```bash
-go test ./...
-```
-
-### Frontend
-
-Start the Vite dev server:
-
-```bash
-cd web
-npm ci
-npm run dev
-```
-
-Run frontend tests:
-
-```bash
-cd web
-npm test
-```
-
-Build frontend assets:
-
-```bash
-cd web
-npm run build
-```
-
-## Project Structure
-
-```text
-cmd/kinetic/          CLI entrypoint
-internal/api-server/  HTTP API and static asset serving
-internal/controller/  Controller bootstrap and lifecycle
-internal/service/     Workflow run orchestration and node coordination
-internal/worker/      Remote/local worker runtime
-internal/database/    Persistence abstractions and SQLite implementation
-internal/workflow/    Workflow config parsing and validation
-web/                  React + Vite frontend
-```
 
 ## Release
 
