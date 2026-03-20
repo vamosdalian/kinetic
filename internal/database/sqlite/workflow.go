@@ -1,8 +1,6 @@
 package sqlite
 
 import (
-	"time"
-
 	"github.com/sirupsen/logrus"
 	"github.com/vamosdalian/kinetic/internal/model/entity"
 )
@@ -23,11 +21,11 @@ func (s *SqliteDB) ListWorkflows(offset int, limit int) ([]entity.WorkflowEntity
 		if err != nil {
 			return nil, err
 		}
-		workflow.CreatedAt, err = time.Parse("2006-01-02 15:04:05", createdAtStr)
+		workflow.CreatedAt, err = parseTime(createdAtStr)
 		if err != nil {
 			return nil, err
 		}
-		workflow.UpdatedAt, err = time.Parse("2006-01-02 15:04:05", updatedAtStr)
+		workflow.UpdatedAt, err = parseTime(updatedAtStr)
 		if err != nil {
 			return nil, err
 		}
@@ -55,12 +53,12 @@ func (s *SqliteDB) GetWorkflowByID(id string) (entity.WorkflowEntity, error) {
 		return entity.WorkflowEntity{}, err
 	}
 
-	workflow.CreatedAt, err = time.Parse("2006-01-02 15:04:05", createdAtStr)
+	workflow.CreatedAt, err = parseTime(createdAtStr)
 	if err != nil {
 		return entity.WorkflowEntity{}, err
 	}
 
-	workflow.UpdatedAt, err = time.Parse("2006-01-02 15:04:05", updatedAtStr)
+	workflow.UpdatedAt, err = parseTime(updatedAtStr)
 	if err != nil {
 		return entity.WorkflowEntity{}, err
 	}
