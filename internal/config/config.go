@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/sethvargo/go-envconfig"
 	"gopkg.in/yaml.v3"
@@ -78,6 +79,18 @@ const (
 	defaultConfigFileName = "config.yml"
 	legacyConfigFileName  = "config.yaml"
 )
+
+var workerModeCommentedSections = map[string]struct{}{
+	"api":        {},
+	"database":   {},
+	"controller": {},
+}
+
+var controllerModeCommentedWorkerFields = map[string]struct{}{
+	"controller_url":            {},
+	"advertise_ip":              {},
+	"stream_reconnect_interval": {},
+}
 
 func DefaultConfig() *Config {
 	homeDir, _ := os.UserHomeDir()
@@ -201,7 +214,7 @@ func (c *Config) save(path string) error {
 		return err
 	}
 
-	data, err := yaml.Marshal(c)
+	body, err := renderConfigBody(c)
 	if err != nil {
 		return err
 	}
@@ -225,11 +238,106 @@ func (c *Config) save(path string) error {
 #
 
 `
-	return os.WriteFile(path, []byte(header+string(data)), 0644)
+	return os.WriteFile(path, []byte(header+body), 0644)
 }
 
 func (c *Config) Save(path string) error {
 	return c.save(path)
+}
+
+func renderConfigBody(c *Config) (string, error) {
+	data, err := yaml.Marshal(c)
+	if err != nil {
+		return "", err
+	}
+
+	body := string(data)
+	switch {
+	case c.IsWorker():
+		body = commentOutTopLevelSections(body, workerModeCommentedSections)
+	case c.IsController():
+		body = commentOutNestedFields(body, "worker", controllerModeCommentedWorkerFields)
+	}
+
+	return body, nil
+}
+
+func commentOutTopLevelSections(body string, sections map[string]struct{}) string {
+	lines := strings.Split(body, "\n")
+	commenting := false
+
+	for i, line := range lines {
+		if key, ok := topLevelKey(line); ok {
+			_, commenting = sections[key]
+		}
+
+		if !commenting || line == "" {
+			continue
+		}
+
+		lines[i] = "# " + line
+	}
+
+	return strings.Join(lines, "\n")
+}
+
+func commentOutNestedFields(body string, section string, fields map[string]struct{}) string {
+	lines := strings.Split(body, "\n")
+	inSection := false
+
+	for i, line := range lines {
+		if key, ok := topLevelKey(line); ok {
+			inSection = key == section
+			continue
+		}
+
+		if !inSection || line == "" {
+			continue
+		}
+
+		field, ok := nestedKey(line)
+		if !ok {
+			continue
+		}
+		if _, shouldComment := fields[field]; !shouldComment {
+			continue
+		}
+
+		lines[i] = "# " + line
+	}
+
+	return strings.Join(lines, "\n")
+}
+
+func topLevelKey(line string) (string, bool) {
+	if line == "" || strings.HasPrefix(line, " ") || strings.HasPrefix(line, "\t") {
+		return "", false
+	}
+
+	idx := strings.IndexByte(line, ':')
+	if idx <= 0 {
+		return "", false
+	}
+
+	return line[:idx], true
+}
+
+func nestedKey(line string) (string, bool) {
+	if line == "" {
+		return "", false
+	}
+
+	trimmed := strings.TrimLeft(line, " ")
+	if trimmed == line {
+		return "", false
+	}
+
+	idx := strings.IndexByte(trimmed, ':')
+	if idx <= 0 {
+		return "", false
+	}
+
+	return trimmed[:idx], true
 }
 
 func (c *Config) APIAddr() string {

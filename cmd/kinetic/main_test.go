@@ -75,4 +75,30 @@ func TestPersistMissingConfig_WritesEffectiveMode(t *testing.T) {
 	content, readErr := os.ReadFile(configPath)
 	require.NoError(t, readErr)
 	assert.Contains(t, string(content), "mode: worker")
+	assert.Contains(t, string(content), "# api:")
+	assert.Contains(t, string(content), "# database:")
+	assert.Contains(t, string(content), "# controller:")
+	assert.Contains(t, string(content), "worker:")
+	assert.Contains(t, string(content), "log:")
+}
+
+func TestPersistMissingConfig_ControllerModeCommentsRemoteWorkerFields(t *testing.T) {
+	homeDir := t.TempDir()
+	t.Setenv("HOME", homeDir)
+
+	cfg, configPath, shouldPersist, err := loadRuntimeConfig(cliOptions{})
+	require.NoError(t, err)
+	require.True(t, shouldPersist)
+
+	require.NoError(t, persistMissingConfig(cfg, configPath, shouldPersist))
+
+	content, readErr := os.ReadFile(configPath)
+	require.NoError(t, readErr)
+	assert.Contains(t, string(content), "mode: controller")
+	assert.Contains(t, string(content), "worker:")
+	assert.Contains(t, string(content), "  id:")
+	assert.Contains(t, string(content), "  heartbeat_interval:")
+	assert.Contains(t, string(content), "#     controller_url:")
+	assert.Contains(t, string(content), "#     advertise_ip:")
+	assert.Contains(t, string(content), "#     stream_reconnect_interval:")
 }

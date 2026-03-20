@@ -102,3 +102,42 @@ func TestLoad_FallsBackToLegacyConfigYAML(t *testing.T) {
 	assert.Equal(t, filepath.Join(configDir, "config.yaml"), result.Path)
 	assert.Equal(t, ModeWorker, result.Config.Mode)
 }
+
+func TestRenderConfigBody_WorkerModeCommentsUnusedSections(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.Mode = ModeWorker
+
+	body, err := renderConfigBody(cfg)
+	require.NoError(t, err)
+
+	assert.Contains(t, body, "mode: worker")
+	assert.Contains(t, body, "# api:")
+	assert.Contains(t, body, "# database:")
+	assert.Contains(t, body, "# controller:")
+	assert.Contains(t, body, "worker:")
+	assert.Contains(t, body, "log:")
+	assert.NotContains(t, body, "# worker:")
+	assert.NotContains(t, body, "# log:")
+}
+
+func TestRenderConfigBody_ControllerModeCommentsRemoteWorkerFields(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.Mode = ModeController
+
+	body, err := renderConfigBody(cfg)
+	require.NoError(t, err)
+
+	assert.Contains(t, body, "api:")
+	assert.Contains(t, body, "database:")
+	assert.Contains(t, body, "controller:")
+	assert.Contains(t, body, "worker:")
+	assert.Contains(t, body, "  id:")
+	assert.Contains(t, body, "  name:")
+	assert.Contains(t, body, "  heartbeat_interval:")
+	assert.Contains(t, body, "  max_concurrency:")
+	assert.Contains(t, body, "#     controller_url:")
+	assert.Contains(t, body, "#     advertise_ip:")
+	assert.Contains(t, body, "#     stream_reconnect_interval:")
+	assert.NotContains(t, body, "# worker:")
+	assert.NotContains(t, body, "# api:")
+}
