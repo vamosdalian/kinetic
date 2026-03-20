@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -113,6 +114,7 @@ func ginLogger() gin.HandlerFunc {
 		startTime := time.Now()
 		c.Next()
 		latencyTime := time.Since(startTime)
+		requestPath := c.Request.URL.Path
 		entry := logrus.WithFields(logrus.Fields{
 			"status":    c.Writer.Status(),
 			"method":    c.Request.Method,
@@ -132,8 +134,17 @@ func ginLogger() gin.HandlerFunc {
 			entry.Error("http request completed")
 		} else if statusCode >= 400 {
 			entry.Warn("http request completed")
+		} else if shouldLogRequestAtDebug(requestPath) {
+			entry.Debug("http request completed")
 		} else {
 			entry.Info("http request completed")
 		}
 	}
+}
+
+func shouldLogRequestAtDebug(path string) bool {
+	if path == "/assets" || strings.HasPrefix(path, "/assets/") {
+		return true
+	}
+	return strings.HasSuffix(path, "/heartbeat")
 }
