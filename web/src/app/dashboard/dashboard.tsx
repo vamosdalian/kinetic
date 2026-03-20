@@ -78,7 +78,7 @@ export function Dashboard() {
     navigate("/node")
   }, [navigate])
 
-  const cardMetrics = buildDashboardCardMetrics(dashboard.summary)
+  const cardMetrics = buildDashboardCardMetrics(dashboard.summary, dashboard.chart.range)
 
   return (
     <div className="flex flex-1 flex-col">

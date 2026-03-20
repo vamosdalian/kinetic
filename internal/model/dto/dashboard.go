@@ -7,10 +7,10 @@ type DashboardResponse struct {
 }
 
 type DashboardSummary struct {
-	WorkflowRunsThisMonth int     `json:"workflow_runs_this_month"`
-	TotalWorkflows        int     `json:"total_workflows"`
-	TotalNodes            int     `json:"total_nodes"`
-	SuccessRate90d        float64 `json:"success_rate_90d"`
+	WorkflowRuns   int     `json:"workflow_runs"`
+	TotalWorkflows int     `json:"total_workflows"`
+	TotalNodes     int     `json:"total_nodes"`
+	SuccessRate    float64 `json:"success_rate"`
 }
 
 type DashboardChart struct {

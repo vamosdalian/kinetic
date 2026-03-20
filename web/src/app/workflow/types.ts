@@ -37,7 +37,7 @@ export function createTaskConfig(type: TaskType): TaskConfig {
     case "shell":
       return { script: "" };
     case "http":
-      return { url: "", method: "GET" };
+      return { url: "", method: "GET", headers: {} };
     case "python":
       return { script: "", requirements: [] };
     case "condition":

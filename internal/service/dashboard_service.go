@@ -75,11 +75,9 @@ func (s *DashboardService) GetDashboard(rangeKey string, timezone string) (dto.D
 	nowLocal := nowUTC.In(loc)
 	startOfTodayLocal := startOfDay(nowLocal)
 	endOfTodayLocal := startOfTodayLocal.AddDate(0, 0, 1)
-	startOfMonthLocal := time.Date(nowLocal.Year(), nowLocal.Month(), 1, 0, 0, 0, 0, loc)
-	startOf90dLocal := startOfTodayLocal.AddDate(0, 0, -89)
 	startOfChartLocal := startOfTodayLocal.AddDate(0, 0, -(rangeDays - 1))
 
-	workflowRuns, err := s.store.ListWorkflowRunsByCreatedAt(startOf90dLocal.UTC(), endOfTodayLocal.UTC())
+	workflowRuns, err := s.store.ListWorkflowRunsByCreatedAt(startOfChartLocal.UTC(), endOfTodayLocal.UTC())
 	if err != nil {
 		return dto.DashboardResponse{}, err
 	}
@@ -107,10 +105,10 @@ func (s *DashboardService) GetDashboard(rangeKey string, timezone string) (dto.D
 
 	response := dto.DashboardResponse{
 		Summary: dto.DashboardSummary{
-			WorkflowRunsThisMonth: len(filterWorkflowRunsByLocalWindow(workflowRuns, startOfMonthLocal, endOfTodayLocal, loc)),
-			TotalWorkflows:        totalWorkflows,
-			TotalNodes:            len(nodes),
-			SuccessRate90d:        calculateWorkflowSuccessRate(workflowRuns),
+			WorkflowRuns:   len(workflowRuns),
+			TotalWorkflows: totalWorkflows,
+			TotalNodes:     len(nodes),
+			SuccessRate:    calculateWorkflowSuccessRate(workflowRuns),
 		},
 		Chart: dto.DashboardChart{
 			Range:    normalizeDashboardRangeKey(rangeDays),

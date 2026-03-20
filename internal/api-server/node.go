@@ -2,6 +2,7 @@ package apiserver
 
 import (
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -23,17 +24,65 @@ type NodeHandler struct {
 	nodes NodeManager
 }
 
+type NodeListQuery struct {
+	PageQuerys
+	Query string `form:"query"`
+}
+
 func NewNodeHandler(nodes NodeManager) *NodeHandler {
 	return &NodeHandler{nodes: nodes}
 }
 
 func (h *NodeHandler) List(c *gin.Context) {
+	var query NodeListQuery
+	if err := c.ShouldBindQuery(&query); err != nil {
+		ResponseError(c, http.StatusBadRequest, ErrorCodeInvalidRequest, err.Error())
+		return
+	}
+	if query.Page <= 0 {
+		query.Page = 1
+	}
+	if query.PageSize <= 0 {
+		query.PageSize = 10
+	}
+
 	nodes, err := h.nodes.ListNodeDTOs()
 	if err != nil {
 		ResponseError(c, http.StatusInternalServerError, ErrorCodeInternalError, err.Error())
 		return
 	}
-	ResponseSuccess(c, nodes)
+
+	filtered := filterNodeDTOs(nodes, query.Query)
+	start := (query.Page - 1) * query.PageSize
+	if start > len(filtered) {
+		start = len(filtered)
+	}
+	end := start + query.PageSize
+	if end > len(filtered) {
+		end = len(filtered)
+	}
+
+	ResponseSuccessWithPagination(c, filtered[start:end], query.Page, query.PageSize, len(filtered))
+}
+
+func filterNodeDTOs(nodes []dto.Node, query string) []dto.Node {
+	needle := strings.ToLower(strings.TrimSpace(query))
+	if needle == "" {
+		return nodes
+	}
+
+	filtered := make([]dto.Node, 0, len(nodes))
+	for _, node := range nodes {
+		parts := []string{node.NodeID, node.Name, node.IP, string(node.Kind), string(node.Status)}
+		for _, tag := range node.Tags {
+			parts = append(parts, tag.Tag)
+		}
+		if strings.Contains(strings.ToLower(strings.Join(parts, " ")), needle) {
+			filtered = append(filtered, node)
+		}
+	}
+
+	return filtered
 }
 
 func (h *NodeHandler) Get(c *gin.Context) {

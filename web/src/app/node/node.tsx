@@ -14,7 +14,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import { apiClient } from "@/lib/api";
+import { apiClient, apiClientFull } from "@/lib/api";
 import { getNodeStatusBadgeClassName } from "@/lib/node-status";
 import { SiteHeader } from "@/components/site-header";
 import { cn } from "@/lib/utils";
@@ -41,6 +41,11 @@ interface NodeItem {
 export function Node() {
   const [nodes, setNodes] = React.useState<NodeItem[]>([]);
   const [loading, setLoading] = React.useState(true);
+  const [pagination, setPagination] = React.useState({
+    pageIndex: 0,
+    pageSize: 10,
+  });
+  const [pageCount, setPageCount] = React.useState(-1);
   const [query, setQuery] = React.useState("");
   const [selectedNode, setSelectedNode] = React.useState<NodeItem | null>(null);
   const [newTag, setNewTag] = React.useState("");
@@ -53,8 +58,16 @@ export function Node() {
     }
 
     try {
-      const data = await apiClient<NodeItem[]>("/api/nodes");
-      setNodes(data);
+      const params = new URLSearchParams({
+        page: String(pagination.pageIndex + 1),
+        pageSize: String(pagination.pageSize),
+      });
+      if (query.trim()) {
+        params.set("query", query.trim());
+      }
+      const response = await apiClientFull<NodeItem[]>(`/api/nodes?${params.toString()}`);
+      setNodes(response.data);
+      setPageCount(response.meta?.totalPages ?? -1);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Failed to load nodes");
     } finally {
@@ -62,7 +75,7 @@ export function Node() {
         setLoading(false);
       }
     }
-  }, []);
+  }, [pagination.pageIndex, pagination.pageSize, query]);
 
   React.useEffect(() => {
     void fetchNodes();
@@ -127,27 +140,11 @@ export function Node() {
     [fetchNodes]
   );
 
-  const filteredNodes = React.useMemo(() => {
-    const needle = query.trim().toLowerCase();
-    if (!needle) {
-      return nodes;
-    }
-
-    return nodes.filter((node) => {
-      const haystack = [
-        node.node_id,
-        node.name,
-        node.ip,
-        node.kind,
-        node.status,
-        ...node.tags.map((tag) => tag.tag),
-      ]
-        .join(" ")
-        .toLowerCase();
-
-      return haystack.includes(needle);
-    });
-  }, [nodes, query]);
+  React.useEffect(() => {
+    setPagination((current) =>
+      current.pageIndex === 0 ? current : { ...current, pageIndex: 0 }
+    );
+  }, [query]);
 
   const columns = React.useMemo<ColumnDef<NodeItem>[]>(
     () => [
@@ -276,7 +273,11 @@ export function Node() {
       <SiteHeader breadcrumbs={[{ label: "Node", href: null }]} />
       <CommonTable
         columns={columns}
-        data={filteredNodes}
+        data={nodes}
+        manualPagination={true}
+        pageCount={pageCount}
+        pagination={pagination}
+        onPaginationChange={setPagination}
         renderToolbarActions={() => (
           <>
             <Input

@@ -2,6 +2,7 @@ package sqlite
 
 import (
 	"database/sql"
+	"strings"
 	"time"
 
 	"github.com/sirupsen/logrus"
@@ -203,14 +204,26 @@ func (s *SqliteDB) GetEdgeRuns(runID string) ([]entity.EdgeRunEntity, error) {
 }
 
 func (s *SqliteDB) ListWorkflowRuns(offset int, limit int) ([]entity.WorkflowRunEntity, error) {
+	return s.ListWorkflowRunsFiltered(offset, limit, "", "", "")
+}
+
+func (s *SqliteDB) ListWorkflowRunsFiltered(offset int, limit int, workflowQuery string, runQuery string, status string) ([]entity.WorkflowRunEntity, error) {
 	logrus.Debugf("query workflow runs limit %d offset %d", limit, offset)
+	workflowLike := sqliteLikePattern(workflowQuery)
+	runLike := sqliteLikePattern(runQuery)
+	trimmedWorkflow := strings.TrimSpace(workflowQuery)
+	trimmedRun := strings.TrimSpace(runQuery)
+	trimmedStatus := strings.TrimSpace(strings.ToLower(status))
 	rows, err := s.db.Query(`
 		SELECT run_id, workflow_id, workflow_name, workflow_description, workflow_version, workflow_tag,
 		status, created_at, started_at, finished_at 
 		FROM workflow_runs
+		WHERE (? = '' OR LOWER(workflow_name) LIKE ? OR LOWER(workflow_id) LIKE ?)
+		  AND (? = '' OR LOWER(run_id) LIKE ?)
+		  AND (? = '' OR LOWER(status) = ?)
 		ORDER BY created_at DESC, run_id DESC
 		LIMIT ? OFFSET ?
-	`, limit, offset)
+	`, trimmedWorkflow, workflowLike, workflowLike, trimmedRun, runLike, trimmedStatus, trimmedStatus, limit, offset)
 	if err != nil {
 		return nil, err
 	}
@@ -233,6 +246,31 @@ func (s *SqliteDB) ListWorkflowRuns(offset int, limit int) ([]entity.WorkflowRun
 		runs = append(runs, run)
 	}
 	return runs, nil
+}
+
+func (s *SqliteDB) CountWorkflowRuns() (int, error) {
+	return s.CountWorkflowRunsFiltered("", "", "")
+}
+
+func (s *SqliteDB) CountWorkflowRunsFiltered(workflowQuery string, runQuery string, status string) (int, error) {
+	workflowLike := sqliteLikePattern(workflowQuery)
+	runLike := sqliteLikePattern(runQuery)
+	trimmedWorkflow := strings.TrimSpace(workflowQuery)
+	trimmedRun := strings.TrimSpace(runQuery)
+	trimmedStatus := strings.TrimSpace(strings.ToLower(status))
+	row := s.db.QueryRow(`
+		SELECT COUNT(*) FROM workflow_runs
+		WHERE (? = '' OR LOWER(workflow_name) LIKE ? OR LOWER(workflow_id) LIKE ?)
+		  AND (? = '' OR LOWER(run_id) LIKE ?)
+		  AND (? = '' OR LOWER(status) = ?)
+	`, trimmedWorkflow, workflowLike, workflowLike, trimmedRun, runLike, trimmedStatus, trimmedStatus)
+
+	var count int
+	if err := row.Scan(&count); err != nil {
+		return 0, err
+	}
+
+	return count, nil
 }
 
 func (s *SqliteDB) MarkWorkflowRunRunning(runID string) error {

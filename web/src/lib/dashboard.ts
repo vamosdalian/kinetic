@@ -4,10 +4,10 @@ export type DashboardRange = "7d" | "30d" | "90d"
 
 export interface DashboardResponse {
   summary: {
-    workflow_runs_this_month: number
+    workflow_runs: number
     total_workflows: number
     total_nodes: number
-    success_rate_90d: number
+    success_rate: number
   }
   chart: {
     range: DashboardRange
@@ -90,6 +90,18 @@ export interface DashboardCardMetric {
 
 const numberFormatter = new Intl.NumberFormat("en-US")
 
+export function formatDashboardRangeLabel(range: DashboardRange) {
+  switch (range) {
+    case "7d":
+      return "Last 7 days"
+    case "90d":
+      return "Last 90 days"
+    case "30d":
+    default:
+      return "Last 30 days"
+  }
+}
+
 export function buildDashboardPath(range: DashboardRange, timezone: string) {
   const params = new URLSearchParams({
     range,
@@ -114,10 +126,10 @@ export function getDashboardTimezone() {
 export function createEmptyDashboard(range: DashboardRange, timezone: string): DashboardResponse {
   return {
     summary: {
-      workflow_runs_this_month: 0,
+      workflow_runs: 0,
       total_workflows: 0,
       total_nodes: 0,
-      success_rate_90d: 0,
+      success_rate: 0,
     },
     chart: {
       range,
@@ -146,15 +158,18 @@ export function createEmptyDashboard(range: DashboardRange, timezone: string): D
 }
 
 export function buildDashboardCardMetrics(
-  summary: DashboardResponse["summary"]
+  summary: DashboardResponse["summary"],
+  range: DashboardRange
 ): DashboardCardMetric[] {
+  const rangeLabel = formatDashboardRangeLabel(range)
+
   return [
     {
       label: "Workflow Runs",
-      value: numberFormatter.format(summary.workflow_runs_this_month),
-      badge: "This month",
-      summary: "Total workflow executions",
-      detail: "Current calendar month",
+      value: numberFormatter.format(summary.workflow_runs),
+      badge: rangeLabel,
+      summary: "Workflow executions in range",
+      detail: "Selected dashboard time range",
     },
     {
       label: "Total Workflows",
@@ -172,10 +187,10 @@ export function buildDashboardCardMetrics(
     },
     {
       label: "Success Rate",
-      value: formatPercentage(summary.success_rate_90d, 1),
-      badge: "Last 90 days",
+      value: formatPercentage(summary.success_rate, 1),
+      badge: rangeLabel,
       summary: "Execution success ratio",
-      detail: "Terminal workflow runs only",
+	      detail: "Terminal workflow runs in range",
     },
   ]
 }

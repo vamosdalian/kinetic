@@ -13,6 +13,12 @@ import { ShellEditor } from "./shell_editor";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import {
+  HoverCard,
+  HoverCardContent,
+  HoverCardTrigger,
+} from "@/components/ui/hover-card";
+import { CircleQuestionMark } from "lucide-react";
+import {
   createTaskConfig,
   type ConditionConfig,
   type HttpConfig,
@@ -33,6 +39,37 @@ interface TaskFormProps {
 }
 
 const INHERIT_TAG_VALUE = "__inherit_workflow_tag__";
+
+function HelpHint({ content }: { content: React.ReactNode }) {
+  return (
+    <HoverCard openDelay={150} closeDelay={100}>
+      <HoverCardTrigger asChild>
+        <button
+          type="button"
+          className="inline-flex h-4 w-4 items-center justify-center text-muted-foreground transition-colors hover:text-foreground"
+          aria-label="Show help"
+        >
+          <CircleQuestionMark className="h-4 w-4" />
+        </button>
+      </HoverCardTrigger>
+      <HoverCardContent align="start" className="w-72 text-sm leading-5">
+        {content}
+      </HoverCardContent>
+    </HoverCard>
+  );
+}
+
+function buildNextHeaderKey(headers: Record<string, string>) {
+  let index = Object.keys(headers).length + 1;
+  let candidate = `header-${index}`;
+
+  while (candidate in headers) {
+    index += 1;
+    candidate = `header-${index}`;
+  }
+
+  return candidate;
+}
 
 export function Taskform({
   taskId,
@@ -135,7 +172,18 @@ export function Taskform({
       </div>
 
       <div className="grid gap-2">
-        <Label htmlFor="task_tag">Tag</Label>
+        <div className="flex items-center gap-2">
+          <Label htmlFor="task_tag">Tag</Label>
+          <HelpHint
+            content={
+              node.tag
+                ? "This task overrides the workflow-level routing tag."
+                : workflowTag
+                  ? `This task will run on nodes tagged ${workflowTag}.`
+                  : "This task can run on any healthy node unless you choose a tag."
+            }
+          />
+        </div>
         <Select
           value={node.tag || INHERIT_TAG_VALUE}
           onValueChange={(value) => {
@@ -156,13 +204,6 @@ export function Taskform({
             ))}
           </SelectContent>
         </Select>
-        <p className="text-xs text-muted-foreground">
-          {node.tag
-            ? "This task overrides the workflow-level routing tag."
-            : workflowTag
-              ? `This task will run on nodes tagged ${workflowTag}.`
-              : "This task can run on any healthy node unless you choose a tag."}
-        </p>
       </div>
 
       {node.type === "shell" && (
@@ -218,6 +259,79 @@ export function Taskform({
             </Select>
           </div>
 
+          <div className="grid gap-3">
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex items-center gap-2">
+                <Label>Headers</Label>
+                <HelpHint content="Configure request headers in the task config." />
+              </div>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  const httpConfig = config as HttpConfig;
+                  const headers = { ...(httpConfig.headers ?? {}) };
+                  headers[buildNextHeaderKey(headers)] = "";
+                  updateConfig({ ...httpConfig, headers });
+                }}
+              >
+                Add Header
+              </Button>
+            </div>
+
+            {Object.entries((config as HttpConfig).headers ?? {}).length > 0 ? (
+              <div className="grid gap-3">
+                {Object.entries((config as HttpConfig).headers ?? {}).map(([key, value]) => (
+                  <div key={key} className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] gap-2">
+                    <Input
+                      placeholder="Header name"
+                      value={key}
+                      onChange={(e) => {
+                        const nextKey = e.target.value;
+                        const httpConfig = config as HttpConfig;
+                        const headers = { ...(httpConfig.headers ?? {}) };
+                        delete headers[key];
+                        headers[nextKey] = value;
+                        updateConfig({ ...httpConfig, headers });
+                      }}
+                    />
+                    <Input
+                      placeholder="Header value"
+                      value={value}
+                      onChange={(e) => {
+                        const httpConfig = config as HttpConfig;
+                        updateConfig({
+                          ...httpConfig,
+                          headers: {
+                            ...(httpConfig.headers ?? {}),
+                            [key]: e.target.value,
+                          },
+                        });
+                      }}
+                    />
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => {
+                        const httpConfig = config as HttpConfig;
+                        const headers = { ...(httpConfig.headers ?? {}) };
+                        delete headers[key];
+                        updateConfig({ ...httpConfig, headers });
+                      }}
+                    >
+                      Remove
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="text-xs text-muted-foreground">
+                No custom headers configured.
+              </p>
+            )}
+          </div>
+
           <div className="grid gap-2">
             <Label htmlFor="http_body">Body</Label>
             <Textarea
@@ -249,7 +363,16 @@ export function Taskform({
 
       {node.type === "condition" && (
         <div className="grid gap-2">
-          <Label htmlFor="condition_expr">Condition Expression</Label>
+          <div className="flex items-center gap-2">
+            <Label htmlFor="condition_expr">Condition Expression</Label>
+            <HelpHint
+              content={
+                <>
+                  Supported fields: <code>status</code>, <code>exit_code</code>, <code>output</code>, <code>json</code>, <code>json.field</code>
+                </>
+              }
+            />
+          </div>
           <Input
             id="condition_expr"
             placeholder='e.g., json.ok == true'
@@ -261,18 +384,13 @@ export function Taskform({
               });
             }}
           />
-          <p className="text-xs text-muted-foreground">
-            Supported fields: <code>status</code>, <code>exit_code</code>, <code>output</code>, <code>json</code>, <code>json.field</code>
-          </p>
         </div>
       )}
 
       <div className="grid gap-3">
-        <div className="grid gap-1">
+        <div className="flex items-center gap-2">
           <h2 className="text-sm font-medium">Execution Policy</h2>
-          <p className="text-xs text-muted-foreground">
-            Timeout and retry settings are applied per task run.
-          </p>
+          <HelpHint content="Timeout and retry settings are applied per task run." />
         </div>
         <div className="grid grid-cols-3 gap-3">
           <div className="grid gap-2">

@@ -152,4 +152,12 @@ func TestWorkflowRun(t *testing.T) {
 	if runs[0].RunID != runID {
 		t.Errorf("Expected RunID %s, got %s", runID, runs[0].RunID)
 	}
+
+	count, err := db.CountWorkflowRuns()
+	if err != nil {
+		t.Fatalf("Failed to count workflow runs: %v", err)
+	}
+	if count != 1 {
+		t.Errorf("Expected 1 workflow run in count, got %d", count)
+	}
 }

@@ -14,6 +14,8 @@ type Database interface {
 	// Workflow
 	ListWorkflows(offset int, limit int) ([]entity.WorkflowEntity, error)
 	CountWorkflows() (int, error)
+	ListWorkflowsFiltered(offset int, limit int, query string) ([]entity.WorkflowEntity, error)
+	CountWorkflowsFiltered(query string) (int, error)
 	GetWorkflowByID(id string) (entity.WorkflowEntity, error)
 	SaveWorkflow(req entity.WorkflowEntity) error
 	DeleteWorkflow(id string) error
@@ -46,6 +48,9 @@ type Database interface {
 	GetTaskRuns(runID string) ([]entity.TaskRunEntity, error)
 	GetEdgeRuns(runID string) ([]entity.EdgeRunEntity, error)
 	ListWorkflowRuns(offset int, limit int) ([]entity.WorkflowRunEntity, error)
+	CountWorkflowRuns() (int, error)
+	ListWorkflowRunsFiltered(offset int, limit int, workflowQuery string, runQuery string, status string) ([]entity.WorkflowRunEntity, error)
+	CountWorkflowRunsFiltered(workflowQuery string, runQuery string, status string) (int, error)
 	MarkWorkflowRunRunning(runID string) error
 	FinishWorkflowRun(runID string, status string) error
 	UpdateWorkflowRunStatus(runID string, status string) error

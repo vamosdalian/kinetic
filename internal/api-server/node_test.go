@@ -20,6 +20,7 @@ type stubNodeManager struct {
 	registerReq   dto.RegisterNodeRequest
 	registerResp  dto.Node
 	registerErr   error
+	nodes         []dto.Node
 	heartbeatID   string
 	heartbeatErr  error
 	streamCh      chan dto.NodeCommand
@@ -53,7 +54,7 @@ func (s *stubNodeManager) HandleTaskEvent(nodeID string, event dto.WorkerTaskEve
 	return s.taskEventErr
 }
 
-func (s *stubNodeManager) ListNodeDTOs() ([]dto.Node, error)             { return nil, nil }
+func (s *stubNodeManager) ListNodeDTOs() ([]dto.Node, error)             { return s.nodes, nil }
 func (s *stubNodeManager) GetNodeDTO(nodeID string) (dto.Node, error)    { return dto.Node{}, nil }
 func (s *stubNodeManager) AddNodeTag(nodeID string, tag string) error    { return nil }
 func (s *stubNodeManager) DeleteNodeTag(nodeID string, tag string) error { return nil }
@@ -93,6 +94,31 @@ func TestNodeHandler_Heartbeat(t *testing.T) {
 
 	require.Equal(t, http.StatusOK, resp.Code)
 	assert.Equal(t, "node-1", manager.heartbeatID)
+}
+
+func TestNodeHandler_ListUsesQueryPagination(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	manager := &stubNodeManager{nodes: []dto.Node{
+		{NodeID: "node-1", Name: "Alpha Worker", IP: "10.0.0.1", Kind: "worker", Status: "online", Tags: []dto.NodeTag{{Tag: "gpu"}}},
+		{NodeID: "node-2", Name: "Beta Worker", IP: "10.0.0.2", Kind: "worker", Status: "offline", Tags: []dto.NodeTag{{Tag: "cpu"}}},
+	}}
+	handler := NewNodeHandler(manager)
+	router := gin.New()
+	router.GET("/api/nodes", handler.List)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/nodes?page=1&pageSize=1&query=gpu", nil)
+	resp := httptest.NewRecorder()
+	router.ServeHTTP(resp, req)
+
+	require.Equal(t, http.StatusOK, resp.Code)
+	var apiResponse APIResponse
+	err := json.Unmarshal(resp.Body.Bytes(), &apiResponse)
+	require.NoError(t, err)
+	assert.NotNil(t, apiResponse.Meta)
+	assert.Equal(t, 1, apiResponse.Meta.Total)
+	items, ok := apiResponse.Data.([]interface{})
+	require.True(t, ok)
+	assert.Len(t, items, 1)
 }
 
 func TestNodeHandler_StreamWritesSSEEvent(t *testing.T) {

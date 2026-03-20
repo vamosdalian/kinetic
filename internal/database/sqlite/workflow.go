@@ -1,13 +1,26 @@
 package sqlite
 
 import (
+	"strings"
+
 	"github.com/sirupsen/logrus"
 	"github.com/vamosdalian/kinetic/internal/model/entity"
 )
 
 func (s *SqliteDB) ListWorkflows(offset int, limit int) ([]entity.WorkflowEntity, error) {
+	return s.ListWorkflowsFiltered(offset, limit, "")
+}
+
+func (s *SqliteDB) ListWorkflowsFiltered(offset int, limit int, query string) ([]entity.WorkflowEntity, error) {
 	logrus.Debugf("query workflow limit %d offset %d", limit, offset)
-	rows, err := s.db.Query("SELECT id, name, enable, version, created_at, updated_at, tag FROM workflows LIMIT ? OFFSET ?", limit, offset)
+	like := sqliteLikePattern(query)
+	trimmed := strings.TrimSpace(query)
+	rows, err := s.db.Query(`
+		SELECT id, name, enable, version, created_at, updated_at, tag
+		FROM workflows
+		WHERE (? = '' OR LOWER(id) LIKE ? OR LOWER(name) LIKE ? OR LOWER(COALESCE(tag, '')) LIKE ?)
+		LIMIT ? OFFSET ?
+	`, trimmed, like, like, like, limit, offset)
 	if err != nil {
 		return nil, err
 	}
@@ -36,12 +49,29 @@ func (s *SqliteDB) ListWorkflows(offset int, limit int) ([]entity.WorkflowEntity
 }
 
 func (s *SqliteDB) CountWorkflows() (int, error) {
+	return s.CountWorkflowsFiltered("")
+}
+
+func (s *SqliteDB) CountWorkflowsFiltered(query string) (int, error) {
 	var count int
-	err := s.db.QueryRow("SELECT COUNT(*) FROM workflows").Scan(&count)
+	like := sqliteLikePattern(query)
+	trimmed := strings.TrimSpace(query)
+	err := s.db.QueryRow(`
+		SELECT COUNT(*) FROM workflows
+		WHERE (? = '' OR LOWER(id) LIKE ? OR LOWER(name) LIKE ? OR LOWER(COALESCE(tag, '')) LIKE ?)
+	`, trimmed, like, like, like).Scan(&count)
 	if err != nil {
 		return 0, err
 	}
 	return count, nil
+}
+
+func sqliteLikePattern(query string) string {
+	trimmed := strings.TrimSpace(strings.ToLower(query))
+	if trimmed == "" {
+		return ""
+	}
+	return "%" + trimmed + "%"
 }
 
 func (s *SqliteDB) GetWorkflowByID(id string) (entity.WorkflowEntity, error) {
