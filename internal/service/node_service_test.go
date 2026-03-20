@@ -102,7 +102,7 @@ func TestNodeService_DispatchQueuedTasksAssignsToSubscribedNode(t *testing.T) {
 }
 
 func TestNodeService_SweepOfflineNodesResetsAssignedTasks(t *testing.T) {
-	runService, nodeService := setupNodeService(t, time.Millisecond)
+	runService, nodeService := setupNodeService(t, time.Second)
 
 	node, err := nodeService.RegisterNode(dto.RegisterNodeRequest{
 		NodeID:         "node-offline",
@@ -129,7 +129,7 @@ func TestNodeService_SweepOfflineNodesResetsAssignedTasks(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, nodeService.DispatchQueuedTasks(context.Background(), 64))
 
-	time.Sleep(10 * time.Millisecond)
+	time.Sleep(1100 * time.Millisecond)
 	require.NoError(t, nodeService.SweepOfflineNodes(context.Background()))
 
 	updatedNode, err := nodeService.GetNodeDTO(node.NodeID)
@@ -142,6 +142,50 @@ func TestNodeService_SweepOfflineNodesResetsAssignedTasks(t *testing.T) {
 	require.Len(t, taskRuns, 1)
 	assert.Equal(t, "queued", taskRuns[0].Status)
 	assert.Empty(t, taskRuns[0].AssignedNodeID)
+}
+
+func TestNodeService_SweepOfflineNodesKeepsNodeOnlineWithFreshHeartbeat(t *testing.T) {
+	_, nodeService := setupNodeService(t, time.Second)
+
+	oldStream := time.Now().UTC().Add(-2 * time.Second)
+	freshHeartbeat := time.Now().UTC()
+	require.NoError(t, nodeService.db.UpsertNode(entity.NodeEntity{
+		NodeID:          "node-heartbeat-fresh",
+		Name:            "node-heartbeat-fresh",
+		Kind:            "remote",
+		Status:          "online",
+		MaxConcurrency:  1,
+		LastHeartbeatAt: &freshHeartbeat,
+		LastStreamAt:    &oldStream,
+	}))
+
+	require.NoError(t, nodeService.SweepOfflineNodes(context.Background()))
+
+	updatedNode, err := nodeService.GetNodeDTO("node-heartbeat-fresh")
+	require.NoError(t, err)
+	assert.Equal(t, "online", updatedNode.Status)
+}
+
+func TestNodeService_SweepOfflineNodesMarksNodeOfflineWithStaleHeartbeat(t *testing.T) {
+	_, nodeService := setupNodeService(t, time.Second)
+
+	staleHeartbeat := time.Now().UTC().Add(-2 * time.Second)
+	freshStream := time.Now().UTC()
+	require.NoError(t, nodeService.db.UpsertNode(entity.NodeEntity{
+		NodeID:          "node-heartbeat-stale",
+		Name:            "node-heartbeat-stale",
+		Kind:            "remote",
+		Status:          "online",
+		MaxConcurrency:  1,
+		LastHeartbeatAt: &staleHeartbeat,
+		LastStreamAt:    &freshStream,
+	}))
+
+	require.NoError(t, nodeService.SweepOfflineNodes(context.Background()))
+
+	updatedNode, err := nodeService.GetNodeDTO("node-heartbeat-stale")
+	require.NoError(t, err)
+	assert.Equal(t, "offline", updatedNode.Status)
 }
 
 func TestNodeService_DispatchQueuedTasksRespectsCapacityWithinBatch(t *testing.T) {

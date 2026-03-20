@@ -182,8 +182,8 @@ func scanNode(scanner nodeScanner) (entity.NodeEntity, error) {
 	}
 	node.LastHeartbeatAt = parseNullableTime(lastHeartbeat)
 	node.LastStreamAt = parseNullableTime(lastStream)
-	node.CreatedAt, _ = time.Parse("2006-01-02 15:04:05", createdAt)
-	node.UpdatedAt, _ = time.Parse("2006-01-02 15:04:05", updatedAt)
+	node.CreatedAt, _ = parseTime(createdAt)
+	node.UpdatedAt, _ = parseTime(updatedAt)
 	return node, nil
 }
 
@@ -191,5 +191,5 @@ func formatNullableTime(value *time.Time) any {
 	if value == nil || value.IsZero() {
 		return nil
 	}
-	return value.Format("2006-01-02 15:04:05")
+	return value.UTC().Format("2006-01-02 15:04:05")
 }

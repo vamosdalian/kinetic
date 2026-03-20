@@ -217,10 +217,11 @@ func (s *NodeService) SweepOfflineNodes(ctx context.Context) error {
 		if node.Status != "online" {
 			continue
 		}
-		if node.LastHeartbeatAt == nil || node.LastStreamAt == nil {
-			continue
-		}
-		if now.Sub(*node.LastHeartbeatAt) < s.heartbeatTimeout && now.Sub(*node.LastStreamAt) < s.heartbeatTimeout {
+		// Heartbeats are the authoritative liveness signal. The worker stream is a
+		// long-lived SSE connection whose timestamp is only refreshed when the
+		// connection is established, so treating it as a continuously-updated
+		// activity marker incorrectly marks healthy workers offline.
+		if node.LastHeartbeatAt != nil && now.Sub(*node.LastHeartbeatAt) < s.heartbeatTimeout {
 			continue
 		}
 

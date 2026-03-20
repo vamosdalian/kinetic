@@ -24,7 +24,7 @@ func (s *SqliteDB) CreateWorkflowRun(workflowID string, runID string) error {
 		return err
 	}
 
-	now := time.Now().Format("2006-01-02 15:04:05")
+	now := time.Now().UTC().Format("2006-01-02 15:04:05")
 
 	tx, err := s.db.Begin()
 	if err != nil {
@@ -77,7 +77,7 @@ func (s *SqliteDB) CreateWorkflowRun(workflowID string, runID string) error {
 }
 
 func parseTime(t string) (time.Time, error) {
-	return time.Parse("2006-01-02 15:04:05", t)
+	return time.ParseInLocation("2006-01-02 15:04:05", t, time.UTC)
 }
 
 func parseNullableTime(t sql.NullString) *time.Time {
