@@ -2,13 +2,14 @@ package main
 
 import (
 	"context"
-	"flag"
+	"errors"
 	"fmt"
 	"os"
 	"os/signal"
 	"syscall"
 	"time"
 
+	flags "github.com/jessevdk/go-flags"
 	"github.com/sirupsen/logrus"
 	"github.com/vamosdalian/kinetic/internal/config"
 	"github.com/vamosdalian/kinetic/internal/controller"
@@ -22,41 +23,50 @@ var (
 )
 
 type cliOptions struct {
-	showVersion bool
-	mode        string
-	withWorker  bool
+	ShowVersion bool   `long:"version" description:"Show version information"`
+	ConfigPath  string `short:"c" long:"config" value-name:"PATH" description:"Path to config.yml"`
+	Mode        string `long:"mode" choice:"controller" choice:"worker" description:"Run mode: controller or worker (overrides config)"`
+	WithWorker  bool   `long:"with-worker" description:"Enable embedded worker when running in controller mode"`
 }
 
-func bindFlags(fs *flag.FlagSet, opts *cliOptions) {
-	fs.BoolVar(&opts.showVersion, "version", false, "Show version information")
-	fs.StringVar(&opts.mode, "mode", "", "Run mode: controller or worker (overrides config)")
-	fs.BoolVar(&opts.withWorker, "with-worker", false, "Enable embedded worker when running in controller mode")
+func parseCLIOptions(args []string) (cliOptions, error) {
+	var opts cliOptions
+	parser := flags.NewParser(&opts, flags.Default)
+	_, err := parser.ParseArgs(args)
+	return opts, err
 }
 
 func main() {
-	var opts cliOptions
-	bindFlags(flag.CommandLine, &opts)
-	flag.Parse()
+	opts, err := parseCLIOptions(os.Args[1:])
+	if err != nil {
+		var flagErr *flags.Error
+		if errors.As(err, &flagErr) && flagErr.Type == flags.ErrHelp {
+			os.Exit(0)
+		}
+		logrus.WithError(err).Fatal("Failed to parse CLI options")
+	}
 
-	if opts.showVersion {
+	if opts.ShowVersion {
 		fmt.Printf("Kinetic %s (commit: %s, built: %s)\n", version, commit, date)
 		os.Exit(0)
 	}
 
-	cfg, err := config.Load()
+	cfg, configPath, shouldPersistConfig, err := loadRuntimeConfig(opts)
 	if err != nil {
-		logrus.WithError(err).Fatal("Failed to load config")
+		logrus.WithError(err).Fatal("Failed to prepare config")
 	}
 
-	if opts.mode != "" {
-		cfg.Mode = config.Mode(opts.mode)
+	if err := validateMode(cfg.Mode); err != nil {
+		logrus.WithError(err).Fatal("Invalid runtime config")
 	}
-	if opts.withWorker {
-		cfg.Controller.EmbeddedWorkerEnabled = true
+
+	if err := persistMissingConfig(cfg, configPath, shouldPersistConfig); err != nil {
+		logrus.WithError(err).Fatal("Failed to persist config")
 	}
 
 	configureLogger(cfg.Log)
 	logrus.WithFields(logrus.Fields{
+		"config_path":       configPath,
 		"mode":              cfg.Mode,
 		"embedded_worker":   cfg.Controller.EmbeddedWorkerEnabled,
 		"api_addr":          cfg.APIAddr(),
@@ -73,6 +83,49 @@ func main() {
 	default:
 		logrus.WithField("mode", cfg.Mode).Fatal("Unknown mode")
 	}
+}
+
+func loadRuntimeConfig(opts cliOptions) (*config.Config, string, bool, error) {
+	result, err := config.Load(opts.ConfigPath)
+	if err != nil {
+		return nil, "", false, err
+	}
+
+	cfg := result.Config
+	applyCLIOverrides(cfg, opts)
+
+	return cfg, result.Path, !result.FileExists, nil
+}
+
+func applyCLIOverrides(cfg *config.Config, opts cliOptions) {
+	if opts.Mode != "" {
+		cfg.Mode = config.Mode(opts.Mode)
+	}
+	if opts.WithWorker {
+		cfg.Controller.EmbeddedWorkerEnabled = true
+	}
+}
+
+func validateMode(mode config.Mode) error {
+	switch mode {
+	case config.ModeController, config.ModeWorker:
+		return nil
+	default:
+		return fmt.Errorf("unknown mode %q", mode)
+	}
+}
+
+func persistMissingConfig(cfg *config.Config, path string, shouldPersist bool) error {
+	if !shouldPersist {
+		return nil
+	}
+
+	if err := cfg.Save(path); err != nil {
+		return err
+	}
+
+	fmt.Printf("Created config at %s\n", path)
+	return nil
 }
 
 func configureLogger(cfg config.LogConfig) {
