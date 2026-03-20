@@ -228,4 +228,4 @@ web/                  React + Vite frontend
 
 ## Release
 
-GitHub Releases are built from tagged commits. Release assets are attached automatically, and the release page includes both a short custom highlights section and GitHub-generated release notes.
+GitHub Releases are built from tagged commits. Release assets are attached automatically, and GitHub generates the release notes and changelog sections.
