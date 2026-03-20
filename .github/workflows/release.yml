@@ -7,6 +7,7 @@ on:
 
 permissions:
   contents: write
+  pull-requests: read
 
 concurrency:
   group: release-${{ github.ref }}
@@ -103,6 +104,11 @@ jobs:
     needs: build
 
     steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
       - name: Download build artifacts
         uses: actions/download-artifact@v4
         with:
@@ -115,12 +121,94 @@ jobs:
           cd release-dist
           sha256sum * > checksums.txt
 
+      - name: Resolve previous tag
+        id: previous-tag
+        run: |
+          git fetch --tags --force
+          previous_tag=$(git tag --sort=-version:refname | grep '^v' | grep -Fxv "${GITHUB_REF_NAME}" | head -n 1 || true)
+          echo "previous_tag=${previous_tag}" >> "$GITHUB_OUTPUT"
+
+      - name: Generate release highlights from PR titles
+        uses: actions/github-script@v7
+        env:
+          CURRENT_TAG: ${{ github.ref_name }}
+          PREVIOUS_TAG: ${{ steps.previous-tag.outputs.previous_tag }}
+        with:
+          script: |
+            const fs = require('fs')
+
+            const owner = context.repo.owner
+            const repo = context.repo.repo
+            const currentTag = process.env.CURRENT_TAG
+            const previousTag = process.env.PREVIOUS_TAG
+
+            let commits = []
+
+            if (previousTag) {
+              commits = await github.paginate(
+                github.rest.repos.compareCommitsWithBasehead,
+                {
+                  owner,
+                  repo,
+                  basehead: `${previousTag}...${currentTag}`,
+                  per_page: 100,
+                },
+                (response) => response.data.commits,
+              )
+            } else {
+              commits = await github.paginate(
+                github.rest.repos.listCommits,
+                {
+                  owner,
+                  repo,
+                  sha: currentTag,
+                  per_page: 100,
+                },
+              )
+            }
+
+            const pullRequests = new Map()
+
+            for (const commit of commits) {
+              const prs = await github.paginate(
+                github.rest.repos.listPullRequestsAssociatedWithCommit,
+                {
+                  owner,
+                  repo,
+                  commit_sha: commit.sha,
+                  per_page: 100,
+                },
+              )
+
+              for (const pr of prs) {
+                if (!pr.merged_at) {
+                  continue
+                }
+                pullRequests.set(pr.number, pr)
+              }
+            }
+
+            const sortedPullRequests = Array.from(pullRequests.values()).sort((left, right) => left.number - right.number)
+
+            let notes = '## Highlights\n\n'
+
+            if (sortedPullRequests.length === 0) {
+              notes += '- No merged PR titles were detected for this release.\n'
+            } else {
+              for (const pr of sortedPullRequests) {
+                notes += `- #${pr.number} ${pr.title}\n`
+              }
+            }
+
+            fs.writeFileSync('release-notes.md', notes)
+
       - name: Create GitHub release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.ref_name }}
           name: ${{ github.ref_name }}
           prerelease: ${{ contains(github.ref_name, '-') }}
+          body_path: release-notes.md
           generate_release_notes: true
           files: |
             release-dist/*
