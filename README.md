@@ -58,7 +58,7 @@ KINETIC_WORKER_CONTROLLER_URL=http://controller-host:9898 \
 ./kinetic
 ```
 
-On first start, Kinetic creates a default config file at `~/.kinetic/config.yaml` and a SQLite database at `~/.kinetic/kinetic.db`.
+On first start, Kinetic creates a default config file at `~/.kinetic/config.yml` and a SQLite database at `~/.kinetic/kinetic.db`.
 
 ## Development
 
@@ -125,7 +125,13 @@ KINETIC_WORKER_CONTROLLER_URL=http://controller-host:9898 \
 
 ## Configuration
 
-Kinetic loads configuration from `~/.kinetic/config.yaml` and allows every field to be overridden with environment variables.
+Kinetic loads configuration from `~/.kinetic/config.yml` by default, falling back to the legacy `~/.kinetic/config.yaml` if present. You can also specify a custom config file with `-c /path/to/config.yml`.
+
+Configuration priority is:
+
+1. `config.yml`
+2. environment variables
+3. CLI flags
 
 Example configuration:
 

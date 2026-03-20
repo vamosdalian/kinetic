@@ -68,6 +68,17 @@ type LogConfig struct {
 	Format string `yaml:"format" env:"FORMAT, overwrite"`
 }
 
+type LoadResult struct {
+	Config     *Config
+	Path       string
+	FileExists bool
+}
+
+const (
+	defaultConfigFileName = "config.yml"
+	legacyConfigFileName  = "config.yaml"
+)
+
 func DefaultConfig() *Config {
 	homeDir, _ := os.UserHomeDir()
 	hostName, _ := os.Hostname()
@@ -103,26 +114,25 @@ func DefaultConfig() *Config {
 	}
 }
 
-func configPath() string {
+func defaultConfigPath() string {
 	homeDir, _ := os.UserHomeDir()
-	return filepath.Join(homeDir, ".kinetic", "config.yaml")
+	return filepath.Join(homeDir, ".kinetic", defaultConfigFileName)
 }
 
-func Load() (*Config, error) {
+func legacyConfigPath() string {
+	homeDir, _ := os.UserHomeDir()
+	return filepath.Join(homeDir, ".kinetic", legacyConfigFileName)
+}
+
+func Load(path string) (*LoadResult, error) {
+	resolvedPath, fileExists, err := resolveConfigPath(path)
+	if err != nil {
+		return nil, fmt.Errorf("failed to resolve config path: %w", err)
+	}
+
 	cfg := DefaultConfig()
-
-	path := configPath()
-	return loadFromPath(cfg, path)
-}
-
-func loadFromPath(cfg *Config, path string) (*Config, error) {
-	if err := cfg.loadFromFile(path); err != nil {
-		if os.IsNotExist(err) {
-			if err := cfg.save(path); err != nil {
-				return nil, fmt.Errorf("failed to create default config: %w", err)
-			}
-			fmt.Printf("Created default config at %s\n", path)
-		} else {
+	if fileExists {
+		if err := cfg.loadFromFile(resolvedPath); err != nil {
 			return nil, fmt.Errorf("failed to load config: %w", err)
 		}
 	}
@@ -132,7 +142,49 @@ func loadFromPath(cfg *Config, path string) (*Config, error) {
 		return nil, fmt.Errorf("failed to process env config: %w", err)
 	}
 
-	return cfg, nil
+	return &LoadResult{
+		Config:     cfg,
+		Path:       resolvedPath,
+		FileExists: fileExists,
+	}, nil
+}
+
+func resolveConfigPath(path string) (string, bool, error) {
+	if path != "" {
+		exists, err := pathExists(path)
+		return path, exists, err
+	}
+
+	defaultPath := defaultConfigPath()
+	defaultExists, err := pathExists(defaultPath)
+	if err != nil {
+		return "", false, err
+	}
+	if defaultExists {
+		return defaultPath, true, nil
+	}
+
+	legacyPath := legacyConfigPath()
+	legacyExists, err := pathExists(legacyPath)
+	if err != nil {
+		return "", false, err
+	}
+	if legacyExists {
+		return legacyPath, true, nil
+	}
+
+	return defaultPath, false, nil
+}
+
+func pathExists(path string) (bool, error) {
+	_, err := os.Stat(path)
+	if err == nil {
+		return true, nil
+	}
+	if os.IsNotExist(err) {
+		return false, nil
+	}
+	return false, err
 }
 
 func (c *Config) loadFromFile(path string) error {
@@ -174,6 +226,10 @@ func (c *Config) save(path string) error {
 
 `
 	return os.WriteFile(path, []byte(header+string(data)), 0644)
+}
+
+func (c *Config) Save(path string) error {
+	return c.save(path)
 }
 
 func (c *Config) APIAddr() string {

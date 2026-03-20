@@ -23,12 +23,15 @@ var (
 
 type cliOptions struct {
 	showVersion bool
+	configPath  string
 	mode        string
 	withWorker  bool
 }
 
 func bindFlags(fs *flag.FlagSet, opts *cliOptions) {
 	fs.BoolVar(&opts.showVersion, "version", false, "Show version information")
+	fs.StringVar(&opts.configPath, "c", "", "Path to config.yml")
+	fs.StringVar(&opts.configPath, "config", "", "Path to config.yml")
 	fs.StringVar(&opts.mode, "mode", "", "Run mode: controller or worker (overrides config)")
 	fs.BoolVar(&opts.withWorker, "with-worker", false, "Enable embedded worker when running in controller mode")
 }
@@ -43,20 +46,22 @@ func main() {
 		os.Exit(0)
 	}
 
-	cfg, err := config.Load()
+	cfg, configPath, shouldPersistConfig, err := loadRuntimeConfig(opts)
 	if err != nil {
-		logrus.WithError(err).Fatal("Failed to load config")
+		logrus.WithError(err).Fatal("Failed to prepare config")
 	}
 
-	if opts.mode != "" {
-		cfg.Mode = config.Mode(opts.mode)
+	if err := validateMode(cfg.Mode); err != nil {
+		logrus.WithError(err).Fatal("Invalid runtime config")
 	}
-	if opts.withWorker {
-		cfg.Controller.EmbeddedWorkerEnabled = true
+
+	if err := persistMissingConfig(cfg, configPath, shouldPersistConfig); err != nil {
+		logrus.WithError(err).Fatal("Failed to persist config")
 	}
 
 	configureLogger(cfg.Log)
 	logrus.WithFields(logrus.Fields{
+		"config_path":       configPath,
 		"mode":              cfg.Mode,
 		"embedded_worker":   cfg.Controller.EmbeddedWorkerEnabled,
 		"api_addr":          cfg.APIAddr(),
@@ -73,6 +78,49 @@ func main() {
 	default:
 		logrus.WithField("mode", cfg.Mode).Fatal("Unknown mode")
 	}
+}
+
+func loadRuntimeConfig(opts cliOptions) (*config.Config, string, bool, error) {
+	result, err := config.Load(opts.configPath)
+	if err != nil {
+		return nil, "", false, err
+	}
+
+	cfg := result.Config
+	applyCLIOverrides(cfg, opts)
+
+	return cfg, result.Path, !result.FileExists, nil
+}
+
+func applyCLIOverrides(cfg *config.Config, opts cliOptions) {
+	if opts.mode != "" {
+		cfg.Mode = config.Mode(opts.mode)
+	}
+	if opts.withWorker {
+		cfg.Controller.EmbeddedWorkerEnabled = true
+	}
+}
+
+func validateMode(mode config.Mode) error {
+	switch mode {
+	case config.ModeController, config.ModeWorker:
+		return nil
+	default:
+		return fmt.Errorf("unknown mode %q", mode)
+	}
+}
+
+func persistMissingConfig(cfg *config.Config, path string, shouldPersist bool) error {
+	if !shouldPersist {
+		return nil
+	}
+
+	if err := cfg.Save(path); err != nil {
+		return err
+	}
+
+	fmt.Printf("Created config at %s\n", path)
+	return nil
 }
 
 func configureLogger(cfg config.LogConfig) {

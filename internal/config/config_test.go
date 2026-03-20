@@ -14,9 +14,10 @@ func TestLoad_CreatesDefaultConfigWhenMissing(t *testing.T) {
 	homeDir := t.TempDir()
 	t.Setenv("HOME", homeDir)
 
-	cfg, err := Load()
+	result, err := Load("")
 	require.NoError(t, err)
 
+	cfg := result.Config
 	assert.Equal(t, ModeController, cfg.Mode)
 	assert.True(t, cfg.Controller.EmbeddedWorkerEnabled)
 	assert.Equal(t, "http://localhost:9898", cfg.Worker.ControllerURL)
@@ -24,13 +25,11 @@ func TestLoad_CreatesDefaultConfigWhenMissing(t *testing.T) {
 	assert.Equal(t, 10, cfg.Worker.MaxConcurrency)
 	assert.Equal(t, filepath.Join(homeDir, ".kinetic", "kinetic.db"), cfg.Database.Path)
 
-	configFile := filepath.Join(homeDir, ".kinetic", "config.yaml")
-	content, readErr := os.ReadFile(configFile)
-	require.NoError(t, readErr)
-	assert.Contains(t, string(content), "KINETIC_WORKER_CONTROLLER_URL")
-	assert.Contains(t, string(content), "embedded_worker_enabled: true")
-	assert.Contains(t, string(content), "heartbeat_interval: 5")
-	assert.Contains(t, string(content), "max_concurrency: 10")
+	assert.False(t, result.FileExists)
+	assert.Equal(t, filepath.Join(homeDir, ".kinetic", "config.yml"), result.Path)
+
+	_, statErr := os.Stat(result.Path)
+	assert.ErrorIs(t, statErr, os.ErrNotExist)
 }
 
 func TestLoad_AppliesFileThenEnvironmentOverrides(t *testing.T) {
@@ -65,11 +64,14 @@ log:
   format: json
 `) + "\n"
 
-	require.NoError(t, os.WriteFile(filepath.Join(configDir, "config.yaml"), []byte(configBody), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(configDir, "config.yml"), []byte(configBody), 0o644))
 
-	cfg, err := Load()
+	result, err := Load("")
 	require.NoError(t, err)
 
+	cfg := result.Config
+	assert.True(t, result.FileExists)
+	assert.Equal(t, filepath.Join(configDir, "config.yml"), result.Path)
 	assert.Equal(t, ModeController, cfg.Mode)
 	assert.Equal(t, "127.0.0.1", cfg.API.Host)
 	assert.Equal(t, 9090, cfg.API.Port)
@@ -83,4 +85,20 @@ log:
 	assert.Equal(t, "warn", cfg.Log.Level)
 	assert.Equal(t, "json", cfg.Log.Format)
 	assert.Equal(t, "/tmp/kinetic.db", cfg.Database.Path)
+}
+
+func TestLoad_FallsBackToLegacyConfigYAML(t *testing.T) {
+	homeDir := t.TempDir()
+	t.Setenv("HOME", homeDir)
+
+	configDir := filepath.Join(homeDir, ".kinetic")
+	require.NoError(t, os.MkdirAll(configDir, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(configDir, "config.yaml"), []byte("mode: worker\n"), 0o644))
+
+	result, err := Load("")
+	require.NoError(t, err)
+
+	assert.True(t, result.FileExists)
+	assert.Equal(t, filepath.Join(configDir, "config.yaml"), result.Path)
+	assert.Equal(t, ModeWorker, result.Config.Mode)
 }
