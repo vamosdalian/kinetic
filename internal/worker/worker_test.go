@@ -235,7 +235,7 @@ func TestWorker_RunStreamKeepaliveIgnored(t *testing.T) {
 }
 
 func TestWorker_ShutdownIsIdempotent(t *testing.T) {
-	worker := NewWorker(testWorkerConfig("http://localhost:8080"), "remote")
+	worker := NewWorker(testWorkerConfig("http://localhost:9898"), "remote")
 
 	require.NoError(t, worker.Shutdown(context.Background()))
 	require.NoError(t, worker.Shutdown(context.Background()))

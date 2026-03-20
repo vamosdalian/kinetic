@@ -49,7 +49,7 @@ func New(opts ...Option) *Router {
 
 	r := &Router{
 		engine:       engine,
-		addr:         ":8080",
+		addr:         ":9898",
 		readTimeout:  30 * time.Second,
 		writeTimeout: 30 * time.Second,
 		idleTimeout:  60 * time.Second,
