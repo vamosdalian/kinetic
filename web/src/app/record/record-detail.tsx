@@ -6,6 +6,7 @@ import {
   type Node,
   Background,
   Controls,
+  type ColorMode,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import {
@@ -33,6 +34,7 @@ import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import { DETAIL_PANEL_LAYOUT_STYLE } from "@/components/detail-panel-layout";
 import { SiteHeader } from "@/components/site-header";
+import { useTheme } from "next-themes";
 import { toast } from "sonner";
 
 const nodeTypes = {
@@ -50,7 +52,9 @@ function parseEventData<T>(event: MessageEvent<string>) {
 export function RecordDetail() {
   const { runId } = useParams();
   const navigate = useNavigate();
+  const { resolvedTheme } = useTheme();
   const [loading, setLoading] = React.useState(true);
+  const [colorMode, setColorMode] = React.useState<ColorMode>("light");
   const [runData, setRunData] = React.useState<WorkflowRunDetail | null>(null);
   const [selectedTaskId, setSelectedTaskId] = React.useState("");
   const [rerunning, setRerunning] = React.useState(false);
@@ -84,6 +88,10 @@ export function RecordDetail() {
   React.useEffect(() => {
     void fetchRunDetail(true);
   }, [fetchRunDetail]);
+
+  React.useEffect(() => {
+    setColorMode(resolvedTheme === "dark" ? "dark" : "light");
+  }, [resolvedTheme]);
 
   const applyTaskUpdate = React.useCallback(
     (
@@ -352,6 +360,7 @@ export function RecordDetail() {
           onNodeClick={(_, node) => setSelectedTaskId(node.id)}
           onPaneClick={() => setSelectedTaskId("")}
           nodeTypes={nodeTypes}
+          colorMode={colorMode}
           fitView
           attributionPosition="bottom-right"
           nodesConnectable={false}
