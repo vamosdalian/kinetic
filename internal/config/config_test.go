@@ -19,7 +19,7 @@ func TestLoad_CreatesDefaultConfigWhenMissing(t *testing.T) {
 
 	assert.Equal(t, ModeController, cfg.Mode)
 	assert.True(t, cfg.Controller.EmbeddedWorkerEnabled)
-	assert.Equal(t, "http://localhost:8080", cfg.Worker.ControllerURL)
+	assert.Equal(t, "http://localhost:9898", cfg.Worker.ControllerURL)
 	assert.Equal(t, 5, cfg.Worker.HeartbeatInterval)
 	assert.Equal(t, 10, cfg.Worker.MaxConcurrency)
 	assert.Equal(t, filepath.Join(homeDir, ".kinetic", "kinetic.db"), cfg.Database.Path)
@@ -38,7 +38,7 @@ func TestLoad_AppliesFileThenEnvironmentOverrides(t *testing.T) {
 	t.Setenv("HOME", homeDir)
 	t.Setenv("KINETIC_API_PORT", "9090")
 	t.Setenv("KINETIC_MODE", "controller")
-	t.Setenv("KINETIC_WORKER_CONTROLLER_URL", "http://env-controller:8080")
+	t.Setenv("KINETIC_WORKER_CONTROLLER_URL", "http://env-controller:9898")
 
 	configDir := filepath.Join(homeDir, ".kinetic")
 	require.NoError(t, os.MkdirAll(configDir, 0o755))
@@ -56,7 +56,7 @@ controller:
 worker:
   id: file-worker
   name: File Worker
-  controller_url: http://file-controller:8080
+  controller_url: http://file-controller:9898
   heartbeat_interval: 11
   stream_reconnect_interval: 12
   max_concurrency: 7
@@ -76,7 +76,7 @@ log:
 	assert.False(t, cfg.Controller.EmbeddedWorkerEnabled)
 	assert.Equal(t, "file-worker", cfg.Worker.ID)
 	assert.Equal(t, "File Worker", cfg.Worker.Name)
-	assert.Equal(t, "http://env-controller:8080", cfg.Worker.ControllerURL)
+	assert.Equal(t, "http://env-controller:9898", cfg.Worker.ControllerURL)
 	assert.Equal(t, 11, cfg.Worker.HeartbeatInterval)
 	assert.Equal(t, 12, cfg.Worker.StreamReconnectSeconds)
 	assert.Equal(t, 7, cfg.Worker.MaxConcurrency)

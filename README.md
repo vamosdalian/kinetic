@@ -50,9 +50,9 @@ go run ./cmd/kinetic --mode controller --with-worker
 
 Then open:
 
-- UI: [http://localhost:8080](http://localhost:8080)
-- Health check: [http://localhost:8080/healthz](http://localhost:8080/healthz)
-- Readiness check: [http://localhost:8080/readyz](http://localhost:8080/readyz)
+- UI: [http://localhost:9898](http://localhost:9898)
+- Health check: [http://localhost:9898/healthz](http://localhost:9898/healthz)
+- Readiness check: [http://localhost:9898/readyz](http://localhost:9898/readyz)
 
 On first start, Kinetic creates a default config file at `~/.kinetic/config.yaml` and a SQLite database at `~/.kinetic/kinetic.db`.
 
@@ -91,7 +91,7 @@ Run a worker that connects to the controller:
 
 ```bash
 KINETIC_MODE=worker \
-KINETIC_WORKER_CONTROLLER_URL=http://controller-host:8080 \
+KINETIC_WORKER_CONTROLLER_URL=http://controller-host:9898 \
 ./kinetic
 ```
 
@@ -106,7 +106,7 @@ mode: controller
 
 api:
   host: 0.0.0.0
-  port: 8080
+  port: 9898
 
 database:
   type: sqlite
@@ -118,7 +118,7 @@ controller:
 worker:
   id: node-local
   name: node-local
-  controller_url: http://localhost:8080
+  controller_url: http://localhost:9898
   advertise_ip: ""
   heartbeat_interval: 5
   stream_reconnect_interval: 5

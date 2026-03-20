@@ -78,7 +78,7 @@ func DefaultConfig() *Config {
 		Mode: ModeController,
 		API: APIConfig{
 			Host: "0.0.0.0",
-			Port: 8080,
+			Port: 9898,
 		},
 		Database: DatabaseConfig{
 			Type: DBTypeSQLite,
@@ -90,7 +90,7 @@ func DefaultConfig() *Config {
 		Worker: WorkerConfig{
 			ID:                     hostName,
 			Name:                   hostName,
-			ControllerURL:          "http://localhost:8080",
+			ControllerURL:          "http://localhost:9898",
 			AdvertiseIP:            "",
 			HeartbeatInterval:      5,
 			StreamReconnectSeconds: 5,
