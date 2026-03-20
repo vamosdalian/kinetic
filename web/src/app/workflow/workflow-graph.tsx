@@ -67,6 +67,7 @@ function WorkflowGraph() {
     name: "",
     description: "",
     tag: "",
+    config: { env: {} },
   });
   const [taskNodes, setTaskNodes] = React.useState<Record<string, TaskNode>>({});
   const [edges, setEdges] = React.useState<Edge[]>([]);
@@ -121,7 +122,7 @@ function WorkflowGraph() {
 
   const clear = React.useCallback(() => {
     setWorkflowId("");
-    setWorkflowData({ name: "", description: "", tag: "" });
+    setWorkflowData({ name: "", description: "", tag: "", config: { env: {} } });
     setTaskNodes({});
     setEdges([]);
     markClean();
@@ -140,6 +141,7 @@ function WorkflowGraph() {
       name: data.name,
       description: data.description,
       tag: data.tag || "",
+      config: data.config ?? { env: {} },
     });
     setTaskNodes(taskNodesRecord);
     setEdges(data.edges || []);
@@ -387,6 +389,7 @@ function WorkflowGraph() {
       const payload = {
         name: workflowData.name || "Untitled Workflow",
         description: workflowData.description || "",
+        config: workflowData.config,
         tag: workflowData.tag || "",
         taskNodes: Object.values(taskNodes),
         edges: edges,

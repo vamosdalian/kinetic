@@ -53,6 +53,35 @@ func TestShellTaskTimeout(t *testing.T) {
 	assert.ErrorIs(t, ctx.Err(), context.DeadlineExceeded)
 }
 
+func TestShellTaskUsesConfigEnv(t *testing.T) {
+	task, err := NewTask(TaskEntity{
+		ID:     "task-1",
+		Type:   "shell",
+		Config: `{"script":"printf '%s' \"$GREETING\"","env":{"GREETING":"hello"}}`,
+	})
+	assert.NoError(t, err)
+
+	result, err := task.Execute(context.Background(), nil)
+	assert.NoError(t, err)
+	assert.Equal(t, "hello", result.Output)
+}
+
+func TestShellTaskExplicitEnvOverridesConfigEnv(t *testing.T) {
+	task, err := NewTask(TaskEntity{
+		ID:     "task-1",
+		Type:   "shell",
+		Config: `{"script":"printf '%s' \"$GREETING\"","env":{"GREETING":"hello"}}`,
+		Env: map[string]string{
+			"GREETING": "override",
+		},
+	})
+	assert.NoError(t, err)
+
+	result, err := task.Execute(context.Background(), nil)
+	assert.NoError(t, err)
+	assert.Equal(t, "override", result.Output)
+}
+
 func TestHTTPTaskSuccess(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal(t, http.MethodPost, r.Method)

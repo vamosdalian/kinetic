@@ -117,6 +117,10 @@ CREATE INDEX IF NOT EXISTS idx_task_runs_run_id_task_id
 CREATE INDEX IF NOT EXISTS idx_nodes_status_running_count_node_id
 	ON nodes(status, running_count ASC, node_id ASC);
 `,
+	5: `
+ALTER TABLE workflows ADD COLUMN config TEXT DEFAULT '';
+ALTER TABLE workflow_runs ADD COLUMN workflow_config TEXT DEFAULT '';
+`,
 }
 
 func (s *SqliteDB) Migrate() error {

@@ -35,10 +35,10 @@ func (s *SqliteDB) CreateWorkflowRun(workflowID string, runID string) error {
 
 	_, err = tx.Exec(`
 		INSERT INTO workflow_runs (
-			run_id, workflow_id, workflow_name, workflow_description, workflow_version, workflow_tag,
+			run_id, workflow_id, workflow_name, workflow_description, workflow_config, workflow_version, workflow_tag,
 			status, created_at, started_at, finished_at
-		) VALUES (?, ?, ?, ?, ?, ?, 'created', ?, NULL, NULL)
-	`, runID, workflow.ID, workflow.Name, workflow.Description, workflow.Version, workflow.Tag, now)
+		) VALUES (?, ?, ?, ?, ?, ?, ?, 'created', ?, NULL, NULL)
+	`, runID, workflow.ID, workflow.Name, workflow.Description, workflow.Config, workflow.Version, workflow.Tag, now)
 	if err != nil {
 		return err
 	}
@@ -97,12 +97,12 @@ func (s *SqliteDB) GetWorkflowRun(runID string) (entity.WorkflowRunEntity, error
 	var createdAtStr string
 	var startedAtStr, finishedAtStr sql.NullString
 	err := s.db.QueryRow(`
-		SELECT run_id, workflow_id, workflow_name, workflow_description, workflow_version, workflow_tag,
+		SELECT run_id, workflow_id, workflow_name, workflow_description, workflow_config, workflow_version, workflow_tag,
 		status, created_at, started_at, finished_at 
 		FROM workflow_runs WHERE run_id = ?
 	`, runID).Scan(
 		&run.RunID, &run.WorkflowID, &run.WorkflowName, &run.WorkflowDescription,
-		&run.WorkflowVersion, &run.WorkflowTag, &run.Status, &createdAtStr, &startedAtStr, &finishedAtStr,
+		&run.WorkflowConfig, &run.WorkflowVersion, &run.WorkflowTag, &run.Status, &createdAtStr, &startedAtStr, &finishedAtStr,
 	)
 	if err != nil {
 		return entity.WorkflowRunEntity{}, err

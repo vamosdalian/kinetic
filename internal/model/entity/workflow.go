@@ -9,6 +9,7 @@ type WorkflowEntity struct {
 	ID          string
 	Name        string
 	Description string
+	Config      string
 	Tag         string
 	Version     int
 	Enable      bool

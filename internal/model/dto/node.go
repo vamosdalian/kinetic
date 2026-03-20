@@ -51,12 +51,13 @@ type NodeCommand struct {
 }
 
 type AssignedTask struct {
-	RunID          string          `json:"run_id"`
-	TaskID         string          `json:"task_id"`
-	Name           string          `json:"name"`
-	Type           TaskType        `json:"type"`
-	Config         json.RawMessage `json:"config"`
-	ConditionInput *ConditionInput `json:"condition_input,omitempty"`
+	RunID          string            `json:"run_id"`
+	TaskID         string            `json:"task_id"`
+	Name           string            `json:"name"`
+	Type           TaskType          `json:"type"`
+	Config         json.RawMessage   `json:"config"`
+	Env            map[string]string `json:"env,omitempty"`
+	ConditionInput *ConditionInput   `json:"condition_input,omitempty"`
 }
 
 type ConditionInput struct {

@@ -6,10 +6,17 @@ import (
 	"strings"
 )
 
+const ReservedEnvPrefix = "KINETIC_"
+
+type WorkflowConfig struct {
+	Env map[string]string `json:"env,omitempty"`
+}
+
 type TaskPolicy struct {
-	TimeoutSeconds      int `json:"timeout_seconds,omitempty"`
-	RetryCount          int `json:"retry_count,omitempty"`
-	RetryBackoffSeconds int `json:"retry_backoff_seconds,omitempty"`
+	TimeoutSeconds      int               `json:"timeout_seconds,omitempty"`
+	RetryCount          int               `json:"retry_count,omitempty"`
+	RetryBackoffSeconds int               `json:"retry_backoff_seconds,omitempty"`
+	Env                 map[string]string `json:"env,omitempty"`
 }
 
 type ShellConfig struct {
@@ -36,6 +43,24 @@ type ConditionConfig struct {
 	TaskPolicy
 }
 
+func ParseWorkflowConfig(raw string) (WorkflowConfig, error) {
+	if strings.TrimSpace(raw) == "" {
+		return WorkflowConfig{}, nil
+	}
+
+	var cfg WorkflowConfig
+	if err := json.Unmarshal([]byte(raw), &cfg); err != nil {
+		return WorkflowConfig{}, fmt.Errorf("invalid workflow config: %w", err)
+	}
+
+	if err := ValidateEnvMap(cfg.Env); err != nil {
+		return WorkflowConfig{}, err
+	}
+
+	return cfg, nil
+
+}
+
 func ParseTaskPolicy(raw string) (TaskPolicy, error) {
 	if strings.TrimSpace(raw) == "" {
 		return TaskPolicy{}, nil
@@ -55,6 +80,23 @@ func ParseTaskPolicy(raw string) (TaskPolicy, error) {
 	if policy.RetryBackoffSeconds < 0 {
 		return TaskPolicy{}, fmt.Errorf("retry_backoff_seconds must be >= 0")
 	}
+	if err := ValidateEnvMap(policy.Env); err != nil {
+		return TaskPolicy{}, err
+	}
 
 	return policy, nil
+}
+
+func ValidateEnvMap(values map[string]string) error {
+	for key := range values {
+		trimmed := strings.TrimSpace(key)
+		if trimmed == "" {
+			return fmt.Errorf("env key is required")
+		}
+		if strings.HasPrefix(trimmed, ReservedEnvPrefix) {
+			return fmt.Errorf("env key %s uses reserved prefix %s", trimmed, ReservedEnvPrefix)
+		}
+	}
+
+	return nil
 }

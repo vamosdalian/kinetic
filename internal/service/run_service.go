@@ -382,6 +382,18 @@ func (s *RunService) executeTask(ctx context.Context, runID string, task entity.
 			err:    err,
 		}
 	}
+	effectiveEnv, err := s.buildTaskEnvironment(runID, task.TaskName, policy)
+	if err != nil {
+		output := fmt.Sprintf("Invalid task environment: %v", err)
+		_ = s.db.FinishTaskRun(runID, task.TaskID, "failed", -1, output)
+		s.publishTaskStatus(runID, task.TaskID)
+		return runtimeTaskResult{
+			taskID: task.TaskID,
+			status: "failed",
+			result: executor.TaskResult{ExitCode: -1, Output: output},
+			err:    err,
+		}
+	}
 
 	var outputBuilder strings.Builder
 	emitOutput := func(chunk string) {
@@ -427,7 +439,7 @@ func (s *RunService) executeTask(ctx context.Context, runID string, task entity.
 			attemptCtx, cancelAttempt = context.WithTimeout(ctx, time.Duration(policy.TimeoutSeconds)*time.Second)
 		}
 
-		lastResult, selectedBranch, lastErr = s.executeTaskAttempt(attemptCtx, task, conditionInput, emitOutput)
+		lastResult, selectedBranch, lastErr = s.executeTaskAttempt(attemptCtx, task, conditionInput, effectiveEnv, emitOutput)
 		cancelAttempt()
 
 		if lastErr == nil {
@@ -492,7 +504,7 @@ func (s *RunService) executeTask(ctx context.Context, runID string, task entity.
 	}
 }
 
-func (s *RunService) executeTaskAttempt(ctx context.Context, task entity.TaskRunEntity, conditionInput *workflowcfg.ConditionInput, onOutput executor.OutputFunc) (executor.TaskResult, string, error) {
+func (s *RunService) executeTaskAttempt(ctx context.Context, task entity.TaskRunEntity, conditionInput *workflowcfg.ConditionInput, effectiveEnv map[string]string, onOutput executor.OutputFunc) (executor.TaskResult, string, error) {
 	if task.TaskType == "condition" {
 		var cfg workflowcfg.ConditionConfig
 		if err := json.Unmarshal([]byte(task.TaskConfig), &cfg); err != nil {
@@ -527,6 +539,7 @@ func (s *RunService) executeTaskAttempt(ctx context.Context, task entity.TaskRun
 		ID:     task.TaskID,
 		Type:   task.TaskType,
 		Config: task.TaskConfig,
+		Env:    effectiveEnv,
 	})
 	if err != nil {
 		if onOutput != nil {
@@ -537,6 +550,30 @@ func (s *RunService) executeTaskAttempt(ctx context.Context, task entity.TaskRun
 
 	result, err := s.executor.Execute(ctx, execTask, onOutput)
 	return result, "", err
+}
+
+func (s *RunService) buildTaskEnvironment(runID string, taskName string, policy workflowcfg.TaskPolicy) (map[string]string, error) {
+	run, err := s.db.GetWorkflowRun(runID)
+	if err != nil {
+		return nil, err
+	}
+
+	workflowConfig, err := workflowcfg.ParseWorkflowConfig(run.WorkflowConfig)
+	if err != nil {
+		return nil, err
+	}
+
+	env := map[string]string{
+		workflowcfg.ReservedEnvPrefix + "WORKFLOW_NAME": run.WorkflowName,
+		workflowcfg.ReservedEnvPrefix + "TASK_NAME":     taskName,
+	}
+	for key, value := range workflowConfig.Env {
+		env[key] = value
+	}
+	for key, value := range policy.Env {
+		env[key] = value
+	}
+	return env, nil
 }
 
 func buildRunGraph(tasks []entity.TaskRunEntity, edges []entity.EdgeRunEntity) (runGraph, error) {
@@ -711,6 +748,14 @@ func (s *RunService) PrepareAssignedTask(runID string, taskID string) (*dto.Assi
 	if err != nil {
 		return nil, err
 	}
+	policy, err := workflowcfg.ParseTaskPolicy(task.TaskConfig)
+	if err != nil {
+		return nil, err
+	}
+	effectiveEnv, err := s.buildTaskEnvironment(runID, task.TaskName, policy)
+	if err != nil {
+		return nil, err
+	}
 
 	assigned := &dto.AssignedTask{
 		RunID:  runID,
@@ -718,6 +763,7 @@ func (s *RunService) PrepareAssignedTask(runID string, taskID string) (*dto.Assi
 		Name:   task.TaskName,
 		Type:   dto.TaskType(task.TaskType),
 		Config: json.RawMessage(task.TaskConfig),
+		Env:    effectiveEnv,
 	}
 
 	if task.TaskType == "condition" {

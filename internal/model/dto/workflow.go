@@ -3,6 +3,8 @@ package dto
 import (
 	"encoding/json"
 	"time"
+
+	workflowcfg "github.com/vamosdalian/kinetic/internal/workflow"
 )
 
 type Position struct {
@@ -11,16 +13,17 @@ type Position struct {
 }
 
 type Workflow struct {
-	ID          string     `json:"id"`
-	Name        string     `json:"name"`
-	Description string     `json:"description"`
-	Tag         string     `json:"tag,omitempty"`
-	Version     int        `json:"version,string"`
-	Enable      bool       `json:"enable"`
-	TaskNodes   []TaskNode `json:"taskNodes"`
-	Edges       []Edge     `json:"edges"`
-	CreatedAt   time.Time  `json:"created_at"`
-	UpdatedAt   time.Time  `json:"updated_at"`
+	ID          string                     `json:"id"`
+	Name        string                     `json:"name"`
+	Description string                     `json:"description"`
+	Config      workflowcfg.WorkflowConfig `json:"config,omitempty"`
+	Tag         string                     `json:"tag,omitempty"`
+	Version     int                        `json:"version,string"`
+	Enable      bool                       `json:"enable"`
+	TaskNodes   []TaskNode                 `json:"taskNodes"`
+	Edges       []Edge                     `json:"edges"`
+	CreatedAt   time.Time                  `json:"created_at"`
+	UpdatedAt   time.Time                  `json:"updated_at"`
 }
 
 type TaskType string

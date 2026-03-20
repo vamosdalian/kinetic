@@ -18,6 +18,7 @@ import {
   HoverCardTrigger,
 } from "@/components/ui/hover-card";
 import { CircleQuestionMark } from "lucide-react";
+import { KeyValueEditor } from "./key-value-editor";
 import {
   createTaskConfig,
   type ConditionConfig,
@@ -57,18 +58,6 @@ function HelpHint({ content }: { content: React.ReactNode }) {
       </HoverCardContent>
     </HoverCard>
   );
-}
-
-function buildNextHeaderKey(headers: Record<string, string>) {
-  let index = Object.keys(headers).length + 1;
-  let candidate = `header-${index}`;
-
-  while (candidate in headers) {
-    index += 1;
-    candidate = `header-${index}`;
-  }
-
-  return candidate;
 }
 
 export function Taskform({
@@ -263,73 +252,19 @@ export function Taskform({
             <div className="flex items-center justify-between gap-3">
               <div className="flex items-center gap-2">
                 <Label>Headers</Label>
-                <HelpHint content="Configure request headers in the task config." />
+                <HelpHint content="Configure request headers in the task config. Keys are unique within this map." />
               </div>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={() => {
-                  const httpConfig = config as HttpConfig;
-                  const headers = { ...(httpConfig.headers ?? {}) };
-                  headers[buildNextHeaderKey(headers)] = "";
-                  updateConfig({ ...httpConfig, headers });
-                }}
-              >
-                Add Header
-              </Button>
             </div>
-
-            {Object.entries((config as HttpConfig).headers ?? {}).length > 0 ? (
-              <div className="grid gap-3">
-                {Object.entries((config as HttpConfig).headers ?? {}).map(([key, value]) => (
-                  <div key={key} className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] gap-2">
-                    <Input
-                      placeholder="Header name"
-                      value={key}
-                      onChange={(e) => {
-                        const nextKey = e.target.value;
-                        const httpConfig = config as HttpConfig;
-                        const headers = { ...(httpConfig.headers ?? {}) };
-                        delete headers[key];
-                        headers[nextKey] = value;
-                        updateConfig({ ...httpConfig, headers });
-                      }}
-                    />
-                    <Input
-                      placeholder="Header value"
-                      value={value}
-                      onChange={(e) => {
-                        const httpConfig = config as HttpConfig;
-                        updateConfig({
-                          ...httpConfig,
-                          headers: {
-                            ...(httpConfig.headers ?? {}),
-                            [key]: e.target.value,
-                          },
-                        });
-                      }}
-                    />
-                    <Button
-                      type="button"
-                      variant="outline"
-                      onClick={() => {
-                        const httpConfig = config as HttpConfig;
-                        const headers = { ...(httpConfig.headers ?? {}) };
-                        delete headers[key];
-                        updateConfig({ ...httpConfig, headers });
-                      }}
-                    >
-                      Remove
-                    </Button>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <p className="text-xs text-muted-foreground">
-                No custom headers configured.
-              </p>
-            )}
+            <KeyValueEditor
+              values={(config as HttpConfig).headers ?? {}}
+              onChange={(headers) => {
+                updateConfig({ ...(config as HttpConfig), headers });
+              }}
+              emptyText="No custom headers configured."
+              keyPlaceholder="Header name"
+              valuePlaceholder="Header value"
+              keyPrefix="header"
+            />
           </div>
 
           <div className="grid gap-2">
@@ -386,6 +321,54 @@ export function Taskform({
           />
         </div>
       )}
+
+      <div className="grid gap-2">
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2">
+            <Label>Environment Variables</Label>
+            <HelpHint
+              content="Task-level variables override workflow-level variables. Names starting with KINETIC_ are reserved for the system. Keys are unique within this map."
+            />
+          </div>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              const env = { ...(config.env ?? {}) };
+              let index = Object.keys(env).length + 1;
+              let candidate = `env-${index}`;
+
+              while (candidate in env) {
+                index += 1;
+                candidate = `env-${index}`;
+              }
+
+              env[candidate] = "";
+              updateConfig({
+                ...config,
+                env,
+              });
+            }}
+          >
+            Add
+          </Button>
+        </div>
+        <KeyValueEditor
+          values={config.env ?? {}}
+          onChange={(env) => {
+            updateConfig({
+              ...config,
+              env,
+            });
+          }}
+          emptyText="No task environment variables configured."
+          keyPlaceholder="Variable name"
+          valuePlaceholder="Variable value"
+          keyPrefix="env"
+          showAddButton={false}
+        />
+      </div>
 
       <div className="grid gap-3">
         <div className="flex items-center gap-2">

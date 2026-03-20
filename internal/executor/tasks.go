@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"os/exec"
 	"strings"
 	"sync"
@@ -18,11 +19,13 @@ type TaskEntity struct {
 	ID     string
 	Type   string
 	Config string
+	Env    map[string]string
 }
 
 type shellTask struct {
 	id     string
 	script string
+	env    map[string]string
 }
 
 type httpTask struct {
@@ -82,7 +85,7 @@ func NewTask(task TaskEntity) (Task, error) {
 		if cfg.Script == "" {
 			return nil, fmt.Errorf("shell task requires script")
 		}
-		return &shellTask{id: task.ID, script: cfg.Script}, nil
+		return &shellTask{id: task.ID, script: cfg.Script, env: resolveTaskEnv(cfg.TaskPolicy.Env, task.Env)}, nil
 	case "http":
 		var cfg workflowcfg.HTTPConfig
 		if err := json.Unmarshal([]byte(task.Config), &cfg); err != nil {
@@ -119,6 +122,9 @@ func (t *shellTask) Type() string {
 
 func (t *shellTask) Execute(ctx context.Context, onOutput OutputFunc) (TaskResult, error) {
 	cmd := exec.CommandContext(ctx, "sh", "-c", t.script)
+	if len(t.env) > 0 {
+		cmd.Env = append(os.Environ(), flattenEnvMap(t.env)...)
+	}
 
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
@@ -234,4 +240,31 @@ func (t *unsupportedTask) Execute(ctx context.Context, onOutput OutputFunc) (Tas
 		Output:   strings.TrimSpace(message),
 		ExitCode: -1,
 	}, fmt.Errorf("%s task is not implemented", t.taskType)
+}
+
+func resolveTaskEnv(configEnv map[string]string, explicitEnv map[string]string) map[string]string {
+	if len(configEnv) == 0 && len(explicitEnv) == 0 {
+		return nil
+	}
+
+	resolved := make(map[string]string, len(configEnv)+len(explicitEnv))
+	for key, value := range configEnv {
+		resolved[key] = value
+	}
+	for key, value := range explicitEnv {
+		resolved[key] = value
+	}
+	return resolved
+}
+
+func flattenEnvMap(values map[string]string) []string {
+	if len(values) == 0 {
+		return nil
+	}
+
+	flattened := make([]string, 0, len(values))
+	for key, value := range values {
+		flattened = append(flattened, key+"="+value)
+	}
+	return flattened
 }

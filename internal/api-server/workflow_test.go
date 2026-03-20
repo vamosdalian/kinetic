@@ -16,6 +16,7 @@ import (
 	"github.com/vamosdalian/kinetic/internal/database/sqlite"
 	"github.com/vamosdalian/kinetic/internal/model/dto"
 	"github.com/vamosdalian/kinetic/internal/model/entity"
+	workflowcfg "github.com/vamosdalian/kinetic/internal/workflow"
 )
 
 func setupTestDB(t *testing.T) database.Database {
@@ -290,6 +291,7 @@ func TestWorkflowHandler_Get(t *testing.T) {
 		ID:          workflowID,
 		Name:        "Test Workflow",
 		Description: "Description",
+		Config:      `{"env":{"API_TOKEN":"secret"}}`,
 		Version:     1,
 		Enable:      true,
 		CreatedAt:   time.Now(),
@@ -322,6 +324,105 @@ func TestWorkflowHandler_Get(t *testing.T) {
 	dataMap := apiResponse.Data.(map[string]interface{})
 	assert.Equal(t, workflowID, dataMap["id"])
 	assert.Equal(t, "Test Workflow", dataMap["name"])
+	configMap, ok := dataMap["config"].(map[string]interface{})
+	assert.True(t, ok)
+	envMap, ok := configMap["env"].(map[string]interface{})
+	assert.True(t, ok)
+	assert.Equal(t, "secret", envMap["API_TOKEN"])
+}
+
+func TestWorkflowHandler_SaveAndGet_WithWorkflowConfigAndTaskEnv(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	db := setupTestDB(t)
+	handler := NewWorkflowHandler(db)
+	router := gin.New()
+	router.PUT("/api/workflows/:id", handler.Save)
+	router.GET("/api/workflows/:id", handler.Get)
+
+	workflowID := uuid.New().String()
+	taskID := uuid.New().String()
+	requestBody := dto.Workflow{
+		Name:        "Env Workflow",
+		Description: "Config round-trip",
+		Config: workflowcfg.WorkflowConfig{
+			Env: map[string]string{
+				"API_TOKEN": "secret",
+			},
+		},
+		Enable: true,
+		TaskNodes: []dto.TaskNode{
+			{
+				ID:       taskID,
+				Name:     "Task 1",
+				Type:     dto.TaskTypeShell,
+				Config:   json.RawMessage(`{"script":"printf 'ok'","env":{"BASE_URL":"https://example.com"}}`),
+				Position: dto.Position{X: 10, Y: 20},
+				NodeType: "default",
+			},
+		},
+		Edges: []dto.Edge{},
+	}
+
+	reqBody, err := json.Marshal(requestBody)
+	assert.NoError(t, err)
+
+	req, _ := http.NewRequest("PUT", "/api/workflows/"+workflowID, bytes.NewBuffer(reqBody))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	assert.Equal(t, http.StatusOK, w.Code)
+
+	getReq, _ := http.NewRequest("GET", "/api/workflows/"+workflowID, nil)
+	getResp := httptest.NewRecorder()
+	router.ServeHTTP(getResp, getReq)
+	assert.Equal(t, http.StatusOK, getResp.Code)
+
+	var apiResponse APIResponse
+	err = json.Unmarshal(getResp.Body.Bytes(), &apiResponse)
+	assert.NoError(t, err)
+
+	dataMap := apiResponse.Data.(map[string]interface{})
+	configMap := dataMap["config"].(map[string]interface{})
+	envMap := configMap["env"].(map[string]interface{})
+	assert.Equal(t, "secret", envMap["API_TOKEN"])
+
+	taskNodes := dataMap["taskNodes"].([]interface{})
+	taskData := taskNodes[0].(map[string]interface{})
+	taskConfig := taskData["config"].(map[string]interface{})
+	taskEnv := taskConfig["env"].(map[string]interface{})
+	assert.Equal(t, "https://example.com", taskEnv["BASE_URL"])
+}
+
+func TestWorkflowHandler_Save_RejectsReservedEnvPrefix(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	db := setupTestDB(t)
+	handler := NewWorkflowHandler(db)
+	router := gin.New()
+	router.PUT("/api/workflows/:id", handler.Save)
+
+	workflowID := uuid.New().String()
+	requestBody := dto.Workflow{
+		Name: "Invalid Env Workflow",
+		Config: workflowcfg.WorkflowConfig{
+			Env: map[string]string{
+				"KINETIC_TASK_NAME": "override",
+			},
+		},
+		TaskNodes: []dto.TaskNode{},
+		Edges:     []dto.Edge{},
+	}
+
+	reqBody, err := json.Marshal(requestBody)
+	assert.NoError(t, err)
+
+	req, _ := http.NewRequest("PUT", "/api/workflows/"+workflowID, bytes.NewBuffer(reqBody))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusBadRequest, w.Code)
 }
 
 func TestWorkflowHandler_Delete(t *testing.T) {
