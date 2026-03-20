@@ -34,6 +34,18 @@ interface TaskFormProps {
 
 const INHERIT_TAG_VALUE = "__inherit_workflow_tag__";
 
+function buildNextHeaderKey(headers: Record<string, string>) {
+  let index = Object.keys(headers).length + 1;
+  let candidate = `header-${index}`;
+
+  while (candidate in headers) {
+    index += 1;
+    candidate = `header-${index}`;
+  }
+
+  return candidate;
+}
+
 export function Taskform({
   taskId,
   node,
@@ -216,6 +228,81 @@ export function Taskform({
                 <SelectItem value="DELETE">DELETE</SelectItem>
               </SelectContent>
             </Select>
+          </div>
+
+          <div className="grid gap-3">
+            <div className="flex items-center justify-between gap-3">
+              <div className="grid gap-1">
+                <Label>Headers</Label>
+                <p className="text-xs text-muted-foreground">
+                  Configure request headers in the task config.
+                </p>
+              </div>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  const httpConfig = config as HttpConfig;
+                  const headers = { ...(httpConfig.headers ?? {}) };
+                  headers[buildNextHeaderKey(headers)] = "";
+                  updateConfig({ ...httpConfig, headers });
+                }}
+              >
+                Add Header
+              </Button>
+            </div>
+
+            {Object.entries((config as HttpConfig).headers ?? {}).length > 0 ? (
+              <div className="grid gap-3">
+                {Object.entries((config as HttpConfig).headers ?? {}).map(([key, value]) => (
+                  <div key={key} className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] gap-2">
+                    <Input
+                      placeholder="Header name"
+                      value={key}
+                      onChange={(e) => {
+                        const nextKey = e.target.value;
+                        const httpConfig = config as HttpConfig;
+                        const headers = { ...(httpConfig.headers ?? {}) };
+                        delete headers[key];
+                        headers[nextKey] = value;
+                        updateConfig({ ...httpConfig, headers });
+                      }}
+                    />
+                    <Input
+                      placeholder="Header value"
+                      value={value}
+                      onChange={(e) => {
+                        const httpConfig = config as HttpConfig;
+                        updateConfig({
+                          ...httpConfig,
+                          headers: {
+                            ...(httpConfig.headers ?? {}),
+                            [key]: e.target.value,
+                          },
+                        });
+                      }}
+                    />
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => {
+                        const httpConfig = config as HttpConfig;
+                        const headers = { ...(httpConfig.headers ?? {}) };
+                        delete headers[key];
+                        updateConfig({ ...httpConfig, headers });
+                      }}
+                    >
+                      Remove
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="text-xs text-muted-foreground">
+                No custom headers configured.
+              </p>
+            )}
           </div>
 
           <div className="grid gap-2">

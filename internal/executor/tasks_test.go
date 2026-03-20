@@ -75,6 +75,27 @@ func TestHTTPTaskSuccess(t *testing.T) {
 	assert.Contains(t, result.Output, "ok")
 }
 
+func TestHTTPTaskSendsHeaders(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, "application/json", r.Header.Get("Content-Type"))
+		assert.Equal(t, "Bearer token-123", r.Header.Get("Authorization"))
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("ok"))
+	}))
+	defer server.Close()
+
+	task, err := NewTask(TaskEntity{
+		ID:     "task-1",
+		Type:   "http",
+		Config: `{"url":"` + server.URL + `","method":"POST","headers":{"Content-Type":"application/json","Authorization":"Bearer token-123"},"body":"payload"}`,
+	})
+	assert.NoError(t, err)
+
+	result, err := task.Execute(context.Background(), nil)
+	assert.NoError(t, err)
+	assert.Equal(t, http.StatusOK, result.ExitCode)
+}
+
 func TestHTTPTaskFailureStatus(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusBadGateway)
