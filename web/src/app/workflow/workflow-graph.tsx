@@ -25,6 +25,7 @@ import { defaultTaskNode, type WorkflowDetail, type WorkflowData, type TaskNode 
 import { apiClient } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { Card } from "@/components/ui/card";
+import { DETAIL_PANEL_LAYOUT_STYLE } from "@/components/detail-panel-layout";
 import { WorkflowRight } from "./workflow-right";
 import {
   AlertDialog,
@@ -420,7 +421,7 @@ function WorkflowGraph() {
 
   return (
     <div
-      style={{ width: "100%", height: "100%" }}
+      style={{ ...DETAIL_PANEL_LAYOUT_STYLE, width: "100%", height: "100%" }}
       className="relative w-full h-full overflow-hidden"
     >
       <ReactFlow
@@ -452,7 +453,7 @@ function WorkflowGraph() {
         <div
           className={cn(
             "absolute top-4 right-4 flex gap-2 z-10 transition-transform duration-300 ease-in-out",
-            selectedTaskId ? "-translate-x-[510px]" : "translate-x-0"
+            selectedTaskId ? "-translate-x-[var(--detail-panel-button-shift)]" : "translate-x-0"
           )}
         >
           {saving ? (
@@ -488,7 +489,7 @@ function WorkflowGraph() {
       {/* Drawer Layer */}
       <Card
         className={cn(
-          "absolute top-2 right-2 bottom-2 w-[500px]",
+          "absolute top-2 right-2 bottom-2 w-[var(--detail-panel-width)]",
           "shadow-2xl z-20 p-0 border-border",
           "transition-transform duration-300 ease-in-out",
           selectedTaskId ? "translate-x-0" : "translate-x-[calc(100%+1rem)]"

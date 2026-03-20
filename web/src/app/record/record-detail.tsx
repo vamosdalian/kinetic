@@ -31,6 +31,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
+import { DETAIL_PANEL_LAYOUT_STYLE } from "@/components/detail-panel-layout";
 import { toast } from "sonner";
 
 const nodeTypes = {
@@ -334,7 +335,10 @@ export function RecordDetail() {
         </div>
       </div>
 
-      <div className="flex-1 min-h-0 bg-muted/20 relative overflow-hidden">
+      <div
+        className="flex-1 min-h-0 bg-muted/20 relative overflow-hidden"
+        style={DETAIL_PANEL_LAYOUT_STYLE}
+      >
         <ReactFlow
           nodes={nodes}
           edges={edges}
@@ -354,7 +358,7 @@ export function RecordDetail() {
         <div
           className={cn(
             "absolute top-4 right-4 z-10 flex gap-2 transition-transform duration-300 ease-in-out",
-            selectedTask ? "-translate-x-[660px]" : "translate-x-0"
+            selectedTask ? "-translate-x-[var(--detail-panel-button-shift)]" : "translate-x-0"
           )}
         >
           <Button
@@ -399,7 +403,7 @@ export function RecordDetail() {
 
         <Card
           className={cn(
-            "absolute top-2 right-2 bottom-2 w-[500px]",
+            "absolute top-2 right-2 bottom-2 w-[var(--detail-panel-width)]",
             "shadow-2xl z-20 p-0 border-border",
             "transition-transform duration-300 ease-in-out",
             selectedTask ? "translate-x-0" : "translate-x-[calc(100%+1rem)]"
