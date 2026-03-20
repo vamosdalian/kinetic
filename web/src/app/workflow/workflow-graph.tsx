@@ -12,6 +12,7 @@ import {
   Background,
   Controls,
   type ColorMode,
+  useNodesInitialized,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import { Button } from "@/components/ui/button";
@@ -56,6 +57,9 @@ function WorkflowGraph() {
   const [loading, setLoading] = React.useState<boolean>(false);
   const [isReady, setIsReady] = React.useState<boolean>(false);
   const { getViewport, setViewport, fitView } = useReactFlow();
+  const nodesInitialized = useNodesInitialized();
+  const flowContainerRef = React.useRef<HTMLDivElement | null>(null);
+  const pendingInitialFitRef = React.useRef(false);
 
   // State Management
   const [workflowId, setWorkflowId] = React.useState<string>("");
@@ -237,17 +241,14 @@ function WorkflowGraph() {
     setLoading(true);
     try {
       const data = await apiClient<WorkflowDetail>(`/api/workflows/${id}`);
+      pendingInitialFitRef.current = true;
       loadWorkflowData(data);
-      // 加载完成后调整视图以适应所有节点
-      setTimeout(() => {
-        fitView({ padding: 0.12, minZoom: 0.85, duration: 0 });
-      }, 0);
     } catch (error) {
       console.error("Failed to load workflow:", error);
     } finally {
       setLoading(false);
     }
-  }, [loadWorkflowData, fitView]);
+  }, [loadWorkflowData]);
 
   React.useEffect(() => {
     if (!isReady || !urlWorkflowId) {
@@ -270,6 +271,60 @@ function WorkflowGraph() {
   React.useEffect(() => {
     setColorMode(resolvedTheme === "dark" ? "dark" : "light");
   }, [resolvedTheme]);
+
+  React.useEffect(() => {
+    if (
+      !pendingInitialFitRef.current ||
+      !isReady ||
+      loading ||
+      !nodesInitialized ||
+      localNodes.length === 0
+    ) {
+      return;
+    }
+
+    let cancelled = false;
+    const fitToViewport = () => {
+      if (cancelled) {
+        return;
+      }
+
+      window.requestAnimationFrame(() => {
+        window.requestAnimationFrame(() => {
+          if (cancelled) {
+            return;
+          }
+          void fitView({ padding: 0.1, minZoom: 1.08, maxZoom: 1.4, duration: 0 });
+        });
+      });
+    };
+
+    fitToViewport();
+
+    const container = flowContainerRef.current;
+    const resizeObserver =
+      typeof ResizeObserver === "undefined" || !container
+        ? null
+        : new ResizeObserver(() => {
+            fitToViewport();
+          });
+
+    if (resizeObserver && container) {
+      resizeObserver.observe(container);
+    }
+
+    const settleTimer = window.setTimeout(() => {
+      fitToViewport();
+      pendingInitialFitRef.current = false;
+      resizeObserver?.disconnect();
+    }, 240);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(settleTimer);
+      resizeObserver?.disconnect();
+    };
+  }, [fitView, isReady, loading, localNodes.length, nodesInitialized]);
 
   const onNodesChange = React.useCallback(
     (changes: NodeChange[]) => {
@@ -401,6 +456,7 @@ function WorkflowGraph() {
 
   return (
     <div
+      ref={flowContainerRef}
       style={{ ...DETAIL_PANEL_LAYOUT_STYLE, width: "100%", height: "100%" }}
       className="relative w-full h-full overflow-hidden"
     >
