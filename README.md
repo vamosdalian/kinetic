@@ -1,6 +1,7 @@
 # Kinetic
 
 [![Release](https://img.shields.io/github/v/release/vamosdalian/kinetic)](https://github.com/vamosdalian/kinetic/releases)
+[![License](https://img.shields.io/github/license/vamosdalian/kinetic)](https://github.com/vamosdalian/kinetic/blob/main/LICENSE)
 [![Go Version](https://img.shields.io/badge/go-1.23%2B-00ADD8?logo=go&logoColor=white)](https://go.dev/)
 [![GitHub Issues](https://img.shields.io/github/issues/vamosdalian/kinetic)](https://github.com/vamosdalian/kinetic/issues)
 [![GitHub Stars](https://img.shields.io/github/stars/vamosdalian/kinetic?style=social)](https://github.com/vamosdalian/kinetic/stargazers)
