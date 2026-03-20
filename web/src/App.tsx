@@ -1,6 +1,7 @@
 import * as React from "react"
 import "./App.css"
 import { createBrowserRouter, RouterProvider } from "react-router-dom"
+import { ThemeProvider } from "@/components/theme-provider"
 
 const Page = React.lazy(() => import("./app/page"))
 
@@ -25,7 +26,14 @@ const router = createBrowserRouter([
 
 function App() {
   return (
-    <RouterProvider router={router} />
+    <ThemeProvider
+      attribute="class"
+      defaultTheme="system"
+      enableSystem
+      disableTransitionOnChange
+    >
+      <RouterProvider router={router} />
+    </ThemeProvider>
   )
 }
 

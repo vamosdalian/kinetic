@@ -38,6 +38,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { useBlocker } from "react-router-dom";
+import { useTheme } from "next-themes";
 import { toast } from "sonner";
 import { validateWorkflowDefinition } from "./validation";
 
@@ -49,6 +50,7 @@ function WorkflowGraph() {
   const [searchParams] = useSearchParams();
   const action = searchParams.get("action");
   const [colorMode, setColorMode] = React.useState<ColorMode>("light");
+  const { resolvedTheme } = useTheme();
   const [running, setRunning] = React.useState<boolean>(false);
   const [saving, setSaving] = React.useState<boolean>(false);
   const [loading, setLoading] = React.useState<boolean>(false);
@@ -266,30 +268,8 @@ function WorkflowGraph() {
   }, [fetchAvailableTags]);
 
   React.useEffect(() => {
-    const updateColorMode = () => {
-      const isDarkMode = document.documentElement.classList.contains("dark");
-      setColorMode(isDarkMode ? "dark" : "light");
-    };
-
-    updateColorMode();
-
-    const observer = new MutationObserver((mutationsList) => {
-      for (const mutation of mutationsList) {
-        if (
-          mutation.type === "attributes" &&
-          mutation.attributeName === "class"
-        ) {
-          updateColorMode();
-        }
-      }
-    });
-
-    observer.observe(document.documentElement, { attributes: true });
-
-    return () => {
-      observer.disconnect();
-    };
-  }, []);
+    setColorMode(resolvedTheme === "dark" ? "dark" : "light");
+  }, [resolvedTheme]);
 
   const onNodesChange = React.useCallback(
     (changes: NodeChange[]) => {

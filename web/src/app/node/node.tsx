@@ -16,6 +16,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { apiClient } from "@/lib/api";
 import { getNodeStatusBadgeClassName } from "@/lib/node-status";
+import { SiteHeader } from "@/components/site-header";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 
@@ -261,14 +262,18 @@ export function Node() {
 
   if (loading) {
     return (
-      <div className="flex h-full items-center justify-center">
-        <LoaderCircle className="h-8 w-8 animate-spin text-muted-foreground" />
+      <div className="flex flex-1 flex-col min-h-0">
+        <SiteHeader breadcrumbs={[{ label: "Node", href: null }]} />
+        <div className="flex flex-1 items-center justify-center">
+          <LoaderCircle className="h-8 w-8 animate-spin text-muted-foreground" />
+        </div>
       </div>
     );
   }
 
   return (
-    <>
+    <div className="flex flex-1 flex-col min-h-0">
+      <SiteHeader breadcrumbs={[{ label: "Node", href: null }]} />
       <CommonTable
         columns={columns}
         data={filteredNodes}
@@ -328,6 +333,6 @@ export function Node() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </>
+    </div>
   );
 }

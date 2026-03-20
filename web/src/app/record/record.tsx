@@ -27,6 +27,7 @@ import {
 } from "@/components/ui/select";
 import { apiClient } from "@/lib/api";
 import { CommonTable } from "@/components/common-table";
+import { SiteHeader } from "@/components/site-header";
 import { type WorkflowRunListItem } from "./types";
 import {
   getRunRowClassName,
@@ -227,41 +228,44 @@ export function Record() {
   );
 
   return (
-    <CommonTable
-      columns={columns}
-      data={filteredData}
-      getRowClassName={(row) => getRunRowClassName(row.status)}
-      renderToolbarActions={() => (
-        <>
-          <Input
-            className="w-[220px]"
-            placeholder="Search workflow..."
-            value={workflowQuery}
-            onChange={(e) => setWorkflowQuery(e.target.value)}
-          />
-          <Input
-            className="w-[220px]"
-            placeholder="Search run ID..."
-            value={runQuery}
-            onChange={(e) => setRunQuery(e.target.value)}
-          />
-          <Select value={statusFilter} onValueChange={setStatusFilter}>
-            <SelectTrigger className="w-[170px]">
-              <SelectValue placeholder="Filter status" />
-            </SelectTrigger>
-            <SelectContent>
-              {statusOptions.map((option) => (
-                <SelectItem key={option.value} value={option.value}>
-                  {option.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <Button variant="outline" onClick={() => void fetchRuns()}>
-            Refresh
-          </Button>
-        </>
-      )}
-    />
+    <div className="flex flex-1 flex-col min-h-0">
+      <SiteHeader breadcrumbs={[{ label: "Record", href: null }]} />
+      <CommonTable
+        columns={columns}
+        data={filteredData}
+        getRowClassName={(row) => getRunRowClassName(row.status)}
+        renderToolbarActions={() => (
+          <>
+            <Input
+              className="w-[220px]"
+              placeholder="Search workflow..."
+              value={workflowQuery}
+              onChange={(e) => setWorkflowQuery(e.target.value)}
+            />
+            <Input
+              className="w-[220px]"
+              placeholder="Search run ID..."
+              value={runQuery}
+              onChange={(e) => setRunQuery(e.target.value)}
+            />
+            <Select value={statusFilter} onValueChange={setStatusFilter}>
+              <SelectTrigger className="w-[170px]">
+                <SelectValue placeholder="Filter status" />
+              </SelectTrigger>
+              <SelectContent>
+                {statusOptions.map((option) => (
+                  <SelectItem key={option.value} value={option.value}>
+                    {option.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Button variant="outline" onClick={() => void fetchRuns()}>
+              Refresh
+            </Button>
+          </>
+        )}
+      />
+    </div>
   );
 }
