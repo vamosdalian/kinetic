@@ -87,9 +87,11 @@ export function CommonTable<TData, TValue>({
 
   return (
     <div className="w-full p-4">
-      <div className="flex items-center justify-end py-4">
+      <div className="flex items-center justify-between gap-4 py-4">
         <div className="flex items-center space-x-2">
           {renderToolbarActions && renderToolbarActions()}
+        </div>
+        <div className="flex items-center space-x-2">
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button variant="outline" className="ml-auto">
