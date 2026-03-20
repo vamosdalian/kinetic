@@ -9,6 +9,7 @@ import (
 	"github.com/vamosdalian/kinetic/internal/database"
 	"github.com/vamosdalian/kinetic/internal/router"
 	"github.com/vamosdalian/kinetic/internal/scheduler"
+	"github.com/vamosdalian/kinetic/internal/service"
 )
 
 type healthChecker interface {
@@ -16,23 +17,30 @@ type healthChecker interface {
 }
 
 type APIServer struct {
-	scheduler       *scheduler.Scheduler
-	db              healthChecker
-	workflowHandler *WorkflowHandler
-	nodeHandler     *NodeHandler
-	staticHandler   *StaticHandler
+	scheduler        *scheduler.Scheduler
+	db               healthChecker
+	workflowHandler  *WorkflowHandler
+	nodeHandler      *NodeHandler
+	dashboardHandler *DashboardHandler
+	staticHandler    *StaticHandler
 }
 
 func NewAPIServer(db database.Database, scheduler *scheduler.Scheduler, r *router.Router, runService RunManager, nodeService NodeManager) *APIServer {
 	workflowHandler := NewWorkflowHandler(db)
 	workflowHandler.SetRunService(runService)
 
+	var dashboardHandler *DashboardHandler
+	if store, ok := db.(service.DashboardStore); ok {
+		dashboardHandler = NewDashboardHandler(service.NewDashboardService(store))
+	}
+
 	apiServer := &APIServer{
-		scheduler:       scheduler,
-		db:              db,
-		workflowHandler: workflowHandler,
-		nodeHandler:     NewNodeHandler(nodeService),
-		staticHandler:   NewStaticHandler(),
+		scheduler:        scheduler,
+		db:               db,
+		workflowHandler:  workflowHandler,
+		nodeHandler:      NewNodeHandler(nodeService),
+		dashboardHandler: dashboardHandler,
+		staticHandler:    NewStaticHandler(),
 	}
 
 	// 注册 API 路由
@@ -53,6 +61,10 @@ func (a *APIServer) RegisterRoutes(engine *gin.Engine) {
 
 	api := engine.Group("/api")
 	{
+		if a.dashboardHandler != nil {
+			api.GET("/dashboard", a.dashboardHandler.Get)
+		}
+
 		// Workflow routes
 		workflows := api.Group("/workflows")
 		{

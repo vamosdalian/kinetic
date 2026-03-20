@@ -15,6 +15,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { apiClient } from "@/lib/api";
+import { getNodeStatusBadgeClassName } from "@/lib/node-status";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 
@@ -34,16 +35,6 @@ interface NodeItem {
   last_heartbeat_at: string;
   last_stream_at: string;
   tags: NodeTag[];
-}
-
-function getNodeStatusBadgeClassName(status: string) {
-  switch (status) {
-    case "online":
-      return "border-transparent bg-green-500 text-white hover:bg-green-500";
-    case "offline":
-    default:
-      return "border-transparent bg-slate-500 text-white hover:bg-slate-500";
-  }
 }
 
 export function Node() {
