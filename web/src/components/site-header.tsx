@@ -3,6 +3,7 @@ import { Separator } from "@/components/ui/separator";
 import { SidebarTrigger } from "@/components/ui/sidebar";
 import { Github, Sun, Moon } from "lucide-react";
 import * as React from "react";
+import { useTheme } from "next-themes";
 import {
   Breadcrumb as ShadcnBreadcrumb,
   BreadcrumbItem as ShadcnBreadcrumbItem,
@@ -19,23 +20,16 @@ export interface BreadcrumbItem {
 
 export interface SiteHeaderProps {
   breadcrumbs: BreadcrumbItem[];
+  actions?: React.ReactNode;
 }
 
-export function SiteHeader({ breadcrumbs }: SiteHeaderProps) {
-  const [isDarkMode, setIsDarkMode] = React.useState<boolean>(false);
+export function SiteHeader({ breadcrumbs, actions }: SiteHeaderProps) {
+  const { resolvedTheme, setTheme } = useTheme();
+  const isDarkMode = resolvedTheme === "dark";
 
-  const toggleDarkMode = () => setIsDarkMode((isDark) => !isDark);
-
-  React.useEffect(() => {
-    const initialDarkMode =
-      !!document.querySelector('meta[name="color-scheme"][content="dark"]') ||
-      window.matchMedia("(prefers-color-scheme: dark)").matches;
-    setIsDarkMode(initialDarkMode);
-  }, []);
-
-  React.useEffect(() => {
-    document.documentElement.classList.toggle("dark", isDarkMode);
-  }, [isDarkMode]);
+  const toggleDarkMode = React.useCallback(() => {
+    setTheme(isDarkMode ? "light" : "dark");
+  }, [isDarkMode, setTheme]);
 
   return (
     <header className="flex h-(--header-height) shrink-0 items-center gap-2 border-b transition-[width,height] ease-linear group-has-data-[collapsible=icon]/sidebar-wrapper:h-(--header-height)">
@@ -69,14 +63,14 @@ export function SiteHeader({ breadcrumbs }: SiteHeaderProps) {
           </BreadcrumbList>
         </ShadcnBreadcrumb>
         <div className="ml-auto flex items-center gap-2">
+          {actions}
           <Button
             variant="ghost"
             onClick={toggleDarkMode}
-            asChild
             size="sm"
             className="hidden sm:flex"
           >
-            <span>{isDarkMode ? <Sun /> : <Moon />}</span>
+            {isDarkMode ? <Sun /> : <Moon />}
           </Button>
           <Button variant="ghost" asChild size="sm" className="hidden sm:flex">
             <a

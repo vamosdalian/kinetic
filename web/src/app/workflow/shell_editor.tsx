@@ -17,6 +17,7 @@ import { defaultKeymap, history, historyKeymap } from "@codemirror/commands";
 import { syntaxHighlighting, defaultHighlightStyle, StreamLanguage } from "@codemirror/language";
 import { shell } from "@codemirror/legacy-modes/mode/shell";
 import { oneDark } from "@codemirror/theme-one-dark";
+import { useTheme } from "next-themes";
 
 interface ShellEditorProps {
   children: React.ReactNode;
@@ -34,34 +35,8 @@ export function ShellEditor({
   const [scriptContent, setScriptContent] = React.useState("");
   const editorRef = React.useRef<HTMLDivElement>(null);
   const viewRef = React.useRef<EditorView | null>(null);
-
-  // Track dark mode
-  const [isDark, setIsDark] = React.useState(() =>
-    document.documentElement.classList.contains("dark")
-  );
-
-  React.useEffect(() => {
-    const updateTheme = () => {
-      setIsDark(document.documentElement.classList.contains("dark"));
-    };
-
-    const observer = new MutationObserver((mutationsList) => {
-      for (const mutation of mutationsList) {
-        if (
-          mutation.type === "attributes" &&
-          mutation.attributeName === "class"
-        ) {
-          updateTheme();
-        }
-      }
-    });
-
-    observer.observe(document.documentElement, { attributes: true });
-
-    return () => {
-      observer.disconnect();
-    };
-  }, []);
+  const { resolvedTheme } = useTheme();
+  const isDark = resolvedTheme === "dark";
 
   // Initialize and manage CodeMirror editor
   React.useEffect(() => {

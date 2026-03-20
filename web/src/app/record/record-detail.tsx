@@ -6,6 +6,7 @@ import {
   type Node,
   Background,
   Controls,
+  type ColorMode,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import {
@@ -32,6 +33,8 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import { DETAIL_PANEL_LAYOUT_STYLE } from "@/components/detail-panel-layout";
+import { SiteHeader } from "@/components/site-header";
+import { useTheme } from "next-themes";
 import { toast } from "sonner";
 
 const nodeTypes = {
@@ -49,7 +52,9 @@ function parseEventData<T>(event: MessageEvent<string>) {
 export function RecordDetail() {
   const { runId } = useParams();
   const navigate = useNavigate();
+  const { resolvedTheme } = useTheme();
   const [loading, setLoading] = React.useState(true);
+  const [colorMode, setColorMode] = React.useState<ColorMode>("light");
   const [runData, setRunData] = React.useState<WorkflowRunDetail | null>(null);
   const [selectedTaskId, setSelectedTaskId] = React.useState("");
   const [rerunning, setRerunning] = React.useState(false);
@@ -83,6 +88,10 @@ export function RecordDetail() {
   React.useEffect(() => {
     void fetchRunDetail(true);
   }, [fetchRunDetail]);
+
+  React.useEffect(() => {
+    setColorMode(resolvedTheme === "dark" ? "dark" : "light");
+  }, [resolvedTheme]);
 
   const applyTaskUpdate = React.useCallback(
     (
@@ -294,8 +303,14 @@ export function RecordDetail() {
   }
 
   return (
-    <div className="flex flex-col h-full w-full">
-      <div className="border-b bg-background p-4 flex items-center justify-between">
+    <div className="flex h-full w-full flex-col">
+      <SiteHeader
+        breadcrumbs={[
+          { label: "Record", href: "/record" },
+          { label: runData.name, href: null },
+        ]}
+      />
+      <div className="flex min-h-(--header-height) shrink-0 items-center justify-between border-b bg-background px-4 py-3 lg:px-6">
         <div className="flex items-center gap-4">
           <Button variant="ghost" size="icon" onClick={() => navigate("/record")}>
             <ArrowLeft className="w-4 h-4" />
@@ -336,7 +351,7 @@ export function RecordDetail() {
       </div>
 
       <div
-        className="flex-1 min-h-0 bg-muted/20 relative overflow-hidden"
+        className="relative min-h-0 flex-1 overflow-hidden bg-muted/20"
         style={DETAIL_PANEL_LAYOUT_STYLE}
       >
         <ReactFlow
@@ -345,6 +360,7 @@ export function RecordDetail() {
           onNodeClick={(_, node) => setSelectedTaskId(node.id)}
           onPaneClick={() => setSelectedTaskId("")}
           nodeTypes={nodeTypes}
+          colorMode={colorMode}
           fitView
           attributionPosition="bottom-right"
           nodesConnectable={false}
