@@ -136,7 +136,6 @@ export function Workflowform({ data, tagOptions, onUpdate }: WorkflowFormProps) 
               },
             });
           }}
-          emptyText="No workflow environment variables configured."
           keyPlaceholder="Variable name"
           valuePlaceholder="Variable value"
           keyPrefix="env"

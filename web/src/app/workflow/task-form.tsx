@@ -161,6 +161,53 @@ export function Taskform({
       </div>
 
       <div className="grid gap-2">
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2">
+            <Label>Environment Variables</Label>
+            <HelpHint
+              content="Task-level variables override workflow-level variables. Names starting with KINETIC_ are reserved for the system. Keys are unique within this map."
+            />
+          </div>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              const env = { ...(config.env ?? {}) };
+              let index = Object.keys(env).length + 1;
+              let candidate = `env-${index}`;
+
+              while (candidate in env) {
+                index += 1;
+                candidate = `env-${index}`;
+              }
+
+              env[candidate] = "";
+              updateConfig({
+                ...config,
+                env,
+              });
+            }}
+          >
+            Add
+          </Button>
+        </div>
+        <KeyValueEditor
+          values={config.env ?? {}}
+          onChange={(env) => {
+            updateConfig({
+              ...config,
+              env,
+            });
+          }}
+          keyPlaceholder="Variable name"
+          valuePlaceholder="Variable value"
+          keyPrefix="env"
+          showAddButton={false}
+        />
+      </div>
+
+      <div className="grid gap-2">
         <Label htmlFor="task_type">Task Type</Label>
         <Select
           value={node.type}
@@ -265,7 +312,6 @@ export function Taskform({
               onChange={(headers) => {
                 updateConfig({ ...(config as HttpConfig), headers });
               }}
-              emptyText="No custom headers configured."
               keyPlaceholder="Header name"
               valuePlaceholder="Header value"
               keyPrefix="header"
@@ -327,54 +373,6 @@ export function Taskform({
           />
         </div>
       )}
-
-      <div className="grid gap-2">
-        <div className="flex items-center justify-between gap-3">
-          <div className="flex items-center gap-2">
-            <Label>Environment Variables</Label>
-            <HelpHint
-              content="Task-level variables override workflow-level variables. Names starting with KINETIC_ are reserved for the system. Keys are unique within this map."
-            />
-          </div>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            onClick={() => {
-              const env = { ...(config.env ?? {}) };
-              let index = Object.keys(env).length + 1;
-              let candidate = `env-${index}`;
-
-              while (candidate in env) {
-                index += 1;
-                candidate = `env-${index}`;
-              }
-
-              env[candidate] = "";
-              updateConfig({
-                ...config,
-                env,
-              });
-            }}
-          >
-            Add
-          </Button>
-        </div>
-        <KeyValueEditor
-          values={config.env ?? {}}
-          onChange={(env) => {
-            updateConfig({
-              ...config,
-              env,
-            });
-          }}
-          emptyText="No task environment variables configured."
-          keyPlaceholder="Variable name"
-          valuePlaceholder="Variable value"
-          keyPrefix="env"
-          showAddButton={false}
-        />
-      </div>
 
       <div className="grid gap-3">
         <div className="flex items-center gap-2">

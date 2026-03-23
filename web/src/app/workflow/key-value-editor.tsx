@@ -4,7 +4,7 @@ import { Input } from "@/components/ui/input";
 interface KeyValueEditorProps {
   values: Record<string, string>;
   onChange: (values: Record<string, string>) => void;
-  emptyText: string;
+  emptyText?: string;
   keyPlaceholder: string;
   valuePlaceholder: string;
   keyPrefix?: string;
@@ -92,9 +92,9 @@ export function KeyValueEditor({
             </div>
           ))}
         </div>
-      ) : (
+      ) : emptyText ? (
         <p className="text-xs text-muted-foreground">{emptyText}</p>
-      )}
+      ) : null}
     </div>
   );
 }
