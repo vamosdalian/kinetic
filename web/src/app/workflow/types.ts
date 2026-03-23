@@ -72,7 +72,7 @@ export const defaultTaskNode: Omit<TaskNode, "id" | "position"> = {
   description: "",
   type: "shell",
   config: createTaskConfig("shell"),
-  tag: "",
+  tag: "node-default",
   nodeType: "baseNodeFull",
 };
 

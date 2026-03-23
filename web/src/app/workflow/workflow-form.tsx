@@ -25,8 +25,6 @@ interface WorkflowFormProps {
   onUpdate: (data: Partial<WorkflowData>) => void;
 }
 
-const ANY_NODE_VALUE = "__any_node__";
-
 function HelpHint({ content }: { content: React.ReactNode }) {
   return (
     <HoverCard openDelay={150} closeDelay={100}>
@@ -78,16 +76,15 @@ export function Workflowform({ data, tagOptions, onUpdate }: WorkflowFormProps) 
       <div className="grid gap-2">
         <Label htmlFor="workflow_tag">Tag</Label>
         <Select
-          value={data.tag || ANY_NODE_VALUE}
+          value={data.tag || "node-default"}
           onValueChange={(value) => {
-            onUpdate({ tag: value === ANY_NODE_VALUE ? "" : value });
+            onUpdate({ tag: value });
           }}
         >
           <SelectTrigger id="workflow_tag" className="w-full">
             <SelectValue placeholder="Select node tag" />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value={ANY_NODE_VALUE}>Any node</SelectItem>
             {tagOptions.map((tag) => (
               <SelectItem key={tag} value={tag}>
                 {tag}

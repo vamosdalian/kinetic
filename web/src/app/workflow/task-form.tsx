@@ -35,11 +35,8 @@ interface TaskFormProps {
   taskId: string;
   node: TaskNode | null;
   tagOptions: string[];
-  workflowTag: string;
   onUpdate: (id: string, data: Partial<Omit<TaskNode, "id">>) => void;
 }
-
-const INHERIT_TAG_VALUE = "__inherit_workflow_tag__";
 
 function HelpHint({ content }: { content: React.ReactNode }) {
   return (
@@ -64,7 +61,6 @@ export function Taskform({
   taskId,
   node,
   tagOptions,
-  workflowTag,
   onUpdate,
 }: TaskFormProps) {
   const config = React.useMemo(() => {
@@ -141,6 +137,30 @@ export function Taskform({
       </div>
 
       <div className="grid gap-2">
+        <div className="flex items-center gap-2">
+          <Label htmlFor="task_tag">Tag</Label>
+          <HelpHint content="Tasks run on nodes matching this tag. The default tag is node-default, which is present on all nodes." />
+        </div>
+        <Select
+          value={node.tag || "node-default"}
+          onValueChange={(value) => {
+            onUpdate(taskId, { tag: value });
+          }}
+        >
+          <SelectTrigger id="task_tag" className="w-full">
+            <SelectValue placeholder="Select node tag" />
+          </SelectTrigger>
+          <SelectContent>
+            {tagOptions.map((tag) => (
+              <SelectItem key={tag} value={tag}>
+                {tag}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+
+      <div className="grid gap-2">
         <Label htmlFor="task_type">Task Type</Label>
         <Select
           value={node.type}
@@ -156,41 +176,6 @@ export function Taskform({
             <SelectItem value="http">HTTP</SelectItem>
             <SelectItem value="python">Python</SelectItem>
             <SelectItem value="condition">Condition</SelectItem>
-          </SelectContent>
-        </Select>
-      </div>
-
-      <div className="grid gap-2">
-        <div className="flex items-center gap-2">
-          <Label htmlFor="task_tag">Tag</Label>
-          <HelpHint
-            content={
-              node.tag
-                ? "This task overrides the workflow-level routing tag."
-                : workflowTag
-                  ? `This task will run on nodes tagged ${workflowTag}.`
-                  : "This task can run on any healthy node unless you choose a tag."
-            }
-          />
-        </div>
-        <Select
-          value={node.tag || INHERIT_TAG_VALUE}
-          onValueChange={(value) => {
-            onUpdate(taskId, { tag: value === INHERIT_TAG_VALUE ? "" : value });
-          }}
-        >
-          <SelectTrigger id="task_tag" className="w-full">
-            <SelectValue placeholder="Select node tag" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value={INHERIT_TAG_VALUE}>
-              {workflowTag ? `Inherit workflow tag (${workflowTag})` : "Inherit workflow tag"}
-            </SelectItem>
-            {tagOptions.map((tag) => (
-              <SelectItem key={tag} value={tag}>
-                {tag}
-              </SelectItem>
-            ))}
           </SelectContent>
         </Select>
       </div>
