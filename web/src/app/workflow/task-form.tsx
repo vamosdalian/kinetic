@@ -254,6 +254,26 @@ export function Taskform({
                 <Label>Headers</Label>
                 <HelpHint content="Configure request headers in the task config. Keys are unique within this map." />
               </div>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  const headers = { ...((config as HttpConfig).headers ?? {}) };
+                  let index = Object.keys(headers).length + 1;
+                  let candidate = `header-${index}`;
+
+                  while (candidate in headers) {
+                    index += 1;
+                    candidate = `header-${index}`;
+                  }
+
+                  headers[candidate] = "";
+                  updateConfig({ ...(config as HttpConfig), headers });
+                }}
+              >
+                Add
+              </Button>
             </div>
             <KeyValueEditor
               values={(config as HttpConfig).headers ?? {}}
@@ -264,6 +284,7 @@ export function Taskform({
               keyPlaceholder="Header name"
               valuePlaceholder="Header value"
               keyPrefix="header"
+              showAddButton={false}
             />
           </div>
 
