@@ -25,8 +25,6 @@ export function isTerminalRunStatus(status: string) {
 }
 
 export function getRunRowClassName(status: string) {
-  if (status === "failed") {
-    return "bg-red-50/70 hover:bg-red-100/70 dark:bg-red-950/20 dark:hover:bg-red-950/30";
-  }
+  void status;
   return undefined;
 }
