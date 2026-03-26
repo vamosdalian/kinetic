@@ -217,6 +217,7 @@ Current system-provided variables:
 
 - `KINETIC_WORKFLOW_NAME`
 - `KINETIC_TASK_NAME`
+- `KINETIC_RESULT_PATH`
 
 Keys starting with `KINETIC_` are reserved for the system and cannot be defined by users in workflow or task config.
 
@@ -247,6 +248,8 @@ Example:
 ```
 
 In this example, the shell task receives `API_BASE_URL=https://staging-api.example.com`.
+
+Shell tasks also receive `KINETIC_RESULT_PATH`, which points to `~/.kinetic/results/[runid]/[taskid]_result.json` on the machine that executes the task. If the script writes valid JSON to that file, Kinetic stores it in `task_runs.result` and exposes it from the workflow run detail API. Invalid JSON causes the task to fail.
 
 At the moment, runtime environment injection is implemented for shell tasks. Other task types may store `env` in config, but whether they consume it depends on the task type's runtime behavior.
 

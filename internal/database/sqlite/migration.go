@@ -121,6 +121,9 @@ CREATE INDEX IF NOT EXISTS idx_nodes_status_running_count_node_id
 ALTER TABLE workflows ADD COLUMN config TEXT DEFAULT '';
 ALTER TABLE workflow_runs ADD COLUMN workflow_config TEXT DEFAULT '';
 `,
+	6: `
+ALTER TABLE task_runs ADD COLUMN result TEXT DEFAULT '';
+`,
 }
 
 func (s *SqliteDB) Migrate() error {

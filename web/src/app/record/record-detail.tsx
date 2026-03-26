@@ -172,6 +172,7 @@ export function RecordDetail() {
         assigned_at: payload.assigned_at ?? task.assigned_at,
         started_at: payload.started_at ?? task.started_at,
         finished_at: payload.finished_at ?? task.finished_at,
+        result: payload.result ?? task.result,
         exit_code: payload.exit_code ?? task.exit_code,
       }));
     });

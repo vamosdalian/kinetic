@@ -4,11 +4,13 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"sync"
 
@@ -16,6 +18,7 @@ import (
 )
 
 type TaskEntity struct {
+	RunID  string
 	ID     string
 	Type   string
 	Config string
@@ -23,6 +26,7 @@ type TaskEntity struct {
 }
 
 type shellTask struct {
+	runID  string
 	id     string
 	script string
 	env    map[string]string
@@ -75,6 +79,8 @@ func (w collectorWriter) Write(p []byte) (int, error) {
 	return len(p), nil
 }
 
+const resultPathEnvName = workflowcfg.ReservedEnvPrefix + "RESULT_PATH"
+
 func NewTask(task TaskEntity) (Task, error) {
 	switch task.Type {
 	case "shell":
@@ -85,7 +91,7 @@ func NewTask(task TaskEntity) (Task, error) {
 		if cfg.Script == "" {
 			return nil, fmt.Errorf("shell task requires script")
 		}
-		return &shellTask{id: task.ID, script: cfg.Script, env: resolveTaskEnv(cfg.TaskPolicy.Env, task.Env)}, nil
+		return &shellTask{runID: task.RunID, id: task.ID, script: cfg.Script, env: resolveTaskEnv(cfg.TaskPolicy.Env, task.Env)}, nil
 	case "http":
 		var cfg workflowcfg.HTTPConfig
 		if err := json.Unmarshal([]byte(task.Config), &cfg); err != nil {
@@ -121,9 +127,21 @@ func (t *shellTask) Type() string {
 }
 
 func (t *shellTask) Execute(ctx context.Context, onOutput OutputFunc) (TaskResult, error) {
+	resultPath, err := prepareTaskResultPath(t.runID, t.id)
+	if err != nil {
+		return TaskResult{ExitCode: -1}, err
+	}
+
 	cmd := exec.CommandContext(ctx, "sh", "-c", t.script)
-	if len(t.env) > 0 {
-		cmd.Env = append(os.Environ(), flattenEnvMap(t.env)...)
+	commandEnv := cloneEnvMap(t.env)
+	commandEnv[resultPathEnvName] = resultPath
+	cmd.Env = append(os.Environ(), flattenEnvMap(commandEnv)...)
+
+	if err := os.MkdirAll(filepath.Dir(resultPath), 0o755); err != nil {
+		return TaskResult{ExitCode: -1}, err
+	}
+	if err := os.Remove(resultPath); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return TaskResult{ExitCode: -1}, err
 	}
 
 	stdout, err := cmd.StdoutPipe()
@@ -160,6 +178,8 @@ func (t *shellTask) Execute(ctx context.Context, onOutput OutputFunc) (TaskResul
 		Output:   collector.String(),
 		ExitCode: 0,
 	}
+	resultValue, _ := readTaskResult(resultPath)
+	result.Result = resultValue
 
 	if err == nil {
 		return result, nil
@@ -267,4 +287,46 @@ func flattenEnvMap(values map[string]string) []string {
 		flattened = append(flattened, key+"="+value)
 	}
 	return flattened
+}
+
+func cloneEnvMap(values map[string]string) map[string]string {
+	if len(values) == 0 {
+		return make(map[string]string, 1)
+	}
+
+	cloned := make(map[string]string, len(values)+1)
+	for key, value := range values {
+		cloned[key] = value
+	}
+	return cloned
+}
+
+func prepareTaskResultPath(runID string, taskID string) (string, error) {
+	if strings.TrimSpace(runID) == "" {
+		return "", fmt.Errorf("task run id is required for result path")
+	}
+	if strings.TrimSpace(taskID) == "" {
+		return "", fmt.Errorf("task id is required for result path")
+	}
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return "", fmt.Errorf("resolve home directory: %w", err)
+	}
+	return filepath.Join(homeDir, ".kinetic", "results", runID, taskID+"_result.json"), nil
+}
+
+func readTaskResult(resultPath string) (string, error) {
+	content, err := os.ReadFile(resultPath)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return "", nil
+		}
+		return "", nil
+	}
+
+	if len(content) == 0 {
+		return "", nil
+	}
+
+	return string(content), nil
 }

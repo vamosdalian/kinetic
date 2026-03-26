@@ -59,7 +59,7 @@ type Database interface {
 	AssignTaskRun(runID string, taskID string, nodeID string) error
 	ResetAssignedTaskRun(runID string, taskID string) error
 	MarkTaskRunUnknown(runID string, taskID string, output string) error
-	FinishTaskRun(runID string, taskID string, status string, exitCode int, output string) error
+	FinishTaskRun(runID string, taskID string, status string, exitCode int, output string, result string) error
 	SkipPendingTaskRuns(runID string, output string) error
 	CancelPendingTaskRuns(runID string, output string) error
 	AppendTaskRunOutput(runID string, taskID string, chunk string) error

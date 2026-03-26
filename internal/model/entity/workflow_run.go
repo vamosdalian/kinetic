@@ -36,6 +36,7 @@ type TaskRunEntity struct {
 	FinishedAt      *time.Time
 	ExitCode        int
 	Output          string
+	Result          string
 }
 
 type EdgeRunEntity struct {

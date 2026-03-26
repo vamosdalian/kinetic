@@ -17,6 +17,7 @@ export function RecordRight({ task, workflowTag }: RecordRightProps) {
       ? task.exit_code ?? "-"
       : "-";
   const effectiveTag = task.effective_tag || task.tag || workflowTag || "Any node";
+  const formattedResult = formatTaskResult(task.result);
 
   return (
     <ScrollArea className="h-full">
@@ -101,7 +102,34 @@ export function RecordRight({ task, workflowTag }: RecordRightProps) {
             {task.output || "No output captured."}
           </pre>
         </div>
+
+        <div className="grid gap-2">
+          <h2 className="text-sm font-medium">Result</h2>
+          <pre className="rounded-lg border bg-muted/40 p-3 text-xs whitespace-pre-wrap break-words overflow-x-auto min-h-48">
+            {formattedResult || "No result captured."}
+          </pre>
+        </div>
       </div>
     </ScrollArea>
   );
+}
+
+function formatTaskResult(result: unknown) {
+  if (result == null || result === "") {
+    return "";
+  }
+
+  if (typeof result === "string") {
+    try {
+      return JSON.stringify(JSON.parse(result), null, 2);
+    } catch {
+      return result;
+    }
+  }
+
+  try {
+    return JSON.stringify(result, null, 2);
+  } catch {
+    return String(result);
+  }
 }

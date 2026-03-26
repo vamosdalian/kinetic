@@ -155,7 +155,7 @@ func (s *RunService) CancelWorkflowRun(runID string) error {
 					}
 					output += "Cancelled by user."
 				}
-				if err := s.db.FinishTaskRun(runID, task.TaskID, "cancelled", task.ExitCode, output); err != nil {
+				if err := s.db.FinishTaskRun(runID, task.TaskID, "cancelled", task.ExitCode, output, task.Result); err != nil {
 					return err
 				}
 				if task.AssignedNodeID != "" {
@@ -373,7 +373,7 @@ func (s *RunService) executeTask(ctx context.Context, runID string, task entity.
 	policy, err := workflowcfg.ParseTaskPolicy(task.TaskConfig)
 	if err != nil {
 		output := fmt.Sprintf("Invalid task policy: %v", err)
-		_ = s.db.FinishTaskRun(runID, task.TaskID, "failed", -1, output)
+		_ = s.db.FinishTaskRun(runID, task.TaskID, "failed", -1, output, "")
 		s.publishTaskStatus(runID, task.TaskID)
 		return runtimeTaskResult{
 			taskID: task.TaskID,
@@ -385,7 +385,7 @@ func (s *RunService) executeTask(ctx context.Context, runID string, task entity.
 	effectiveEnv, err := s.buildTaskEnvironment(runID, task.TaskName, policy)
 	if err != nil {
 		output := fmt.Sprintf("Invalid task environment: %v", err)
-		_ = s.db.FinishTaskRun(runID, task.TaskID, "failed", -1, output)
+		_ = s.db.FinishTaskRun(runID, task.TaskID, "failed", -1, output, "")
 		s.publishTaskStatus(runID, task.TaskID)
 		return runtimeTaskResult{
 			taskID: task.TaskID,
@@ -439,12 +439,12 @@ func (s *RunService) executeTask(ctx context.Context, runID string, task entity.
 			attemptCtx, cancelAttempt = context.WithTimeout(ctx, time.Duration(policy.TimeoutSeconds)*time.Second)
 		}
 
-		lastResult, selectedBranch, lastErr = s.executeTaskAttempt(attemptCtx, task, conditionInput, effectiveEnv, emitOutput)
+		lastResult, selectedBranch, lastErr = s.executeTaskAttempt(attemptCtx, runID, task, conditionInput, effectiveEnv, emitOutput)
 		cancelAttempt()
 
 		if lastErr == nil {
 			lastResult.Output = outputBuilder.String()
-			if err := s.db.FinishTaskRun(runID, task.TaskID, "success", lastResult.ExitCode, lastResult.Output); err != nil {
+			if err := s.db.FinishTaskRun(runID, task.TaskID, "success", lastResult.ExitCode, lastResult.Output, lastResult.Result); err != nil {
 				return runtimeTaskResult{
 					taskID: task.TaskID,
 					status: "failed",
@@ -464,7 +464,7 @@ func (s *RunService) executeTask(ctx context.Context, runID string, task entity.
 		if errors.Is(context.Cause(ctx), ErrRunCancelled) || errors.Is(context.Cause(attemptCtx), ErrRunCancelled) {
 			emitOutput("\nTask cancelled.\n")
 			lastResult.Output = outputBuilder.String()
-			_ = s.db.FinishTaskRun(runID, task.TaskID, "cancelled", lastResult.ExitCode, lastResult.Output)
+			_ = s.db.FinishTaskRun(runID, task.TaskID, "cancelled", lastResult.ExitCode, lastResult.Output, lastResult.Result)
 			s.publishTaskStatus(runID, task.TaskID)
 			return runtimeTaskResult{
 				taskID: task.TaskID,
@@ -486,7 +486,7 @@ func (s *RunService) executeTask(ctx context.Context, runID string, task entity.
 	}
 
 	lastResult.Output = outputBuilder.String()
-	if err := s.db.FinishTaskRun(runID, task.TaskID, "failed", lastResult.ExitCode, lastResult.Output); err != nil {
+	if err := s.db.FinishTaskRun(runID, task.TaskID, "failed", lastResult.ExitCode, lastResult.Output, lastResult.Result); err != nil {
 		return runtimeTaskResult{
 			taskID: task.TaskID,
 			status: "failed",
@@ -504,7 +504,7 @@ func (s *RunService) executeTask(ctx context.Context, runID string, task entity.
 	}
 }
 
-func (s *RunService) executeTaskAttempt(ctx context.Context, task entity.TaskRunEntity, conditionInput *workflowcfg.ConditionInput, effectiveEnv map[string]string, onOutput executor.OutputFunc) (executor.TaskResult, string, error) {
+func (s *RunService) executeTaskAttempt(ctx context.Context, runID string, task entity.TaskRunEntity, conditionInput *workflowcfg.ConditionInput, effectiveEnv map[string]string, onOutput executor.OutputFunc) (executor.TaskResult, string, error) {
 	if task.TaskType == "condition" {
 		var cfg workflowcfg.ConditionConfig
 		if err := json.Unmarshal([]byte(task.TaskConfig), &cfg); err != nil {
@@ -536,6 +536,7 @@ func (s *RunService) executeTaskAttempt(ctx context.Context, task entity.TaskRun
 	}
 
 	execTask, err := executor.NewTask(executor.TaskEntity{
+		RunID:  runID,
 		ID:     task.TaskID,
 		Type:   task.TaskType,
 		Config: task.TaskConfig,
@@ -732,6 +733,7 @@ func (s *RunService) publishTaskStatus(runID string, taskID string) {
 		AssignedAt:     formatTimePointer(task.AssignedAt),
 		StartedAt:      formatTimePointer(task.StartedAt),
 		FinishedAt:     formatTimePointer(task.FinishedAt),
+		Result:         task.Result,
 		ExitCode:       &exitCode,
 	})
 }
@@ -836,7 +838,7 @@ func (s *RunService) HandleWorkerTaskEvent(nodeID string, event dto.WorkerTaskEv
 		if event.ExitCode != nil {
 			exitCode = *event.ExitCode
 		}
-		if err := s.db.FinishTaskRun(event.RunID, event.TaskID, finalStatus, exitCode, updatedTask.Output); err != nil {
+		if err := s.db.FinishTaskRun(event.RunID, event.TaskID, finalStatus, exitCode, updatedTask.Output, event.Result); err != nil {
 			return err
 		}
 		if updatedTask.AssignedNodeID != "" {
@@ -989,7 +991,7 @@ func (s *RunService) queueReadyTasks(runID string) error {
 		}
 
 		if len(node.inbound) > 0 && unknownCount == 0 && activeCount == 0 {
-			if err := s.db.FinishTaskRun(runID, task.TaskID, "skipped", task.ExitCode, "Skipped because the condition branch was not activated."); err != nil {
+			if err := s.db.FinishTaskRun(runID, task.TaskID, "skipped", task.ExitCode, "Skipped because the condition branch was not activated.", task.Result); err != nil {
 				return err
 			}
 			s.publishTaskStatus(runID, task.TaskID)
