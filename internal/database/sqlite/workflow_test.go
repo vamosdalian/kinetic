@@ -271,6 +271,193 @@ func TestGetWorkflowByID(t *testing.T) {
 	})
 }
 
+func TestSaveWorkflowDefinition_ReplacesGraphAtomically(t *testing.T) {
+	dbPath := "test_save_workflow_definition.db"
+	defer os.Remove(dbPath)
+
+	db, err := NewSqliteDB(dbPath)
+	if err != nil {
+		t.Fatalf("Failed to create database: %v", err)
+	}
+	defer db.Close()
+
+	workflowID := "workflow-definition"
+	err = db.SaveWorkflowDefinition(
+		entity.WorkflowEntity{
+			ID:          workflowID,
+			Name:        "Initial Workflow",
+			Description: "Initial graph",
+			Config:      `{"env":{"API_BASE":"https://example.com"}}`,
+			Enable:      true,
+		},
+		[]entity.TaskEntity{
+			{
+				ID:         "task-a",
+				WorkflowID: workflowID,
+				Name:       "Task A",
+				Type:       "shell",
+				Config:     `{"script":"echo a"}`,
+				Position:   `{"x":0,"y":0}`,
+				NodeType:   "default",
+			},
+			{
+				ID:         "task-b",
+				WorkflowID: workflowID,
+				Name:       "Task B",
+				Type:       "shell",
+				Config:     `{"script":"echo b"}`,
+				Position:   `{"x":120,"y":0}`,
+				NodeType:   "default",
+			},
+		},
+		[]entity.EdgeEntity{
+			{
+				ID:         "edge-a-b",
+				WorkflowID: workflowID,
+				Source:     "task-a",
+				Target:     "task-b",
+			},
+		},
+	)
+	if err != nil {
+		t.Fatalf("Failed to save workflow definition: %v", err)
+	}
+
+	err = db.SaveWorkflowDefinition(
+		entity.WorkflowEntity{
+			ID:          workflowID,
+			Name:        "Updated Workflow",
+			Description: "Updated graph",
+			Config:      `{"env":{"API_BASE":"https://example.org"}}`,
+			Enable:      false,
+		},
+		[]entity.TaskEntity{
+			{
+				ID:         "task-c",
+				WorkflowID: workflowID,
+				Name:       "Task C",
+				Type:       "http",
+				Config:     `{"url":"https://example.org","method":"GET"}`,
+				Position:   `{"x":40,"y":40}`,
+				NodeType:   "default",
+			},
+		},
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("Failed to update workflow definition: %v", err)
+	}
+
+	workflow, err := db.GetWorkflowByID(workflowID)
+	if err != nil {
+		t.Fatalf("Failed to load updated workflow: %v", err)
+	}
+	if workflow.Name != "Updated Workflow" {
+		t.Fatalf("Expected updated workflow name, got %s", workflow.Name)
+	}
+	if workflow.Version != 2 {
+		t.Fatalf("Expected workflow version 2, got %d", workflow.Version)
+	}
+	if workflow.Enable {
+		t.Fatal("Expected workflow to be disabled after update")
+	}
+
+	tasks, err := db.ListTasks(workflowID)
+	if err != nil {
+		t.Fatalf("Failed to list tasks: %v", err)
+	}
+	if len(tasks) != 1 || tasks[0].ID != "task-c" {
+		t.Fatalf("Expected only replacement task task-c, got %+v", tasks)
+	}
+
+	edges, err := db.ListEdges(workflowID)
+	if err != nil {
+		t.Fatalf("Failed to list edges: %v", err)
+	}
+	if len(edges) != 0 {
+		t.Fatalf("Expected replacement graph to remove old edges, got %d edges", len(edges))
+	}
+}
+
+func TestDeleteWorkflowDefinition(t *testing.T) {
+	dbPath := "test_delete_workflow_definition.db"
+	defer os.Remove(dbPath)
+
+	db, err := NewSqliteDB(dbPath)
+	if err != nil {
+		t.Fatalf("Failed to create database: %v", err)
+	}
+	defer db.Close()
+
+	workflowID := "workflow-delete"
+	err = db.SaveWorkflowDefinition(
+		entity.WorkflowEntity{
+			ID:          workflowID,
+			Name:        "Delete Workflow",
+			Description: "To be deleted",
+			Enable:      true,
+		},
+		[]entity.TaskEntity{
+			{
+				ID:         "delete-task",
+				WorkflowID: workflowID,
+				Name:       "Delete Task",
+				Type:       "shell",
+				Config:     `{"script":"echo delete"}`,
+				Position:   `{"x":0,"y":0}`,
+				NodeType:   "default",
+			},
+		},
+		[]entity.EdgeEntity{
+			{
+				ID:         "delete-edge",
+				WorkflowID: workflowID,
+				Source:     "delete-task",
+				Target:     "delete-task",
+			},
+		},
+	)
+	if err != nil {
+		t.Fatalf("Failed to seed workflow definition: %v", err)
+	}
+
+	deleted, err := db.DeleteWorkflowDefinition(workflowID)
+	if err != nil {
+		t.Fatalf("Failed to delete workflow definition: %v", err)
+	}
+	if !deleted {
+		t.Fatal("Expected workflow definition to be deleted")
+	}
+
+	if _, err := db.GetWorkflowByID(workflowID); err == nil {
+		t.Fatal("Expected deleted workflow to be missing")
+	}
+
+	tasks, err := db.ListTasks(workflowID)
+	if err != nil {
+		t.Fatalf("Failed to list tasks after delete: %v", err)
+	}
+	if len(tasks) != 0 {
+		t.Fatalf("Expected tasks to be deleted, got %d", len(tasks))
+	}
+
+	edges, err := db.ListEdges(workflowID)
+	if err != nil {
+		t.Fatalf("Failed to list edges after delete: %v", err)
+	}
+	if len(edges) != 0 {
+		t.Fatalf("Expected edges to be deleted, got %d", len(edges))
+	}
+
+	deleted, err = db.DeleteWorkflowDefinition("missing-workflow")
+	if err != nil {
+		t.Fatalf("Expected missing workflow delete to be handled cleanly: %v", err)
+	}
+	if deleted {
+		t.Fatal("Expected missing workflow delete to report deleted=false")
+	}
+}
+
 func TestListWorkflows(t *testing.T) {
 	dbPath := "test_list_workflows.db"
 	defer os.Remove(dbPath)

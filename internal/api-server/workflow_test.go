@@ -510,3 +510,25 @@ func TestWorkflowHandler_Delete(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Empty(t, edges)
 }
+
+func TestWorkflowHandler_Delete_NotFound(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	db := setupTestDB(t)
+	handler := NewWorkflowHandler(db)
+	router := gin.New()
+	router.DELETE("/api/workflows/:id", handler.Delete)
+
+	req, _ := http.NewRequest("DELETE", "/api/workflows/missing-workflow", nil)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusNotFound, w.Code)
+
+	var apiResponse APIResponse
+	err := json.Unmarshal(w.Body.Bytes(), &apiResponse)
+	assert.NoError(t, err)
+	assert.False(t, apiResponse.Success)
+	assert.NotNil(t, apiResponse.Error)
+	assert.Equal(t, ErrorCodeWorkflowNotFound, apiResponse.Error.Code)
+}

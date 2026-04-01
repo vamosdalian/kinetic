@@ -1,7 +1,6 @@
 package apiserver
 
 import (
-	"database/sql"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -210,29 +209,7 @@ func (h *WorkflowHandler) Save(c *gin.Context) {
 		Tag:         req.Tag,
 		Enable:      req.Enable,
 	}
-	err = h.db.SaveWorkflow(workflowEntity)
-	if err != nil {
-		ResponseError(c, http.StatusInternalServerError, ErrorCodeInternalError, err.Error())
-		return
-	}
-
-	if err := h.db.DeleteTasks(req.ID); err != nil {
-		ResponseError(c, http.StatusInternalServerError, ErrorCodeInternalError, err.Error())
-		return
-	}
-	if err := h.db.DeleteEdges(req.ID); err != nil {
-		ResponseError(c, http.StatusInternalServerError, ErrorCodeInternalError, err.Error())
-		return
-	}
-
-	_, err = h.db.SaveTasks(taskEntities)
-	if err != nil {
-		ResponseError(c, http.StatusInternalServerError, ErrorCodeInternalError, err.Error())
-		return
-	}
-
-	_, err = h.db.SaveEdges(edgeEntities)
-	if err != nil {
+	if err := h.db.SaveWorkflowDefinition(workflowEntity, taskEntities, edgeEntities); err != nil {
 		ResponseError(c, http.StatusInternalServerError, ErrorCodeInternalError, err.Error())
 		return
 	}
@@ -243,24 +220,13 @@ func (h *WorkflowHandler) Save(c *gin.Context) {
 func (h *WorkflowHandler) Delete(c *gin.Context) {
 	id := c.Param("id")
 
-	err := h.db.DeleteWorkflow(id)
-	if err == sql.ErrNoRows {
+	deleted, err := h.db.DeleteWorkflowDefinition(id)
+	if err != nil {
+		ResponseError(c, http.StatusInternalServerError, ErrorCodeInternalError, err.Error())
+		return
+	}
+	if !deleted {
 		ResponseError(c, http.StatusNotFound, ErrorCodeWorkflowNotFound, fmt.Sprintf("Workflow '%s' not found", id))
-		return
-	}
-	if err != nil {
-		ResponseError(c, http.StatusInternalServerError, ErrorCodeInternalError, err.Error())
-		return
-	}
-
-	err = h.db.DeleteTasks(id)
-	if err != nil {
-		ResponseError(c, http.StatusInternalServerError, ErrorCodeInternalError, err.Error())
-		return
-	}
-	err = h.db.DeleteEdges(id)
-	if err != nil {
-		ResponseError(c, http.StatusInternalServerError, ErrorCodeInternalError, err.Error())
 		return
 	}
 
