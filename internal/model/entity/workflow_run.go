@@ -7,6 +7,7 @@ type WorkflowRunEntity struct {
 	WorkflowID          string
 	WorkflowName        string
 	WorkflowDescription string
+	WorkflowConfig      string
 	WorkflowVersion     int
 	WorkflowTag         string
 	Status              string
@@ -35,6 +36,7 @@ type TaskRunEntity struct {
 	FinishedAt      *time.Time
 	ExitCode        int
 	Output          string
+	Result          string
 }
 
 type EdgeRunEntity struct {

@@ -24,6 +24,7 @@ func TestSaveWorkflow(t *testing.T) {
 			ID:          "test-workflow-1",
 			Name:        "Test Workflow",
 			Description: "This is a test workflow",
+			Config:      `{"env":{"API_TOKEN":"secret"}}`,
 			Enable:      true,
 		}
 
@@ -33,15 +34,15 @@ func TestSaveWorkflow(t *testing.T) {
 		}
 
 		// 验证数据是否正确保存
-		var savedID, savedName, savedDescription string
+		var savedID, savedName, savedDescription, savedConfig string
 		var savedVersion int
 		var savedEnable int
 		var savedCreatedAt, savedUpdatedAt string
 
 		err = db.db.QueryRow(
-			"SELECT id, name, description, version, enable, created_at, updated_at FROM workflows WHERE id = ?",
+			"SELECT id, name, description, config, version, enable, created_at, updated_at FROM workflows WHERE id = ?",
 			workflow.ID,
-		).Scan(&savedID, &savedName, &savedDescription, &savedVersion, &savedEnable, &savedCreatedAt, &savedUpdatedAt)
+		).Scan(&savedID, &savedName, &savedDescription, &savedConfig, &savedVersion, &savedEnable, &savedCreatedAt, &savedUpdatedAt)
 
 		if err != nil {
 			t.Fatalf("Failed to query saved workflow: %v", err)
@@ -55,6 +56,9 @@ func TestSaveWorkflow(t *testing.T) {
 		}
 		if savedDescription != workflow.Description {
 			t.Errorf("Expected Description %s, got %s", workflow.Description, savedDescription)
+		}
+		if savedConfig != workflow.Config {
+			t.Errorf("Expected Config %s, got %s", workflow.Config, savedConfig)
 		}
 		if savedVersion != 1 {
 			t.Errorf("Expected Version 1, got %d", savedVersion)
@@ -84,6 +88,7 @@ func TestSaveWorkflow(t *testing.T) {
 			ID:          "test-workflow-1",
 			Name:        "Updated Workflow Name",
 			Description: "Updated description",
+			Config:      `{"env":{"BASE_URL":"https://example.com"}}`,
 			Enable:      false,
 		}
 
@@ -93,15 +98,15 @@ func TestSaveWorkflow(t *testing.T) {
 		}
 
 		// 验证数据是否正确更新
-		var savedID, savedName, savedDescription string
+		var savedID, savedName, savedDescription, savedConfig string
 		var savedVersion int
 		var savedEnable int
 		var savedUpdatedAt string
 
 		err = db.db.QueryRow(
-			"SELECT id, name, description, version, enable, updated_at FROM workflows WHERE id = ?",
+			"SELECT id, name, description, config, version, enable, updated_at FROM workflows WHERE id = ?",
 			updatedWorkflow.ID,
-		).Scan(&savedID, &savedName, &savedDescription, &savedVersion, &savedEnable, &savedUpdatedAt)
+		).Scan(&savedID, &savedName, &savedDescription, &savedConfig, &savedVersion, &savedEnable, &savedUpdatedAt)
 
 		if err != nil {
 			t.Fatalf("Failed to query updated workflow: %v", err)
@@ -112,6 +117,9 @@ func TestSaveWorkflow(t *testing.T) {
 		}
 		if savedDescription != updatedWorkflow.Description {
 			t.Errorf("Expected Description %s, got %s", updatedWorkflow.Description, savedDescription)
+		}
+		if savedConfig != updatedWorkflow.Config {
+			t.Errorf("Expected Config %s, got %s", updatedWorkflow.Config, savedConfig)
 		}
 		if savedVersion != currentVersion+1 {
 			t.Errorf("Expected Version %d, got %d", currentVersion+1, savedVersion)
@@ -166,6 +174,7 @@ func TestGetWorkflowByID(t *testing.T) {
 			ID:          "test-workflow-get-1",
 			Name:        "Test Workflow for Get",
 			Description: "Test description",
+			Config:      `{"env":{"API_TOKEN":"secret"}}`,
 			Enable:      true,
 		}
 
@@ -187,6 +196,9 @@ func TestGetWorkflowByID(t *testing.T) {
 		}
 		if result.Description != workflow.Description {
 			t.Errorf("Expected Description %s, got %s", workflow.Description, result.Description)
+		}
+		if result.Config != workflow.Config {
+			t.Errorf("Expected Config %s, got %s", workflow.Config, result.Config)
 		}
 		if result.Enable != workflow.Enable {
 			t.Errorf("Expected Enable %v, got %v", workflow.Enable, result.Enable)
@@ -214,6 +226,7 @@ func TestGetWorkflowByID(t *testing.T) {
 			ID:          "test-workflow-get-2",
 			Name:        "Original Name",
 			Description: "Original Description",
+			Config:      `{"env":{"API_TOKEN":"secret"}}`,
 			Enable:      true,
 		}
 
@@ -226,6 +239,7 @@ func TestGetWorkflowByID(t *testing.T) {
 			ID:          "test-workflow-get-2",
 			Name:        "Updated Name",
 			Description: "Updated Description",
+			Config:      `{"env":{"BASE_URL":"https://example.com"}}`,
 			Enable:      false,
 		}
 
@@ -244,6 +258,9 @@ func TestGetWorkflowByID(t *testing.T) {
 		}
 		if result.Description != updatedWorkflow.Description {
 			t.Errorf("Expected Description %s, got %s", updatedWorkflow.Description, result.Description)
+		}
+		if result.Config != updatedWorkflow.Config {
+			t.Errorf("Expected Config %s, got %s", updatedWorkflow.Config, result.Config)
 		}
 		if result.Enable != updatedWorkflow.Enable {
 			t.Errorf("Expected Enable %v, got %v", updatedWorkflow.Enable, result.Enable)

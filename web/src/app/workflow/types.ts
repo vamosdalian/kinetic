@@ -8,6 +8,11 @@ export interface TaskPolicy {
   timeout_seconds?: number;
   retry_count?: number;
   retry_backoff_seconds?: number;
+  env?: Record<string, string>;
+}
+
+export interface WorkflowConfig {
+  env?: Record<string, string>;
 }
 
 export interface ShellConfig extends TaskPolicy {
@@ -67,7 +72,7 @@ export const defaultTaskNode: Omit<TaskNode, "id" | "position"> = {
   description: "",
   type: "shell",
   config: createTaskConfig("shell"),
-  tag: "",
+  tag: "node-default",
   nodeType: "baseNodeFull",
 };
 
@@ -77,6 +82,7 @@ export interface WorkflowData {
   name: string;
   description: string;
   tag: string;
+  config: WorkflowConfig;
 }
 
 // ============ Workflow Detail (API response) ============
@@ -85,6 +91,7 @@ export interface WorkflowDetail {
   id: string;
   name: string;
   description: string;
+  config?: WorkflowConfig;
   tag?: string;
   taskNodes: TaskNode[];
   edges: Edge[];

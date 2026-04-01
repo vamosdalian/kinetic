@@ -355,6 +355,7 @@ func (w *Worker) executeAssignedTask(ctx context.Context, task dto.AssignedTask)
 				Type:     "finished",
 				RunID:    task.RunID,
 				TaskID:   task.TaskID,
+				Result:   lastResult.Result,
 				ExitCode: &exitCode,
 			})
 			return
@@ -381,6 +382,7 @@ func (w *Worker) executeAssignedTask(ctx context.Context, task dto.AssignedTask)
 			Type:     "cancelled",
 			RunID:    task.RunID,
 			TaskID:   task.TaskID,
+			Result:   lastResult.Result,
 			ExitCode: &exitCode,
 		})
 		return
@@ -394,6 +396,7 @@ func (w *Worker) executeAssignedTask(ctx context.Context, task dto.AssignedTask)
 		Type:     "failed",
 		RunID:    task.RunID,
 		TaskID:   task.TaskID,
+		Result:   lastResult.Result,
 		ExitCode: &exitCode,
 	})
 }
@@ -425,9 +428,11 @@ func (w *Worker) runTaskAttempt(ctx context.Context, task dto.AssignedTask, onOu
 	}
 
 	execTask, err := executor.NewTask(executor.TaskEntity{
+		RunID:  task.RunID,
 		ID:     task.TaskID,
 		Type:   string(task.Type),
 		Config: string(task.Config),
+		Env:    task.Env,
 	})
 	if err != nil {
 		return executor.TaskResult{ExitCode: -1}, err

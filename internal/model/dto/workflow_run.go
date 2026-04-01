@@ -31,6 +31,7 @@ type TaskNodeRun struct {
 	FinishedAt     string          `json:"finished_at"`
 	ExitCode       int             `json:"exit_code"`
 	Output         string          `json:"output"`
+	Result         string          `json:"result,omitempty"`
 }
 
 type EdgeRun struct {

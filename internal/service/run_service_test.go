@@ -15,6 +15,7 @@ import (
 
 func setupRunServiceDB(t *testing.T) database.Database {
 	t.Helper()
+	t.Setenv("HOME", t.TempDir())
 
 	dbPath := filepath.Join(t.TempDir(), "test_run_service_"+uuid.New().String()+".db")
 	db, err := sqlite.NewSqliteDB(dbPath)
@@ -77,6 +78,8 @@ func seedWorkflow(t *testing.T, db database.Database, tasks []entity.TaskEntity,
 }
 
 func TestRunService_LinearWorkflowSuccess(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+
 	db := setupRunServiceDB(t)
 	service := NewRunService(db, 2)
 
@@ -126,6 +129,35 @@ func TestRunService_LinearWorkflowSuccess(t *testing.T) {
 		assert.Equal(t, "success", runsByTaskID[task2ID].Status)
 		assert.Equal(t, "second", runsByTaskID[task2ID].Output)
 	}
+}
+
+func TestRunService_PersistsTaskResult(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+
+	db := setupRunServiceDB(t)
+	service := NewRunService(db, 1)
+
+	taskID := uuid.New().String()
+	workflowID := seedWorkflow(t, db, []entity.TaskEntity{
+		{
+			ID:       taskID,
+			Name:     "task-with-result",
+			Type:     "shell",
+			Config:   `{"script":"printf 'done'; printf '{\"count\":1}' > \"$KINETIC_RESULT_PATH\""}`,
+			Position: `{"x":0,"y":0}`,
+			NodeType: "baseNodeFull",
+		},
+	}, nil)
+
+	runID, err := service.StartWorkflowRun(workflowID)
+	assert.NoError(t, err)
+
+	_ = waitForRunStatus(t, db, runID, "success")
+
+	taskRun, err := db.GetTaskRun(runID, taskID)
+	assert.NoError(t, err)
+	assert.Equal(t, "done", taskRun.Output)
+	assert.JSONEq(t, `{"count":1}`, taskRun.Result)
 }
 
 func TestRunService_BranchedWorkflowSuccess(t *testing.T) {

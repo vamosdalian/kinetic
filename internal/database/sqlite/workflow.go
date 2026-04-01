@@ -1,10 +1,12 @@
 package sqlite
 
 import (
+	"encoding/json"
 	"strings"
 
 	"github.com/sirupsen/logrus"
 	"github.com/vamosdalian/kinetic/internal/model/entity"
+	workflowcfg "github.com/vamosdalian/kinetic/internal/workflow"
 )
 
 func (s *SqliteDB) ListWorkflows(offset int, limit int) ([]entity.WorkflowEntity, error) {
@@ -77,11 +79,16 @@ func sqliteLikePattern(query string) string {
 func (s *SqliteDB) GetWorkflowByID(id string) (entity.WorkflowEntity, error) {
 	var workflow entity.WorkflowEntity
 	var createdAtStr, updatedAtStr string
-	err := s.db.QueryRow("SELECT id, name, description, enable, version, created_at, updated_at, tag FROM workflows WHERE id = ?", id).
-		Scan(&workflow.ID, &workflow.Name, &workflow.Description, &workflow.Enable, &workflow.Version, &createdAtStr, &updatedAtStr, &workflow.Tag)
+	var rawConfig string
+	err := s.db.QueryRow("SELECT id, name, description, config, enable, version, created_at, updated_at, tag FROM workflows WHERE id = ?", id).
+		Scan(&workflow.ID, &workflow.Name, &workflow.Description, &rawConfig, &workflow.Enable, &workflow.Version, &createdAtStr, &updatedAtStr, &workflow.Tag)
 	if err != nil {
 		return entity.WorkflowEntity{}, err
 	}
+	if _, err := workflowcfg.ParseWorkflowConfig(rawConfig); err != nil {
+		return entity.WorkflowEntity{}, err
+	}
+	workflow.Config = normalizeJSONText(rawConfig)
 
 	workflow.CreatedAt, err = parseTime(createdAtStr)
 	if err != nil {
@@ -98,11 +105,12 @@ func (s *SqliteDB) GetWorkflowByID(id string) (entity.WorkflowEntity, error) {
 
 func (s *SqliteDB) SaveWorkflow(req entity.WorkflowEntity) error {
 	stmt, err := s.db.Prepare(`
-		INSERT INTO workflows (id, name, description, tag, version, enable, created_at, updated_at) 
-		VALUES (?, ?, ?, ?, 1, ?, DATETIME('now'), DATETIME('now'))
+		INSERT INTO workflows (id, name, description, config, tag, version, enable, created_at, updated_at) 
+		VALUES (?, ?, ?, ?, ?, 1, ?, DATETIME('now'), DATETIME('now'))
 		ON CONFLICT(id) DO UPDATE SET
 			name = excluded.name,
 			description = excluded.description,
+			config = excluded.config,
 			tag = excluded.tag,
 			enable = excluded.enable,
 			version = version + 1,
@@ -112,12 +120,32 @@ func (s *SqliteDB) SaveWorkflow(req entity.WorkflowEntity) error {
 		return err
 	}
 	defer stmt.Close()
-	_, err = stmt.Exec(req.ID, req.Name, req.Description, req.Tag, req.Enable)
+	if _, err := workflowcfg.ParseWorkflowConfig(req.Config); err != nil {
+		return err
+	}
+	_, err = stmt.Exec(req.ID, req.Name, req.Description, normalizeJSONText(req.Config), req.Tag, req.Enable)
 	if err != nil {
 		return err
 	}
 
 	return nil
+}
+
+func normalizeJSONText(raw string) string {
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" {
+		return "{}"
+	}
+
+	var payload any
+	if err := json.Unmarshal([]byte(trimmed), &payload); err != nil {
+		return trimmed
+	}
+	normalized, err := json.Marshal(payload)
+	if err != nil {
+		return trimmed
+	}
+	return string(normalized)
 }
 
 func (s *SqliteDB) DeleteWorkflow(id string) error {

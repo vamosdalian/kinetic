@@ -129,6 +129,19 @@ func TestWorkflowRun(t *testing.T) {
 		t.Error("Task 1 run not found")
 	}
 
+	err = db.FinishTaskRun(runID, task1ID, "success", 0, "hello\n", `{"message":"ok"}`)
+	if err != nil {
+		t.Fatalf("Failed to finish task run: %v", err)
+	}
+
+	finishedTaskRun, err := db.GetTaskRun(runID, task1ID)
+	if err != nil {
+		t.Fatalf("Failed to get finished task run: %v", err)
+	}
+	if finishedTaskRun.Result != `{"message":"ok"}` {
+		t.Fatalf("Expected task result %s, got %s", `{"message":"ok"}`, finishedTaskRun.Result)
+	}
+
 	// Test GetEdgeRuns
 	edgeRuns, err := db.GetEdgeRuns(runID)
 	if err != nil {

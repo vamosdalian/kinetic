@@ -16,6 +16,7 @@ type Executor struct {
 
 type TaskResult struct {
 	Output   string
+	Result   string
 	ExitCode int
 }
 

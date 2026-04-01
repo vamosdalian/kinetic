@@ -197,6 +197,62 @@ Validation rules include:
 
 Workflows and tasks can also carry tags so runs can be routed to matching worker nodes.
 
+### Workflow And Task Config
+
+Workflow-level extensible settings are stored in `workflow.config`.
+
+Current workflow config fields:
+
+- `env`: environment variables inherited by tasks unless overridden
+
+Task-level settings remain inside each task's existing `config` object. Tasks may also define `config.env`.
+
+Environment variable precedence is:
+
+1. system-provided `KINETIC_*` variables
+2. `workflow.config.env`
+3. `task.config.env`
+
+Current system-provided variables:
+
+- `KINETIC_WORKFLOW_NAME`
+- `KINETIC_TASK_NAME`
+- `KINETIC_RESULT_PATH`
+
+Keys starting with `KINETIC_` are reserved for the system and cannot be defined by users in workflow or task config.
+
+Example:
+
+```json
+{
+  "name": "Deploy Workflow",
+  "config": {
+    "env": {
+      "API_BASE_URL": "https://api.example.com"
+    }
+  },
+  "taskNodes": [
+    {
+      "id": "task-1",
+      "name": "Run Shell",
+      "type": "shell",
+      "config": {
+        "script": "printf '%s\\n' \"$API_BASE_URL\"",
+        "env": {
+          "API_BASE_URL": "https://staging-api.example.com"
+        }
+      }
+    }
+  ]
+}
+```
+
+In this example, the shell task receives `API_BASE_URL=https://staging-api.example.com`.
+
+Shell tasks also receive `KINETIC_RESULT_PATH`, which points to `~/.kinetic/results/[runid]/[taskid]_result.json` on the machine that executes the task. If the script writes valid JSON to that file, Kinetic stores it in `task_runs.result` and exposes it from the workflow run detail API. Invalid JSON causes the task to fail.
+
+At the moment, runtime environment injection is implemented for shell tasks. Other task types may store `env` in config, but whether they consume it depends on the task type's runtime behavior.
+
 ## Release
 
 GitHub Releases are built from tagged commits. Release assets are attached automatically, and GitHub generates the release notes and changelog sections.

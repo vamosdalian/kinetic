@@ -18,11 +18,11 @@ import {
   HoverCardTrigger,
 } from "@/components/ui/hover-card";
 import { CircleQuestionMark } from "lucide-react";
+import { KeyValueEditor } from "./key-value-editor";
 import {
   createTaskConfig,
   type ConditionConfig,
   type HttpConfig,
-  type PythonConfig,
   type ShellConfig,
   type TaskConfig,
   type TaskNode,
@@ -34,11 +34,8 @@ interface TaskFormProps {
   taskId: string;
   node: TaskNode | null;
   tagOptions: string[];
-  workflowTag: string;
   onUpdate: (id: string, data: Partial<Omit<TaskNode, "id">>) => void;
 }
-
-const INHERIT_TAG_VALUE = "__inherit_workflow_tag__";
 
 function HelpHint({ content }: { content: React.ReactNode }) {
   return (
@@ -59,25 +56,14 @@ function HelpHint({ content }: { content: React.ReactNode }) {
   );
 }
 
-function buildNextHeaderKey(headers: Record<string, string>) {
-  let index = Object.keys(headers).length + 1;
-  let candidate = `header-${index}`;
-
-  while (candidate in headers) {
-    index += 1;
-    candidate = `header-${index}`;
-  }
-
-  return candidate;
-}
-
 export function Taskform({
   taskId,
   node,
   tagOptions,
-  workflowTag,
   onUpdate,
 }: TaskFormProps) {
+  const isLegacyPythonTask = node?.type === "python";
+
   const config = React.useMemo(() => {
     if (!node) {
       return null;
@@ -152,6 +138,77 @@ export function Taskform({
       </div>
 
       <div className="grid gap-2">
+        <div className="flex items-center gap-2">
+          <Label htmlFor="task_tag">Tag</Label>
+          <HelpHint content="Tasks run on nodes matching this tag. The default tag is node-default, which is present on all nodes." />
+        </div>
+        <Select
+          value={node.tag || "node-default"}
+          onValueChange={(value) => {
+            onUpdate(taskId, { tag: value });
+          }}
+        >
+          <SelectTrigger id="task_tag" className="w-full">
+            <SelectValue placeholder="Select node tag" />
+          </SelectTrigger>
+          <SelectContent>
+            {tagOptions.map((tag) => (
+              <SelectItem key={tag} value={tag}>
+                {tag}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+
+      <div className="grid gap-2">
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2">
+            <Label>Environment Variables</Label>
+            <HelpHint
+              content="Task-level variables override workflow-level variables. Names starting with KINETIC_ are reserved for the system. Keys are unique within this map."
+            />
+          </div>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              const env = { ...(config.env ?? {}) };
+              let index = Object.keys(env).length + 1;
+              let candidate = `env-${index}`;
+
+              while (candidate in env) {
+                index += 1;
+                candidate = `env-${index}`;
+              }
+
+              env[candidate] = "";
+              updateConfig({
+                ...config,
+                env,
+              });
+            }}
+          >
+            Add
+          </Button>
+        </div>
+        <KeyValueEditor
+          values={config.env ?? {}}
+          onChange={(env) => {
+            updateConfig({
+              ...config,
+              env,
+            });
+          }}
+          keyPlaceholder="Variable name"
+          valuePlaceholder="Variable value"
+          keyPrefix="env"
+          showAddButton={false}
+        />
+      </div>
+
+      <div className="grid gap-2">
         <Label htmlFor="task_type">Task Type</Label>
         <Select
           value={node.type}
@@ -165,43 +222,12 @@ export function Taskform({
           <SelectContent>
             <SelectItem value="shell">Shell</SelectItem>
             <SelectItem value="http">HTTP</SelectItem>
-            <SelectItem value="python">Python</SelectItem>
             <SelectItem value="condition">Condition</SelectItem>
-          </SelectContent>
-        </Select>
-      </div>
-
-      <div className="grid gap-2">
-        <div className="flex items-center gap-2">
-          <Label htmlFor="task_tag">Tag</Label>
-          <HelpHint
-            content={
-              node.tag
-                ? "This task overrides the workflow-level routing tag."
-                : workflowTag
-                  ? `This task will run on nodes tagged ${workflowTag}.`
-                  : "This task can run on any healthy node unless you choose a tag."
-            }
-          />
-        </div>
-        <Select
-          value={node.tag || INHERIT_TAG_VALUE}
-          onValueChange={(value) => {
-            onUpdate(taskId, { tag: value === INHERIT_TAG_VALUE ? "" : value });
-          }}
-        >
-          <SelectTrigger id="task_tag" className="w-full">
-            <SelectValue placeholder="Select node tag" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value={INHERIT_TAG_VALUE}>
-              {workflowTag ? `Inherit workflow tag (${workflowTag})` : "Inherit workflow tag"}
-            </SelectItem>
-            {tagOptions.map((tag) => (
-              <SelectItem key={tag} value={tag}>
-                {tag}
+            {isLegacyPythonTask ? (
+              <SelectItem value="python" disabled>
+                Python (unsupported)
               </SelectItem>
-            ))}
+            ) : null}
           </SelectContent>
         </Select>
       </div>
@@ -263,73 +289,39 @@ export function Taskform({
             <div className="flex items-center justify-between gap-3">
               <div className="flex items-center gap-2">
                 <Label>Headers</Label>
-                <HelpHint content="Configure request headers in the task config." />
+                <HelpHint content="Configure request headers in the task config. Keys are unique within this map." />
               </div>
               <Button
                 type="button"
                 variant="outline"
                 size="sm"
                 onClick={() => {
-                  const httpConfig = config as HttpConfig;
-                  const headers = { ...(httpConfig.headers ?? {}) };
-                  headers[buildNextHeaderKey(headers)] = "";
-                  updateConfig({ ...httpConfig, headers });
+                  const headers = { ...((config as HttpConfig).headers ?? {}) };
+                  let index = Object.keys(headers).length + 1;
+                  let candidate = `header-${index}`;
+
+                  while (candidate in headers) {
+                    index += 1;
+                    candidate = `header-${index}`;
+                  }
+
+                  headers[candidate] = "";
+                  updateConfig({ ...(config as HttpConfig), headers });
                 }}
               >
-                Add Header
+                Add
               </Button>
             </div>
-
-            {Object.entries((config as HttpConfig).headers ?? {}).length > 0 ? (
-              <div className="grid gap-3">
-                {Object.entries((config as HttpConfig).headers ?? {}).map(([key, value]) => (
-                  <div key={key} className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] gap-2">
-                    <Input
-                      placeholder="Header name"
-                      value={key}
-                      onChange={(e) => {
-                        const nextKey = e.target.value;
-                        const httpConfig = config as HttpConfig;
-                        const headers = { ...(httpConfig.headers ?? {}) };
-                        delete headers[key];
-                        headers[nextKey] = value;
-                        updateConfig({ ...httpConfig, headers });
-                      }}
-                    />
-                    <Input
-                      placeholder="Header value"
-                      value={value}
-                      onChange={(e) => {
-                        const httpConfig = config as HttpConfig;
-                        updateConfig({
-                          ...httpConfig,
-                          headers: {
-                            ...(httpConfig.headers ?? {}),
-                            [key]: e.target.value,
-                          },
-                        });
-                      }}
-                    />
-                    <Button
-                      type="button"
-                      variant="outline"
-                      onClick={() => {
-                        const httpConfig = config as HttpConfig;
-                        const headers = { ...(httpConfig.headers ?? {}) };
-                        delete headers[key];
-                        updateConfig({ ...httpConfig, headers });
-                      }}
-                    >
-                      Remove
-                    </Button>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <p className="text-xs text-muted-foreground">
-                No custom headers configured.
-              </p>
-            )}
+            <KeyValueEditor
+              values={(config as HttpConfig).headers ?? {}}
+              onChange={(headers) => {
+                updateConfig({ ...(config as HttpConfig), headers });
+              }}
+              keyPlaceholder="Header name"
+              valuePlaceholder="Header value"
+              keyPrefix="header"
+              showAddButton={false}
+            />
           </div>
 
           <div className="grid gap-2">
@@ -349,15 +341,10 @@ export function Taskform({
 
       {node.type === "python" && (
         <div className="grid gap-2">
-          <Label>Python Script</Label>
-          <Textarea
-            placeholder="Enter Python code..."
-            value={(config as PythonConfig).script || ""}
-            onChange={(e) => {
-              updateConfig({ ...(config as PythonConfig), script: e.target.value });
-            }}
-            className="font-mono min-h-[200px]"
-          />
+          <Label>Python Task</Label>
+          <div className="rounded-md border border-dashed px-3 py-4 text-sm text-muted-foreground">
+            Python tasks are not editable in the frontend yet.
+          </div>
         </div>
       )}
 

@@ -255,6 +255,7 @@ func (h *WorkflowHandler) buildRunDTO(runID string) (dto.WorkflowRun, error) {
 			FinishedAt:     safeFormatTime(t.FinishedAt),
 			ExitCode:       t.ExitCode,
 			Output:         t.Output,
+			Result:         t.Result,
 		}
 	}
 

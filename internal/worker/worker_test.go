@@ -86,6 +86,8 @@ func TestWorker_HeartbeatLoop(t *testing.T) {
 }
 
 func TestWorker_RunStreamProcessesAssignCommand(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+
 	events := make(chan dto.WorkerTaskEvent, 4)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
@@ -93,7 +95,7 @@ func TestWorker_RunStreamProcessesAssignCommand(t *testing.T) {
 			w.Header().Set("Content-Type", "text/event-stream")
 			w.WriteHeader(http.StatusOK)
 			_, _ = fmt.Fprintf(w, "event: assign\n")
-			_, _ = fmt.Fprintf(w, "data: {\"type\":\"assign\",\"task\":{\"run_id\":\"run-1\",\"task_id\":\"task-1\",\"name\":\"task-1\",\"type\":\"shell\",\"config\":{\"script\":\"printf 'ok'\"}}}\n\n")
+			_, _ = fmt.Fprintf(w, "data: {\"type\":\"assign\",\"task\":{\"run_id\":\"run-1\",\"task_id\":\"task-1\",\"name\":\"task-1\",\"type\":\"shell\",\"config\":{\"script\":\"printf 'ok'; printf '{\\\"ok\\\":true}' > \\\"$KINETIC_RESULT_PATH\\\"\"}}}\n\n")
 			if flusher, ok := w.(http.Flusher); ok {
 				flusher.Flush()
 			}
@@ -125,6 +127,7 @@ func TestWorker_RunStreamProcessesAssignCommand(t *testing.T) {
 			}
 			if event.Type == "finished" {
 				seenFinished = true
+				assert.JSONEq(t, `{"ok":true}`, event.Result)
 			}
 		case <-deadline:
 			t.Fatalf("expected started and finished events, got started=%t finished=%t", seenStarted, seenFinished)

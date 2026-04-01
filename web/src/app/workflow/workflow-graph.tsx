@@ -66,7 +66,8 @@ function WorkflowGraph() {
   const [workflowData, setWorkflowData] = React.useState<WorkflowData>({
     name: "",
     description: "",
-    tag: "",
+    tag: "node-default",
+    config: { env: {} },
   });
   const [taskNodes, setTaskNodes] = React.useState<Record<string, TaskNode>>({});
   const [edges, setEdges] = React.useState<Edge[]>([]);
@@ -121,7 +122,7 @@ function WorkflowGraph() {
 
   const clear = React.useCallback(() => {
     setWorkflowId("");
-    setWorkflowData({ name: "", description: "", tag: "" });
+    setWorkflowData({ name: "", description: "", tag: "node-default", config: { env: {} } });
     setTaskNodes({});
     setEdges([]);
     markClean();
@@ -139,7 +140,8 @@ function WorkflowGraph() {
     setWorkflowData({
       name: data.name,
       description: data.description,
-      tag: data.tag || "",
+      tag: data.tag || "node-default",
+      config: data.config ?? { env: {} },
     });
     setTaskNodes(taskNodesRecord);
     setEdges(data.edges || []);
@@ -387,6 +389,7 @@ function WorkflowGraph() {
       const payload = {
         name: workflowData.name || "Untitled Workflow",
         description: workflowData.description || "",
+        config: workflowData.config,
         tag: workflowData.tag || "",
         taskNodes: Object.values(taskNodes),
         edges: edges,
@@ -410,6 +413,7 @@ function WorkflowGraph() {
 
   const tagOptions = React.useMemo(() => {
     const tags = new Set(availableTags);
+    tags.add("node-default");
     if (workflowData.tag) {
       tags.add(workflowData.tag);
     }

@@ -171,7 +171,7 @@ func TestWorkflowHandler_GetRun(t *testing.T) {
 
 	err = db.CreateWorkflowRun(workflowID, runID)
 	assert.NoError(t, err)
-	err = db.FinishTaskRun(runID, taskID, "success", 0, "hello\n")
+	err = db.FinishTaskRun(runID, taskID, "success", 0, "hello\n", `{"message":"ok"}`)
 	assert.NoError(t, err)
 
 	w := httptest.NewRecorder()
@@ -198,6 +198,7 @@ func TestWorkflowHandler_GetRun(t *testing.T) {
 	if assert.Len(t, run.TaskNodes, 1) {
 		assert.Equal(t, "success", run.TaskNodes[0].Status)
 		assert.Equal(t, "hello\n", run.TaskNodes[0].Output)
+		assert.JSONEq(t, `{"message":"ok"}`, run.TaskNodes[0].Result)
 	}
 }
 

@@ -33,7 +33,6 @@ export function WorkflowRight({
           taskId={selectedTaskId}
           node={taskNodes[selectedTaskId]}
           tagOptions={tagOptions}
-          workflowTag={workflowData.tag}
           onUpdate={onUpdateTaskNode}
         />
       )}

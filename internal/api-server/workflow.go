@@ -109,11 +109,18 @@ func (h *WorkflowHandler) Get(c *gin.Context) {
 		ID:          workflow.ID,
 		Name:        workflow.Name,
 		Description: workflow.Description,
+		Config:      workflowcfg.WorkflowConfig{},
 		Tag:         workflow.Tag,
 		Version:     workflow.Version,
 		Enable:      workflow.Enable,
 		CreatedAt:   workflow.CreatedAt,
 		UpdatedAt:   workflow.UpdatedAt,
+	}
+	if cfg, err := workflowcfg.ParseWorkflowConfig(workflow.Config); err != nil {
+		ResponseError(c, http.StatusInternalServerError, ErrorCodeInternalError, err.Error())
+		return
+	} else {
+		resp.Config = cfg
 	}
 
 	for _, task := range tasks {
@@ -151,6 +158,15 @@ func (h *WorkflowHandler) Save(c *gin.Context) {
 		return
 	}
 	req.ID = c.Param("id")
+	workflowConfigBytes, err := json.Marshal(req.Config)
+	if err != nil {
+		ResponseError(c, http.StatusBadRequest, ErrorCodeInvalidRequest, err.Error())
+		return
+	}
+	if _, err := workflowcfg.ParseWorkflowConfig(string(workflowConfigBytes)); err != nil {
+		ResponseError(c, http.StatusBadRequest, ErrorCodeInvalidRequest, err.Error())
+		return
+	}
 
 	taskEntities := []entity.TaskEntity{}
 	for _, task := range req.TaskNodes {
@@ -190,10 +206,11 @@ func (h *WorkflowHandler) Save(c *gin.Context) {
 		ID:          req.ID,
 		Name:        req.Name,
 		Description: req.Description,
+		Config:      string(workflowConfigBytes),
 		Tag:         req.Tag,
 		Enable:      req.Enable,
 	}
-	err := h.db.SaveWorkflow(workflowEntity)
+	err = h.db.SaveWorkflow(workflowEntity)
 	if err != nil {
 		ResponseError(c, http.StatusInternalServerError, ErrorCodeInternalError, err.Error())
 		return

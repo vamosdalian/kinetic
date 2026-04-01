@@ -20,6 +20,7 @@ export interface WorkflowRunEvent {
   started_at?: string;
   finished_at?: string;
   output?: string;
+  result?: unknown;
   exit_code?: number;
 }
 
@@ -45,6 +46,7 @@ export interface TaskNodeRun {
   finished_at: string;
   exit_code?: number;
   output?: string;
+  result?: unknown;
 }
 
 export interface EdgeRun {

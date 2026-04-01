@@ -40,6 +40,7 @@ type WorkerTaskEvent struct {
 	TaskID     string `json:"task_id"`
 	Status     string `json:"status,omitempty"`
 	Output     string `json:"output,omitempty"`
+	Result     string `json:"result,omitempty"`
 	ExitCode   *int   `json:"exit_code,omitempty"`
 	StartedAt  string `json:"started_at,omitempty"`
 	FinishedAt string `json:"finished_at,omitempty"`
@@ -51,12 +52,13 @@ type NodeCommand struct {
 }
 
 type AssignedTask struct {
-	RunID          string          `json:"run_id"`
-	TaskID         string          `json:"task_id"`
-	Name           string          `json:"name"`
-	Type           TaskType        `json:"type"`
-	Config         json.RawMessage `json:"config"`
-	ConditionInput *ConditionInput `json:"condition_input,omitempty"`
+	RunID          string            `json:"run_id"`
+	TaskID         string            `json:"task_id"`
+	Name           string            `json:"name"`
+	Type           TaskType          `json:"type"`
+	Config         json.RawMessage   `json:"config"`
+	Env            map[string]string `json:"env,omitempty"`
+	ConditionInput *ConditionInput   `json:"condition_input,omitempty"`
 }
 
 type ConditionInput struct {

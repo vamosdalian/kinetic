@@ -11,5 +11,6 @@ type WorkflowRunEvent struct {
 	StartedAt      string `json:"started_at,omitempty"`
 	FinishedAt     string `json:"finished_at,omitempty"`
 	Output         string `json:"output,omitempty"`
+	Result         string `json:"result,omitempty"`
 	ExitCode       *int   `json:"exit_code,omitempty"`
 }

@@ -9,6 +9,14 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  HoverCard,
+  HoverCardContent,
+  HoverCardTrigger,
+} from "@/components/ui/hover-card";
+import { Button } from "@/components/ui/button";
+import { CircleQuestionMark } from "lucide-react";
+import { KeyValueEditor } from "./key-value-editor";
 import type { WorkflowData } from "./types";
 
 interface WorkflowFormProps {
@@ -17,7 +25,24 @@ interface WorkflowFormProps {
   onUpdate: (data: Partial<WorkflowData>) => void;
 }
 
-const ANY_NODE_VALUE = "__any_node__";
+function HelpHint({ content }: { content: React.ReactNode }) {
+  return (
+    <HoverCard openDelay={150} closeDelay={100}>
+      <HoverCardTrigger asChild>
+        <button
+          type="button"
+          className="inline-flex h-4 w-4 items-center justify-center text-muted-foreground transition-colors hover:text-foreground"
+          aria-label="Show help"
+        >
+          <CircleQuestionMark className="h-4 w-4" />
+        </button>
+      </HoverCardTrigger>
+      <HoverCardContent align="start" className="w-72 text-sm leading-5">
+        {content}
+      </HoverCardContent>
+    </HoverCard>
+  );
+}
 
 export function Workflowform({ data, tagOptions, onUpdate }: WorkflowFormProps) {
   return (
@@ -51,16 +76,15 @@ export function Workflowform({ data, tagOptions, onUpdate }: WorkflowFormProps) 
       <div className="grid gap-2">
         <Label htmlFor="workflow_tag">Tag</Label>
         <Select
-          value={data.tag || ANY_NODE_VALUE}
+          value={data.tag || "node-default"}
           onValueChange={(value) => {
-            onUpdate({ tag: value === ANY_NODE_VALUE ? "" : value });
+            onUpdate({ tag: value });
           }}
         >
           <SelectTrigger id="workflow_tag" className="w-full">
             <SelectValue placeholder="Select node tag" />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value={ANY_NODE_VALUE}>Any node</SelectItem>
             {tagOptions.map((tag) => (
               <SelectItem key={tag} value={tag}>
                 {tag}
@@ -68,6 +92,55 @@ export function Workflowform({ data, tagOptions, onUpdate }: WorkflowFormProps) 
             ))}
           </SelectContent>
         </Select>
+      </div>
+
+      <div className="grid gap-2">
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2">
+            <Label>Environment Variables</Label>
+            <HelpHint content="These values are stored under workflow config and inherited by tasks unless overridden. Keys are unique within this map." />
+          </div>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              const env = { ...(data.config.env ?? {}) };
+              let index = Object.keys(env).length + 1;
+              let candidate = `env-${index}`;
+
+              while (candidate in env) {
+                index += 1;
+                candidate = `env-${index}`;
+              }
+
+              env[candidate] = "";
+              onUpdate({
+                config: {
+                  ...data.config,
+                  env,
+                },
+              });
+            }}
+          >
+            Add
+          </Button>
+        </div>
+        <KeyValueEditor
+          values={data.config.env ?? {}}
+          onChange={(env) => {
+            onUpdate({
+              config: {
+                ...data.config,
+                env,
+              },
+            });
+          }}
+          keyPlaceholder="Variable name"
+          valuePlaceholder="Variable value"
+          keyPrefix="env"
+          showAddButton={false}
+        />
       </div>
     </div>
   );
