@@ -111,7 +111,7 @@ func NewTask(task TaskEntity) (Task, error) {
 			body:    cfg.Body,
 			client:  http.DefaultClient,
 		}, nil
-	case "python", "condition":
+	case "condition":
 		return &unsupportedTask{id: task.ID, taskType: task.Type}, nil
 	default:
 		return nil, fmt.Errorf("unsupported task type: %s", task.Type)

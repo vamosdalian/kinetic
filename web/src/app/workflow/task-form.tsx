@@ -62,8 +62,6 @@ export function Taskform({
   tagOptions,
   onUpdate,
 }: TaskFormProps) {
-  const isLegacyPythonTask = node?.type === "python";
-
   const config = React.useMemo(() => {
     if (!node) {
       return null;
@@ -223,11 +221,6 @@ export function Taskform({
             <SelectItem value="shell">Shell</SelectItem>
             <SelectItem value="http">HTTP</SelectItem>
             <SelectItem value="condition">Condition</SelectItem>
-            {isLegacyPythonTask ? (
-              <SelectItem value="python" disabled>
-                Python (unsupported)
-              </SelectItem>
-            ) : null}
           </SelectContent>
         </Select>
       </div>
@@ -337,15 +330,6 @@ export function Taskform({
             />
           </div>
         </>
-      )}
-
-      {node.type === "python" && (
-        <div className="grid gap-2">
-          <Label>Python Task</Label>
-          <div className="rounded-md border border-dashed px-3 py-4 text-sm text-muted-foreground">
-            Python tasks are not editable in the frontend yet.
-          </div>
-        </div>
       )}
 
       {node.type === "condition" && (

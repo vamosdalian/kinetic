@@ -99,6 +99,12 @@ func validateTaskConfig(task entity.TaskEntity) error {
 		if strings.TrimSpace(cfg.Script) == "" {
 			return fmt.Errorf("shell script is required")
 		}
+		if err := ValidateTemplateString(cfg.Script); err != nil {
+			return err
+		}
+		if err := ValidateTemplateEnvValues(cfg.TaskPolicy.Env); err != nil {
+			return err
+		}
 	case "http":
 		var cfg HTTPConfig
 		if err := decodeConfig(task.Config, &cfg); err != nil {
@@ -107,13 +113,22 @@ func validateTaskConfig(task entity.TaskEntity) error {
 		if strings.TrimSpace(cfg.URL) == "" {
 			return fmt.Errorf("http url is required")
 		}
-	case "python":
-		var cfg PythonConfig
-		if err := decodeConfig(task.Config, &cfg); err != nil {
-			return fmt.Errorf("invalid python config: %w", err)
+		if err := ValidateTemplateString(cfg.URL); err != nil {
+			return err
 		}
-		if strings.TrimSpace(cfg.Script) == "" {
-			return fmt.Errorf("python script is required")
+		if err := ValidateTemplateString(cfg.Method); err != nil {
+			return err
+		}
+		if err := ValidateTemplateString(cfg.Body); err != nil {
+			return err
+		}
+		for key, value := range cfg.Headers {
+			if err := ValidateTemplateString(value); err != nil {
+				return fmt.Errorf("invalid template in header %s: %w", key, err)
+			}
+		}
+		if err := ValidateTemplateEnvValues(cfg.TaskPolicy.Env); err != nil {
+			return err
 		}
 	case "condition":
 		var cfg ConditionConfig
@@ -123,7 +138,15 @@ func validateTaskConfig(task entity.TaskEntity) error {
 		if strings.TrimSpace(cfg.Expression) == "" {
 			return fmt.Errorf("condition expression is required")
 		}
-		if _, err := ParseConditionExpression(cfg.Expression); err != nil {
+		if err := ValidateTemplateString(cfg.Expression); err != nil {
+			return err
+		}
+		if !ContainsTemplate(cfg.Expression) {
+			if _, err := ParseConditionExpression(cfg.Expression); err != nil {
+				return err
+			}
+		}
+		if err := ValidateTemplateEnvValues(cfg.TaskPolicy.Env); err != nil {
 			return err
 		}
 	default:
@@ -142,4 +165,14 @@ func decodeConfig(raw string, target any) error {
 		raw = "{}"
 	}
 	return json.Unmarshal([]byte(raw), target)
+}
+
+func ValidateTemplateEnvValues(values map[string]string) error {
+	for key, value := range values {
+		if err := ValidateTemplateString(value); err != nil {
+			return fmt.Errorf("invalid template in env %s: %w", key, err)
+		}
+	}
+
+	return nil
 }

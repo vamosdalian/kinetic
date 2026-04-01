@@ -1,6 +1,7 @@
 package sqlite
 
 import (
+	"database/sql"
 	"encoding/json"
 	"strings"
 
@@ -8,6 +9,10 @@ import (
 	"github.com/vamosdalian/kinetic/internal/model/entity"
 	workflowcfg "github.com/vamosdalian/kinetic/internal/workflow"
 )
+
+type statementPreparer interface {
+	Prepare(query string) (*sql.Stmt, error)
+}
 
 func (s *SqliteDB) ListWorkflows(offset int, limit int) ([]entity.WorkflowEntity, error) {
 	return s.ListWorkflowsFiltered(offset, limit, "")
@@ -104,7 +109,11 @@ func (s *SqliteDB) GetWorkflowByID(id string) (entity.WorkflowEntity, error) {
 }
 
 func (s *SqliteDB) SaveWorkflow(req entity.WorkflowEntity) error {
-	stmt, err := s.db.Prepare(`
+	return saveWorkflowWithPreparer(s.db, req)
+}
+
+func saveWorkflowWithPreparer(preparer statementPreparer, req entity.WorkflowEntity) error {
+	stmt, err := preparer.Prepare(`
 		INSERT INTO workflows (id, name, description, config, tag, version, enable, created_at, updated_at) 
 		VALUES (?, ?, ?, ?, ?, 1, ?, DATETIME('now'), DATETIME('now'))
 		ON CONFLICT(id) DO UPDATE SET
@@ -131,6 +140,32 @@ func (s *SqliteDB) SaveWorkflow(req entity.WorkflowEntity) error {
 	return nil
 }
 
+func (s *SqliteDB) SaveWorkflowDefinition(workflow entity.WorkflowEntity, tasks []entity.TaskEntity, edges []entity.EdgeEntity) error {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	if err := saveWorkflowWithPreparer(tx, workflow); err != nil {
+		return err
+	}
+	if _, err := tx.Exec("DELETE FROM tasks WHERE workflow_id = ?", workflow.ID); err != nil {
+		return err
+	}
+	if _, err := tx.Exec("DELETE FROM edges WHERE workflow_id = ?", workflow.ID); err != nil {
+		return err
+	}
+	if _, err := saveTasksWithPreparer(tx, tasks); err != nil {
+		return err
+	}
+	if _, err := saveEdgesWithPreparer(tx, edges); err != nil {
+		return err
+	}
+
+	return tx.Commit()
+}
+
 func normalizeJSONText(raw string) string {
 	trimmed := strings.TrimSpace(raw)
 	if trimmed == "" {
@@ -149,8 +184,42 @@ func normalizeJSONText(raw string) string {
 }
 
 func (s *SqliteDB) DeleteWorkflow(id string) error {
-	_, err := s.db.Exec("DELETE FROM workflows WHERE id = ?", id)
-	return err
+	deleted, err := s.DeleteWorkflowDefinition(id)
+	if err != nil {
+		return err
+	}
+	if !deleted {
+		return sql.ErrNoRows
+	}
+	return nil
+}
+
+func (s *SqliteDB) DeleteWorkflowDefinition(id string) (bool, error) {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return false, err
+	}
+	defer tx.Rollback()
+
+	result, err := tx.Exec("DELETE FROM workflows WHERE id = ?", id)
+	if err != nil {
+		return false, err
+	}
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return false, err
+	}
+	if rowsAffected == 0 {
+		return false, nil
+	}
+	if _, err := tx.Exec("DELETE FROM tasks WHERE workflow_id = ?", id); err != nil {
+		return false, err
+	}
+	if _, err := tx.Exec("DELETE FROM edges WHERE workflow_id = ?", id); err != nil {
+		return false, err
+	}
+
+	return true, tx.Commit()
 }
 
 func (s *SqliteDB) ListTasks(workflowID string) ([]entity.TaskEntity, error) {
@@ -173,7 +242,11 @@ func (s *SqliteDB) ListTasks(workflowID string) ([]entity.TaskEntity, error) {
 }
 
 func (s *SqliteDB) SaveTasks(req []entity.TaskEntity) ([]entity.TaskEntity, error) {
-	stmt, err := s.db.Prepare(`
+	return saveTasksWithPreparer(s.db, req)
+}
+
+func saveTasksWithPreparer(preparer statementPreparer, req []entity.TaskEntity) ([]entity.TaskEntity, error) {
+	stmt, err := preparer.Prepare(`
 		INSERT INTO tasks (id, workflow_id, name, type, description, config, tag, position, node_type) 
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(id) DO UPDATE SET
@@ -229,7 +302,11 @@ func (s *SqliteDB) ListEdges(workflowID string) ([]entity.EdgeEntity, error) {
 }
 
 func (s *SqliteDB) SaveEdges(req []entity.EdgeEntity) ([]entity.EdgeEntity, error) {
-	stmt, err := s.db.Prepare(`
+	return saveEdgesWithPreparer(s.db, req)
+}
+
+func saveEdgesWithPreparer(preparer statementPreparer, req []entity.EdgeEntity) ([]entity.EdgeEntity, error) {
+	stmt, err := preparer.Prepare(`
 		INSERT INTO edges (id, workflow_id, source, target, source_handle, target_handle) 
 		VALUES (?, ?, ?, ?, ?, ?)
 		ON CONFLICT(id) DO UPDATE SET

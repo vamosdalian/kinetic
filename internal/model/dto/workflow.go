@@ -31,7 +31,6 @@ type TaskType string
 const (
 	TaskTypeShell     TaskType = "shell"
 	TaskTypeHTTP      TaskType = "http"
-	TaskTypePython    TaskType = "python"
 	TaskTypeCondition TaskType = "condition"
 )
 

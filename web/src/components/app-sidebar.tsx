@@ -63,7 +63,7 @@ const data = {
     },
     {
       title: "Get Help",
-      url: "#",
+      url: "/docs",
       icon: FileQuestionMark,
     },
   ],

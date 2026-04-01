@@ -2,7 +2,6 @@ import { type Edge } from "@xyflow/react";
 import {
   type ConditionConfig,
   type HttpConfig,
-  type PythonConfig,
   type ShellConfig,
   type TaskConfig,
   type TaskNode,
@@ -66,11 +65,6 @@ export function validateWorkflowDefinition(
       case "http":
         if (!((config as HttpConfig).url || "").trim()) {
           errors.push(`${getTaskLabel(task)} requires a request URL.`);
-        }
-        break;
-      case "python":
-        if (!((config as PythonConfig).script || "").trim()) {
-          errors.push(`${getTaskLabel(task)} requires a Python script.`);
         }
         break;
       case "condition":

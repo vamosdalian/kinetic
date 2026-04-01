@@ -32,12 +32,6 @@ type HTTPConfig struct {
 	TaskPolicy
 }
 
-type PythonConfig struct {
-	Script       string   `json:"script"`
-	Requirements []string `json:"requirements,omitempty"`
-	TaskPolicy
-}
-
 type ConditionConfig struct {
 	Expression string `json:"expression"`
 	TaskPolicy

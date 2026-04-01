@@ -21,7 +21,7 @@ interface TaskNode {
   id: string;
   name: string;
   description: string;
-  type: "shell" | "http" | "python" | "condition";
+  type: "shell" | "http" | "condition";
   config: Record<string, unknown>;
   position: Position;
   nodeType: string;
@@ -104,11 +104,10 @@ const mockWorkflowDetails: Map<string, WorkflowDetail> = new Map([
         {
           id: "task-003",
           name: "Generate Report",
-          description: "Run Python script to generate report",
-          type: "python",
+          description: "Generate report data with a shell script",
+          type: "shell",
           config: {
-            script: "print('Generating report...')",
-            requirements: ["pandas>=1.5.0"],
+            script: "printf 'Generating report...\\n'",
           },
           position: { x: 250, y: 100 },
           nodeType: "baseNodeFull",

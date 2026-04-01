@@ -18,7 +18,9 @@ type Database interface {
 	CountWorkflowsFiltered(query string) (int, error)
 	GetWorkflowByID(id string) (entity.WorkflowEntity, error)
 	SaveWorkflow(req entity.WorkflowEntity) error
+	SaveWorkflowDefinition(workflow entity.WorkflowEntity, tasks []entity.TaskEntity, edges []entity.EdgeEntity) error
 	DeleteWorkflow(id string) error
+	DeleteWorkflowDefinition(id string) (bool, error)
 	ListNodes() ([]entity.NodeEntity, error)
 	GetNodeByID(nodeID string) (entity.NodeEntity, error)
 	UpsertNode(node entity.NodeEntity) error

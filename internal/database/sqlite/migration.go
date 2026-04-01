@@ -124,6 +124,32 @@ ALTER TABLE workflow_runs ADD COLUMN workflow_config TEXT DEFAULT '';
 	6: `
 ALTER TABLE task_runs ADD COLUMN result TEXT DEFAULT '';
 `,
+	7: `
+DELETE FROM edge_runs
+WHERE workflow_id IN (
+	SELECT DISTINCT workflow_id FROM tasks WHERE type = 'python'
+);
+DELETE FROM task_runs
+WHERE workflow_id IN (
+	SELECT DISTINCT workflow_id FROM tasks WHERE type = 'python'
+);
+DELETE FROM workflow_runs
+WHERE workflow_id IN (
+	SELECT DISTINCT workflow_id FROM tasks WHERE type = 'python'
+);
+DELETE FROM edges
+WHERE workflow_id IN (
+	SELECT DISTINCT workflow_id FROM tasks WHERE type = 'python'
+);
+DELETE FROM workflows
+WHERE id IN (
+	SELECT DISTINCT workflow_id FROM tasks WHERE type = 'python'
+);
+DELETE FROM tasks
+WHERE workflow_id IN (
+	SELECT DISTINCT workflow_id FROM tasks WHERE type = 'python'
+);
+`,
 }
 
 func (s *SqliteDB) Migrate() error {

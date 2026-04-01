@@ -17,6 +17,10 @@ const Admin = React.lazy(async () => {
   const mod = await import("./admin/admin");
   return { default: mod.Admin };
 });
+const Docs = React.lazy(async () => {
+  const mod = await import("./docs/docs");
+  return { default: mod.Docs };
+});
 const Node = React.lazy(async () => {
   const mod = await import("./node/node");
   return { default: mod.Node };
@@ -65,6 +69,7 @@ export default function Page() {
             <Route path="/record/:runId" element={<RecordDetail />} />
             <Route path="/node" element={<Node />} />
             <Route path="/admin" element={<Admin />} />
+            <Route path="/docs" element={<Docs />} />
           </Routes>
         </React.Suspense>
       </SidebarInset>

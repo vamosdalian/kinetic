@@ -4,7 +4,6 @@ import { Handle, Position, type NodeProps } from "@xyflow/react";
 import { 
   SquareTerminal, 
   Globe, 
-  Code, 
   GitBranch, 
   // Circle,
   HelpCircle
@@ -44,8 +43,6 @@ const TypeIcon = ({ type }: { type: string }) => {
       return <SquareTerminal className="w-3 h-3 flex-shrink-0" />;
     case "http":
       return <Globe className="w-3 h-3 flex-shrink-0" />;
-    case "python":
-      return <Code className="w-3 h-3 flex-shrink-0" />;
     case "condition":
       return <GitBranch className="w-3 h-3 flex-shrink-0" />;
     default:

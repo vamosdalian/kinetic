@@ -14,7 +14,7 @@ Kinetic is a lightweight workflow orchestration system with a built-in web UI, H
 
 - Built-in web UI served by the backend binary
 - Workflow graph editing and execution tracking
-- Task types for `shell`, `http`, `python`, and `condition`
+- Task types for `shell`, `http`, and `condition`
 - Controller and worker run modes
 - Embedded worker support for single-node deployments
 - Distributed execution with node registration, heartbeats, and task streaming
@@ -185,7 +185,6 @@ Supported task types:
 
 - `shell`: run shell scripts on a worker
 - `http`: make HTTP requests as workflow steps
-- `python`: execute Python scripts
 - `condition`: branch execution based on an expression
 
 Validation rules include:
@@ -251,7 +250,7 @@ In this example, the shell task receives `API_BASE_URL=https://staging-api.examp
 
 Shell tasks also receive `KINETIC_RESULT_PATH`, which points to `~/.kinetic/results/[runid]/[taskid]_result.json` on the machine that executes the task. If the script writes valid JSON to that file, Kinetic stores it in `task_runs.result` and exposes it from the workflow run detail API. Invalid JSON causes the task to fail.
 
-At the moment, runtime environment injection is implemented for shell tasks. Other task types may store `env` in config, but whether they consume it depends on the task type's runtime behavior.
+At the moment, shell tasks receive environment variables directly at runtime. Other supported task types can still reference templated values in their config where applicable.
 
 ## Release
 
