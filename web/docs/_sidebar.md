@@ -1,2 +1,5 @@
 - [Overview](README.md)
+- [Workflow Basics](workflow-basics.md)
+- [Task Types](task-types.md)
 - [Workflow Templates](workflow-templates.md)
+- [Runs And Nodes](runs-and-nodes.md)
