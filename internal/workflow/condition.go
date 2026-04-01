@@ -12,6 +12,7 @@ type ConditionInput struct {
 	Status   string
 	ExitCode int
 	Output   string
+	Result   string
 }
 
 type ConditionExpression struct {

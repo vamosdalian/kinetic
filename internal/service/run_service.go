@@ -59,6 +59,7 @@ type completedTaskState struct {
 	Status   string
 	ExitCode int
 	Output   string
+	Result   string
 }
 
 type runtimeTaskResult struct {
@@ -304,6 +305,7 @@ func (s *RunService) runDAG(ctx context.Context, runID string, graph runGraph) (
 				Status:   result.status,
 				ExitCode: result.result.ExitCode,
 				Output:   result.result.Output,
+				Result:   result.result.Result,
 			}
 			if ctx.Err() == nil && !failed {
 				graph.activateOutbound(result.taskID, result.selectedBranch)
@@ -370,21 +372,9 @@ func (s *RunService) executeTask(ctx context.Context, runID string, task entity.
 	}
 	s.publishTaskStatus(runID, task.TaskID)
 
-	policy, err := workflowcfg.ParseTaskPolicy(task.TaskConfig)
+	renderedConfig, policy, effectiveEnv, err := s.prepareTaskExecution(runID, task, conditionInput)
 	if err != nil {
-		output := fmt.Sprintf("Invalid task policy: %v", err)
-		_ = s.db.FinishTaskRun(runID, task.TaskID, "failed", -1, output, "")
-		s.publishTaskStatus(runID, task.TaskID)
-		return runtimeTaskResult{
-			taskID: task.TaskID,
-			status: "failed",
-			result: executor.TaskResult{ExitCode: -1, Output: output},
-			err:    err,
-		}
-	}
-	effectiveEnv, err := s.buildTaskEnvironment(runID, task.TaskName, policy)
-	if err != nil {
-		output := fmt.Sprintf("Invalid task environment: %v", err)
+		output := fmt.Sprintf("Invalid task execution context: %v", err)
 		_ = s.db.FinishTaskRun(runID, task.TaskID, "failed", -1, output, "")
 		s.publishTaskStatus(runID, task.TaskID)
 		return runtimeTaskResult{
@@ -439,7 +429,7 @@ func (s *RunService) executeTask(ctx context.Context, runID string, task entity.
 			attemptCtx, cancelAttempt = context.WithTimeout(ctx, time.Duration(policy.TimeoutSeconds)*time.Second)
 		}
 
-		lastResult, selectedBranch, lastErr = s.executeTaskAttempt(attemptCtx, runID, task, conditionInput, effectiveEnv, emitOutput)
+		lastResult, selectedBranch, lastErr = s.executeTaskAttempt(attemptCtx, runID, task, renderedConfig, conditionInput, effectiveEnv, emitOutput)
 		cancelAttempt()
 
 		if lastErr == nil {
@@ -504,10 +494,10 @@ func (s *RunService) executeTask(ctx context.Context, runID string, task entity.
 	}
 }
 
-func (s *RunService) executeTaskAttempt(ctx context.Context, runID string, task entity.TaskRunEntity, conditionInput *workflowcfg.ConditionInput, effectiveEnv map[string]string, onOutput executor.OutputFunc) (executor.TaskResult, string, error) {
+func (s *RunService) executeTaskAttempt(ctx context.Context, runID string, task entity.TaskRunEntity, renderedConfig string, conditionInput *workflowcfg.ConditionInput, effectiveEnv map[string]string, onOutput executor.OutputFunc) (executor.TaskResult, string, error) {
 	if task.TaskType == "condition" {
 		var cfg workflowcfg.ConditionConfig
-		if err := json.Unmarshal([]byte(task.TaskConfig), &cfg); err != nil {
+		if err := json.Unmarshal([]byte(renderedConfig), &cfg); err != nil {
 			return executor.TaskResult{ExitCode: -1}, "", fmt.Errorf("invalid condition config: %w", err)
 		}
 		if conditionInput == nil {
@@ -539,7 +529,7 @@ func (s *RunService) executeTaskAttempt(ctx context.Context, runID string, task 
 		RunID:  runID,
 		ID:     task.TaskID,
 		Type:   task.TaskType,
-		Config: task.TaskConfig,
+		Config: renderedConfig,
 		Env:    effectiveEnv,
 	})
 	if err != nil {
@@ -553,28 +543,18 @@ func (s *RunService) executeTaskAttempt(ctx context.Context, runID string, task 
 	return result, "", err
 }
 
-func (s *RunService) buildTaskEnvironment(runID string, taskName string, policy workflowcfg.TaskPolicy) (map[string]string, error) {
-	run, err := s.db.GetWorkflowRun(runID)
-	if err != nil {
-		return nil, err
-	}
-
-	workflowConfig, err := workflowcfg.ParseWorkflowConfig(run.WorkflowConfig)
-	if err != nil {
-		return nil, err
-	}
-
+func buildTaskEnvironment(run entity.WorkflowRunEntity, taskName string, workflowEnv map[string]string, policy workflowcfg.TaskPolicy) map[string]string {
 	env := map[string]string{
 		workflowcfg.ReservedEnvPrefix + "WORKFLOW_NAME": run.WorkflowName,
 		workflowcfg.ReservedEnvPrefix + "TASK_NAME":     taskName,
 	}
-	for key, value := range workflowConfig.Env {
+	for key, value := range workflowEnv {
 		env[key] = value
 	}
 	for key, value := range policy.Env {
 		env[key] = value
 	}
-	return env, nil
+	return env
 }
 
 func buildRunGraph(tasks []entity.TaskRunEntity, edges []entity.EdgeRunEntity) (runGraph, error) {
@@ -650,26 +630,41 @@ func (g runGraph) activateOutbound(taskID string, selectedBranch string) {
 }
 
 func (n *runtimeNode) buildConditionInput(completed map[string]completedTaskState) (*workflowcfg.ConditionInput, error) {
-	if n.task.TaskType != "condition" {
+	if len(n.inbound) == 0 {
 		return nil, nil
 	}
 
+	var input *workflowcfg.ConditionInput
+	activeParents := 0
 	for _, edge := range n.inbound {
 		if edge.state != edgeStateActive {
 			continue
 		}
 		parent, ok := completed[edge.edge.EdgeSource]
 		if !ok {
-			return nil, fmt.Errorf("condition task %s is missing upstream result", n.task.TaskName)
+			return nil, fmt.Errorf("task %s is missing upstream result", n.task.TaskName)
 		}
-		return &workflowcfg.ConditionInput{
+		activeParents++
+		input = &workflowcfg.ConditionInput{
 			Status:   parent.Status,
 			ExitCode: parent.ExitCode,
 			Output:   parent.Output,
-		}, nil
+			Result:   parent.Result,
+		}
 	}
 
-	return nil, fmt.Errorf("condition task %s requires an active upstream result", n.task.TaskName)
+	if n.task.TaskType == "condition" {
+		if activeParents == 1 {
+			return input, nil
+		}
+		return nil, fmt.Errorf("condition task %s requires an active upstream result", n.task.TaskName)
+	}
+
+	if activeParents == 1 {
+		return input, nil
+	}
+
+	return nil, nil
 }
 
 func (s *RunService) finalizeCancelledBeforeStart(ctx context.Context, runID string) error {
@@ -750,11 +745,11 @@ func (s *RunService) PrepareAssignedTask(runID string, taskID string) (*dto.Assi
 	if err != nil {
 		return nil, err
 	}
-	policy, err := workflowcfg.ParseTaskPolicy(task.TaskConfig)
+	conditionInput, err := s.conditionInputForTask(runID, taskID)
 	if err != nil {
 		return nil, err
 	}
-	effectiveEnv, err := s.buildTaskEnvironment(runID, task.TaskName, policy)
+	renderedConfig, _, effectiveEnv, err := s.prepareTaskExecution(runID, task, conditionInput)
 	if err != nil {
 		return nil, err
 	}
@@ -764,21 +759,15 @@ func (s *RunService) PrepareAssignedTask(runID string, taskID string) (*dto.Assi
 		TaskID: taskID,
 		Name:   task.TaskName,
 		Type:   dto.TaskType(task.TaskType),
-		Config: json.RawMessage(task.TaskConfig),
+		Config: json.RawMessage(renderedConfig),
 		Env:    effectiveEnv,
 	}
 
-	if task.TaskType == "condition" {
-		input, err := s.conditionInputForTask(runID, taskID)
-		if err != nil {
-			return nil, err
-		}
-		if input != nil {
-			assigned.ConditionInput = &dto.ConditionInput{
-				Status:   input.Status,
-				ExitCode: input.ExitCode,
-				Output:   input.Output,
-			}
+	if task.TaskType == "condition" && conditionInput != nil {
+		assigned.ConditionInput = &dto.ConditionInput{
+			Status:   conditionInput.Status,
+			ExitCode: conditionInput.ExitCode,
+			Output:   conditionInput.Output,
 		}
 	}
 
@@ -937,6 +926,7 @@ func (s *RunService) queueReadyTasks(runID string) error {
 				Status:   task.Status,
 				ExitCode: task.ExitCode,
 				Output:   task.Output,
+				Result:   task.Result,
 			}
 		}
 	}
@@ -1042,6 +1032,7 @@ func (s *RunService) conditionInputForTask(runID string, taskID string) (*workfl
 				Status:   task.Status,
 				ExitCode: task.ExitCode,
 				Output:   task.Output,
+				Result:   task.Result,
 			}
 		}
 	}
@@ -1067,6 +1058,189 @@ func (s *RunService) conditionInputForTask(runID string, taskID string) (*workfl
 		return nil, fmt.Errorf("task %s not found in run graph", taskID)
 	}
 	return node.buildConditionInput(completed)
+}
+
+func (s *RunService) prepareTaskExecution(runID string, task entity.TaskRunEntity, conditionInput *workflowcfg.ConditionInput) (string, workflowcfg.TaskPolicy, map[string]string, error) {
+	run, err := s.db.GetWorkflowRun(runID)
+	if err != nil {
+		return "", workflowcfg.TaskPolicy{}, nil, err
+	}
+
+	workflowConfig, err := workflowcfg.ParseWorkflowConfig(run.WorkflowConfig)
+	if err != nil {
+		return "", workflowcfg.TaskPolicy{}, nil, err
+	}
+
+	workflowConfigValue, err := decodeTemplateJSONValue(run.WorkflowConfig)
+	if err != nil {
+		return "", workflowcfg.TaskPolicy{}, nil, fmt.Errorf("decode workflow config: %w", err)
+	}
+	rawTaskConfigValue, err := decodeTemplateJSONValue(task.TaskConfig)
+	if err != nil {
+		return "", workflowcfg.TaskPolicy{}, nil, fmt.Errorf("decode task config: %w", err)
+	}
+	rawTaskEnv := extractTemplateEnv(rawTaskConfigValue)
+
+	baseContext := buildTaskTemplateContext(run, workflowConfigValue, workflowConfig.Env, task, rawTaskEnv, conditionInput)
+	renderedWorkflowEnv, err := workflowcfg.RenderStringMapValues(workflowConfig.Env, baseContext)
+	if err != nil {
+		return "", workflowcfg.TaskPolicy{}, nil, fmt.Errorf("render workflow env: %w", err)
+	}
+
+	setTemplateEnv(workflowConfigValue, renderedWorkflowEnv)
+	renderedTaskEnv, err := workflowcfg.RenderStringMapValues(rawTaskEnv, buildTaskTemplateContext(run, workflowConfigValue, renderedWorkflowEnv, task, rawTaskEnv, conditionInput))
+	if err != nil {
+		return "", workflowcfg.TaskPolicy{}, nil, fmt.Errorf("render task env: %w", err)
+	}
+
+	renderContext := buildTaskTemplateContext(run, workflowConfigValue, renderedWorkflowEnv, task, renderedTaskEnv, conditionInput)
+	renderedConfig, err := workflowcfg.RenderJSONStrings(task.TaskConfig, renderContext)
+	if err != nil {
+		return "", workflowcfg.TaskPolicy{}, nil, fmt.Errorf("render task config: %w", err)
+	}
+
+	renderedPolicy, err := workflowcfg.ParseTaskPolicy(renderedConfig)
+	if err != nil {
+		return "", workflowcfg.TaskPolicy{}, nil, fmt.Errorf("parse rendered task policy: %w", err)
+	}
+
+	return renderedConfig, renderedPolicy, buildTaskEnvironment(run, task.TaskName, renderedWorkflowEnv, renderedPolicy), nil
+}
+
+func buildTaskTemplateContext(run entity.WorkflowRunEntity, workflowConfigValue any, workflowEnv map[string]string, task entity.TaskRunEntity, taskEnv map[string]string, conditionInput *workflowcfg.ConditionInput) map[string]any {
+	runtimeEnv := map[string]string{
+		"workflowName": run.WorkflowName,
+		"taskName":     task.TaskName,
+		"createdAt":    run.CreatedAt.UTC().Format(time.RFC3339),
+		"startTime":    templateRunStartTime(run),
+	}
+
+	context := map[string]any{
+		"workflow": map[string]any{
+			"id":          run.WorkflowID,
+			"name":        run.WorkflowName,
+			"description": run.WorkflowDescription,
+			"version":     run.WorkflowVersion,
+			"tag":         run.WorkflowTag,
+			"config":      workflowConfigValue,
+			"env":         workflowEnv,
+		},
+		"task": map[string]any{
+			"id":          task.TaskID,
+			"name":        task.TaskName,
+			"description": task.TaskDescription,
+			"type":        task.TaskType,
+			"tag":         task.TaskTag,
+			"env":         taskEnv,
+		},
+		"runtime": map[string]any{
+			"runID":     run.RunID,
+			"createdAt": run.CreatedAt.UTC().Format(time.RFC3339),
+			"startTime": templateRunStartTime(run),
+			"env":       runtimeEnv,
+		},
+	}
+
+	upstream := buildTemplateUpstream(conditionInput)
+	if upstream != nil {
+		context["upstream"] = upstream
+		context["previous"] = upstream
+	}
+
+	return context
+}
+
+func buildTemplateUpstream(input *workflowcfg.ConditionInput) map[string]any {
+	if input == nil {
+		return nil
+	}
+
+	upstream := map[string]any{
+		"status":   input.Status,
+		"exitCode": input.ExitCode,
+		"output":   input.Output,
+		"result":   input.Result,
+	}
+	if jsonValue := parseTemplateJSON(input.Output); jsonValue != nil {
+		upstream["outputJSON"] = jsonValue
+	}
+	if jsonValue := parseTemplateJSON(input.Result); jsonValue != nil {
+		upstream["resultJSON"] = jsonValue
+	}
+
+	return upstream
+}
+
+func decodeTemplateJSONValue(raw string) (any, error) {
+	if strings.TrimSpace(raw) == "" {
+		return map[string]any{}, nil
+	}
+
+	var value any
+	if err := json.Unmarshal([]byte(raw), &value); err != nil {
+		return nil, err
+	}
+
+	return value, nil
+}
+
+func extractTemplateEnv(value any) map[string]string {
+	object, ok := value.(map[string]any)
+	if !ok {
+		return nil
+	}
+	envValue, ok := object["env"]
+	if !ok {
+		return nil
+	}
+	envObject, ok := envValue.(map[string]any)
+	if !ok {
+		return nil
+	}
+
+	env := make(map[string]string, len(envObject))
+	for key, raw := range envObject {
+		stringValue, ok := raw.(string)
+		if !ok {
+			continue
+		}
+		env[key] = stringValue
+	}
+	return env
+}
+
+func setTemplateEnv(value any, env map[string]string) {
+	object, ok := value.(map[string]any)
+	if !ok {
+		return
+	}
+	if env == nil {
+		delete(object, "env")
+		return
+	}
+	envValue := make(map[string]any, len(env))
+	for key, item := range env {
+		envValue[key] = item
+	}
+	object["env"] = envValue
+}
+
+func parseTemplateJSON(raw string) any {
+	if strings.TrimSpace(raw) == "" {
+		return nil
+	}
+	var value any
+	if err := json.Unmarshal([]byte(raw), &value); err != nil {
+		return nil
+	}
+	return value
+}
+
+func templateRunStartTime(run entity.WorkflowRunEntity) string {
+	if run.StartedAt != nil && !run.StartedAt.IsZero() {
+		return run.StartedAt.UTC().Format(time.RFC3339)
+	}
+	return run.CreatedAt.UTC().Format(time.RFC3339)
 }
 
 func resolveConditionBranch(task entity.TaskRunEntity, input *workflowcfg.ConditionInput) (string, error) {
