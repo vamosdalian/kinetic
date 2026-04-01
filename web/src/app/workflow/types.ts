@@ -2,7 +2,7 @@ import { type Edge } from "@xyflow/react";
 
 // ============ Task Type Configs ============
 
-export type TaskType = "shell" | "http" | "python" | "condition";
+export type TaskType = "shell" | "http" | "condition";
 
 export interface TaskPolicy {
   timeout_seconds?: number;
@@ -26,16 +26,11 @@ export interface HttpConfig extends TaskPolicy {
   body?: string;
 }
 
-export interface PythonConfig extends TaskPolicy {
-  script: string;
-  requirements?: string[];
-}
-
 export interface ConditionConfig extends TaskPolicy {
   expression: string;
 }
 
-export type TaskConfig = ShellConfig | HttpConfig | PythonConfig | ConditionConfig;
+export type TaskConfig = ShellConfig | HttpConfig | ConditionConfig;
 
 export function createTaskConfig(type: TaskType): TaskConfig {
   switch (type) {
@@ -43,8 +38,6 @@ export function createTaskConfig(type: TaskType): TaskConfig {
       return { script: "" };
     case "http":
       return { url: "", method: "GET", headers: {} };
-    case "python":
-      return { script: "", requirements: [] };
     case "condition":
       return { expression: "" };
   }

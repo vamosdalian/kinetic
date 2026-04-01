@@ -125,6 +125,34 @@ func TestWorkflowHandler_Save(t *testing.T) {
 				assert.True(t, apiResponse.Success)
 			},
 		},
+		{
+			name:       "拒绝保存 python 工作流",
+			workflowID: uuid.New().String(),
+			requestBody: dto.Workflow{
+				Name:        "Python Workflow",
+				Description: "Should be rejected",
+				Version:     1,
+				Enable:      true,
+				TaskNodes: []dto.TaskNode{{
+					ID:       uuid.New().String(),
+					Name:     "Python task",
+					Type:     dto.TaskType("python"),
+					Config:   json.RawMessage(`{"script":"print('hello')"}`),
+					Position: dto.Position{X: 100, Y: 200},
+					NodeType: "default",
+				}},
+				Edges: []dto.Edge{},
+			},
+			expectedStatus: http.StatusBadRequest,
+			validateResponse: func(t *testing.T, response *httptest.ResponseRecorder) {
+				var apiResponse APIResponse
+				err := json.Unmarshal(response.Body.Bytes(), &apiResponse)
+				assert.NoError(t, err)
+				assert.False(t, apiResponse.Success)
+				assert.NotNil(t, apiResponse.Error)
+				assert.Contains(t, apiResponse.Error.Message, "Workflow validation failed")
+			},
+		},
 	}
 
 	for _, tt := range tests {

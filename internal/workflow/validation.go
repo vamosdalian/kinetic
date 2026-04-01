@@ -130,25 +130,6 @@ func validateTaskConfig(task entity.TaskEntity) error {
 		if err := ValidateTemplateEnvValues(cfg.TaskPolicy.Env); err != nil {
 			return err
 		}
-	case "python":
-		var cfg PythonConfig
-		if err := decodeConfig(task.Config, &cfg); err != nil {
-			return fmt.Errorf("invalid python config: %w", err)
-		}
-		if strings.TrimSpace(cfg.Script) == "" {
-			return fmt.Errorf("python script is required")
-		}
-		if err := ValidateTemplateString(cfg.Script); err != nil {
-			return err
-		}
-		for index, requirement := range cfg.Requirements {
-			if err := ValidateTemplateString(requirement); err != nil {
-				return fmt.Errorf("invalid template in requirement %d: %w", index, err)
-			}
-		}
-		if err := ValidateTemplateEnvValues(cfg.TaskPolicy.Env); err != nil {
-			return err
-		}
 	case "condition":
 		var cfg ConditionConfig
 		if err := decodeConfig(task.Config, &cfg); err != nil {

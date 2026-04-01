@@ -75,3 +75,15 @@ func TestValidateDefinitionAllowsTemplatedConditionExpression(t *testing.T) {
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "edge source source-1 not found")
 }
+
+func TestValidateDefinitionRejectsPythonTasks(t *testing.T) {
+	err := ValidateDefinition([]entity.TaskEntity{{
+		ID:     "python-1",
+		Name:   "python-1",
+		Type:   "python",
+		Config: `{"script":"print('hello')"}`,
+	}}, nil)
+
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "unsupported task type python")
+}
