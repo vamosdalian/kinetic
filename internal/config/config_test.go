@@ -20,6 +20,7 @@ func TestLoad_CreatesDefaultConfigWhenMissing(t *testing.T) {
 	cfg := result.Config
 	assert.Equal(t, ModeController, cfg.Mode)
 	assert.True(t, cfg.Controller.EmbeddedWorkerEnabled)
+	assert.Equal(t, 5, cfg.Controller.SchedulerInterval)
 	assert.Equal(t, "http://localhost:9898", cfg.Worker.ControllerURL)
 	assert.Equal(t, 5, cfg.Worker.HeartbeatInterval)
 	assert.Equal(t, 10, cfg.Worker.MaxConcurrency)
@@ -57,6 +58,7 @@ database:
   path: /tmp/kinetic.db
 controller:
   embedded_worker_enabled: false
+  scheduler_interval: 9
   admin_username: file-admin
   admin_password: file-password
   auth_secret: file-secret
@@ -84,6 +86,7 @@ log:
 	assert.Equal(t, "127.0.0.1", cfg.API.Host)
 	assert.Equal(t, 9090, cfg.API.Port)
 	assert.False(t, cfg.Controller.EmbeddedWorkerEnabled)
+	assert.Equal(t, 9, cfg.Controller.SchedulerInterval)
 	assert.Equal(t, "env-admin", cfg.Controller.AdminUsername)
 	assert.Equal(t, "file-password", cfg.Controller.AdminPassword)
 	assert.Equal(t, "env-secret", cfg.Controller.AuthSecret)
@@ -127,6 +130,7 @@ func TestRenderConfigBody_WorkerModeCommentsUnusedSections(t *testing.T) {
 	assert.Contains(t, body, "# controller:")
 	assert.Contains(t, body, "worker:")
 	assert.Contains(t, body, "log:")
+	assert.Contains(t, body, "#     scheduler_interval:")
 	assert.Contains(t, body, "#     admin_username:")
 	assert.Contains(t, body, "#     admin_password:")
 	assert.Contains(t, body, "#     auth_secret:")
@@ -144,6 +148,7 @@ func TestRenderConfigBody_ControllerModeCommentsRemoteWorkerFields(t *testing.T)
 	assert.Contains(t, body, "api:")
 	assert.Contains(t, body, "database:")
 	assert.Contains(t, body, "controller:")
+	assert.Contains(t, body, "  scheduler_interval:")
 	assert.Contains(t, body, "  admin_username:")
 	assert.Contains(t, body, "  admin_password:")
 	assert.Contains(t, body, "  auth_secret:")

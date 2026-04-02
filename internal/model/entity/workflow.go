@@ -13,6 +13,10 @@ type WorkflowEntity struct {
 	Tag         string
 	Version     int
 	Enable      bool
+	TriggerType string
+	TriggerExpr string
+	NextRunAt   *time.Time
+	LastRunAt   *time.Time
 	CreatedAt   time.Time
 	UpdatedAt   time.Time
 }

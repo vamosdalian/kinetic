@@ -15,6 +15,13 @@ export interface WorkflowConfig {
   env?: Record<string, string>;
 }
 
+export interface WorkflowTrigger {
+  type: "manual" | "cron";
+  expr?: string;
+  next_run_at?: string;
+  last_run_at?: string;
+}
+
 export interface ShellConfig extends TaskPolicy {
   script: string;
 }
@@ -75,6 +82,8 @@ export interface WorkflowData {
   name: string;
   description: string;
   tag: string;
+  enable: boolean;
+  trigger: WorkflowTrigger;
   config: WorkflowConfig;
 }
 
@@ -86,10 +95,11 @@ export interface WorkflowDetail {
   description: string;
   config?: WorkflowConfig;
   tag?: string;
+  trigger: WorkflowTrigger;
   taskNodes: TaskNode[];
   edges: Edge[];
   version?: string;
-  enable?: boolean;
+  enable: boolean;
   create_at?: string;
   update_at?: string;
 }
@@ -98,6 +108,9 @@ export interface WorkflowListItem {
   id: string;
   name: string;
   enable: boolean;
+  trigger: WorkflowTrigger;
+  next_run_at?: string;
+  last_run_at?: string;
   version: string;
   create_at: string;
   update_at: string;

@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/vamosdalian/kinetic/internal/database"
@@ -42,6 +44,10 @@ type WorkflowListQuery struct {
 	Query string `form:"query"`
 }
 
+type WorkflowEnableRequest struct {
+	Enable bool `json:"enable"`
+}
+
 func (h *WorkflowHandler) List(c *gin.Context) {
 	var pageQuerys WorkflowListQuery
 	if err := c.ShouldBindQuery(&pageQuerys); err != nil {
@@ -73,9 +79,17 @@ func (h *WorkflowHandler) List(c *gin.Context) {
 	response := make([]dto.WorkflowListItem, 0, len(workflows))
 	for _, w := range workflows {
 		response = append(response, dto.WorkflowListItem{
-			ID:        w.ID,
-			Name:      w.Name,
-			Enable:    w.Enable,
+			ID:     w.ID,
+			Name:   w.Name,
+			Enable: w.Enable,
+			Trigger: workflowcfg.WorkflowTrigger{
+				Type:      workflowcfg.WorkflowTriggerType(w.TriggerType),
+				Expr:      w.TriggerExpr,
+				NextRunAt: w.NextRunAt,
+				LastRunAt: w.LastRunAt,
+			},
+			NextRunAt: w.NextRunAt,
+			LastRunAt: w.LastRunAt,
 			Version:   w.Version,
 			CreatedAt: w.CreatedAt,
 			UpdatedAt: w.UpdatedAt,
@@ -112,8 +126,14 @@ func (h *WorkflowHandler) Get(c *gin.Context) {
 		Tag:         workflow.Tag,
 		Version:     workflow.Version,
 		Enable:      workflow.Enable,
-		CreatedAt:   workflow.CreatedAt,
-		UpdatedAt:   workflow.UpdatedAt,
+		Trigger: workflowcfg.WorkflowTrigger{
+			Type:      workflowcfg.WorkflowTriggerType(workflow.TriggerType),
+			Expr:      workflow.TriggerExpr,
+			NextRunAt: workflow.NextRunAt,
+			LastRunAt: workflow.LastRunAt,
+		},
+		CreatedAt: workflow.CreatedAt,
+		UpdatedAt: workflow.UpdatedAt,
 	}
 	if cfg, err := workflowcfg.ParseWorkflowConfig(workflow.Config); err != nil {
 		ResponseError(c, http.StatusInternalServerError, ErrorCodeInternalError, err.Error())
@@ -166,6 +186,11 @@ func (h *WorkflowHandler) Save(c *gin.Context) {
 		ResponseError(c, http.StatusBadRequest, ErrorCodeInvalidRequest, err.Error())
 		return
 	}
+	trigger, err := workflowcfg.NormalizeWorkflowTrigger(req.Trigger, req.Enable, time.Now().UTC())
+	if err != nil {
+		ResponseError(c, http.StatusBadRequest, ErrorCodeInvalidRequest, err.Error())
+		return
+	}
 
 	taskEntities := []entity.TaskEntity{}
 	for _, task := range req.TaskNodes {
@@ -208,6 +233,10 @@ func (h *WorkflowHandler) Save(c *gin.Context) {
 		Config:      string(workflowConfigBytes),
 		Tag:         req.Tag,
 		Enable:      req.Enable,
+		TriggerType: string(trigger.Type),
+		TriggerExpr: trigger.Expr,
+		NextRunAt:   trigger.NextRunAt,
+		LastRunAt:   trigger.LastRunAt,
 	}
 	if err := h.db.SaveWorkflowDefinition(workflowEntity, taskEntities, edgeEntities); err != nil {
 		ResponseError(c, http.StatusInternalServerError, ErrorCodeInternalError, err.Error())
@@ -231,4 +260,33 @@ func (h *WorkflowHandler) Delete(c *gin.Context) {
 	}
 
 	ResponseSuccess(c, nil)
+}
+
+func (h *WorkflowHandler) UpdateEnable(c *gin.Context) {
+	id := c.Param("id")
+	if strings.TrimSpace(id) == "" {
+		ResponseError(c, http.StatusBadRequest, ErrorCodeInvalidRequest, "Workflow ID is required")
+		return
+	}
+
+	var req WorkflowEnableRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		ResponseError(c, http.StatusBadRequest, ErrorCodeInvalidRequest, err.Error())
+		return
+	}
+
+	workflow, err := h.db.GetWorkflowByID(id)
+	if err != nil {
+		ResponseError(c, http.StatusInternalServerError, ErrorCodeInternalError, err.Error())
+		return
+	}
+	if err := h.db.UpdateWorkflowEnable(workflow.ID, req.Enable); err != nil {
+		ResponseError(c, http.StatusInternalServerError, ErrorCodeInternalError, err.Error())
+		return
+	}
+
+	ResponseSuccess(c, gin.H{
+		"id":     workflow.ID,
+		"enable": req.Enable,
+	})
 }

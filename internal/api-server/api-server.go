@@ -95,6 +95,7 @@ func (a *APIServer) RegisterRoutes(engine *gin.Engine) {
 				workflows.GET("", a.workflowHandler.List)
 				workflows.GET("/:id", a.workflowHandler.Get)
 				workflows.PUT("/:id", a.workflowHandler.Save)
+				workflows.POST("/:id/enable", a.workflowHandler.UpdateEnable)
 				workflows.DELETE("/:id", a.workflowHandler.Delete)
 				workflows.POST("/:id/run", a.workflowHandler.Run)
 			}

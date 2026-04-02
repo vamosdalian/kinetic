@@ -271,6 +271,76 @@ func TestGetWorkflowByID(t *testing.T) {
 	})
 }
 
+func TestUpdateWorkflowEnableDoesNotBumpVersion(t *testing.T) {
+	dbPath := "test_update_workflow_enable.db"
+	defer os.Remove(dbPath)
+
+	db, err := NewSqliteDB(dbPath)
+	if err != nil {
+		t.Fatalf("Failed to create database: %v", err)
+	}
+	defer db.Close()
+
+	err = db.SaveWorkflow(entity.WorkflowEntity{
+		ID:          "workflow-enable-toggle",
+		Name:        "Workflow Enable Toggle",
+		Description: "toggle",
+		Enable:      true,
+		TriggerType: "cron",
+		TriggerExpr: "*/5 * * * *",
+	})
+	if err != nil {
+		t.Fatalf("Failed to save workflow: %v", err)
+	}
+
+	workflow, err := db.GetWorkflowByID("workflow-enable-toggle")
+	if err != nil {
+		t.Fatalf("Failed to get workflow: %v", err)
+	}
+	if workflow.Version != 1 {
+		t.Fatalf("Expected version 1, got %d", workflow.Version)
+	}
+	if workflow.NextRunAt == nil {
+		t.Fatal("Expected cron workflow to have next_run_at before disabling")
+	}
+
+	if err := db.UpdateWorkflowEnable("workflow-enable-toggle", false); err != nil {
+		t.Fatalf("Failed to disable workflow: %v", err)
+	}
+
+	workflow, err = db.GetWorkflowByID("workflow-enable-toggle")
+	if err != nil {
+		t.Fatalf("Failed to reload workflow: %v", err)
+	}
+	if workflow.Version != 1 {
+		t.Fatalf("Expected version to remain 1, got %d", workflow.Version)
+	}
+	if workflow.Enable {
+		t.Fatal("Expected workflow to be disabled")
+	}
+	if workflow.NextRunAt != nil {
+		t.Fatal("Expected disabling workflow to clear next_run_at")
+	}
+
+	if err := db.UpdateWorkflowEnable("workflow-enable-toggle", true); err != nil {
+		t.Fatalf("Failed to re-enable workflow: %v", err)
+	}
+
+	workflow, err = db.GetWorkflowByID("workflow-enable-toggle")
+	if err != nil {
+		t.Fatalf("Failed to reload workflow after enable: %v", err)
+	}
+	if workflow.Version != 1 {
+		t.Fatalf("Expected version to remain 1 after re-enable, got %d", workflow.Version)
+	}
+	if !workflow.Enable {
+		t.Fatal("Expected workflow to be enabled")
+	}
+	if workflow.NextRunAt == nil {
+		t.Fatal("Expected enabling cron workflow to restore next_run_at")
+	}
+}
+
 func TestSaveWorkflowDefinition_ReplacesGraphAtomically(t *testing.T) {
 	dbPath := "test_save_workflow_definition.db"
 	defer os.Remove(dbPath)

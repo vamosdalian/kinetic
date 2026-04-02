@@ -12,6 +12,7 @@ import (
 	"github.com/vamosdalian/kinetic/internal/database"
 	"github.com/vamosdalian/kinetic/internal/model/dto"
 	"github.com/vamosdalian/kinetic/internal/model/entity"
+	workflowcfg "github.com/vamosdalian/kinetic/internal/workflow"
 )
 
 type NodeService struct {
@@ -195,6 +196,37 @@ func (s *NodeService) DispatchQueuedTasks(ctx context.Context, limit int) error 
 		}
 
 		s.runService.publishTaskStatus(task.RunID, task.TaskID)
+	}
+
+	return nil
+}
+
+func (s *NodeService) ScheduleDueWorkflowRuns(ctx context.Context, limit int) error {
+	now := time.Now().UTC()
+	workflows, err := s.db.ListDueWorkflowsForScheduling(now, limit)
+	if err != nil {
+		return err
+	}
+
+	for _, workflow := range workflows {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+		}
+
+		if workflow.TriggerType != string(workflowcfg.WorkflowTriggerCron) {
+			continue
+		}
+
+		nextRunAt, err := workflowcfg.NextCronTime(workflow.TriggerExpr, now)
+		if err != nil {
+			logrus.Warnf("failed to compute next run for workflow %s: %v", workflow.ID, err)
+			continue
+		}
+		if _, _, err := s.runService.StartScheduledWorkflowRun(workflow, now, &nextRunAt); err != nil {
+			return err
+		}
 	}
 
 	return nil

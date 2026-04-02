@@ -6,13 +6,16 @@ import {
 } from "@tanstack/react-table";
 import {
   ArrowUpDown,
+  Clock3,
   MoreHorizontal,
+  Pointer,
   Play,
   SquarePen,
 } from "lucide-react";
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Switch } from "@/components/ui/switch";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -25,6 +28,7 @@ import { apiClient, apiClientFull } from "@/lib/api";
 import { SiteHeader } from "@/components/site-header";
 import { CommonTable } from "@/components/common-table";
 import type {WorkflowListItem} from "./types"
+import { formatDashboardDateTime } from "@/lib/dashboard";
 // export type Workflow = {
 //   id: string;
 //   name: string;
@@ -39,6 +43,7 @@ import type {WorkflowListItem} from "./types"
 export function Workflow() {
   const navigate = useNavigate();
   const [data, setData] = React.useState<WorkflowListItem[]>([]);
+  const [togglingWorkflowID, setTogglingWorkflowID] = React.useState<string | null>(null);
   const [pagination, setPagination] = React.useState({
     pageIndex: 0,
     pageSize: 20,
@@ -75,6 +80,29 @@ export function Workflow() {
     );
   }, [query]);
 
+  const handleToggleEnable = React.useCallback(
+    async (workflow: WorkflowListItem, enable: boolean) => {
+      setTogglingWorkflowID(workflow.id);
+      try {
+        await apiClient(`/api/workflows/${workflow.id}/enable`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ enable }),
+        });
+        setData((current) =>
+          current.map((item) => (item.id === workflow.id ? { ...item, enable } : item))
+        );
+        toast.success(`Workflow ${enable ? "enabled" : "disabled"}`);
+      } catch (error) {
+        console.error("Error updating workflow enable:", error);
+        toast.error("Failed to update workflow enable");
+      } finally {
+        setTogglingWorkflowID(null);
+      }
+    },
+    []
+  );
+
   const columns: ColumnDef<WorkflowListItem>[] = [
     {
       accessorKey: "id",
@@ -101,10 +129,43 @@ export function Workflow() {
       ),
     },
     {
+      id: "trigger",
+      header: "Trigger",
+      cell: ({ row }) => {
+        const trigger = row.original.trigger;
+        const TriggerIcon = trigger?.type === "cron" ? Clock3 : Pointer;
+        return (
+          <div className="min-w-[180px]">
+            <div className="inline-flex items-center gap-2">
+              <TriggerIcon className="h-4 w-4 text-muted-foreground" />
+              <span className="capitalize">{trigger?.type || "manual"}</span>
+              {trigger?.type === "cron" && trigger.expr ? (
+                <span className="font-mono text-xs text-muted-foreground">
+                  {trigger.expr}
+                </span>
+              ) : null}
+            </div>
+            {trigger?.type !== "cron" && trigger?.expr ? (
+              <div className="font-mono text-xs text-muted-foreground">
+                {trigger.expr}
+              </div>
+            ) : null}
+          </div>
+        );
+      },
+    },
+    {
       accessorKey: "enable",
       header: "Enable",
       cell: ({ row }) => (
-        <div className="capitalize">{String(row.getValue("enable"))}</div>
+        <Switch
+          checked={row.original.enable}
+          disabled={togglingWorkflowID === row.original.id}
+          onCheckedChange={(checked) => {
+            void handleToggleEnable(row.original, Boolean(checked));
+          }}
+          aria-label={`Toggle workflow ${row.original.name}`}
+        />
       ),
     },
     {
@@ -113,6 +174,16 @@ export function Workflow() {
       cell: ({ row }) => (
         <div className="capitalize">{row.getValue("version")}</div>
       ),
+    },
+    {
+      accessorKey: "last_run_at",
+      header: "Last Run",
+      cell: ({ row }) => formatDashboardDateTime(row.original.last_run_at || ""),
+    },
+    {
+      accessorKey: "next_run_at",
+      header: "Next Run",
+      cell: ({ row }) => formatDashboardDateTime(row.original.next_run_at || ""),
     },
     // {
     //   accessorKey: "last_running_status",
@@ -154,7 +225,7 @@ export function Workflow() {
         );
       },
       cell: ({ row }) => (
-        <div className="capitalize pl-3">{row.getValue("create_at")}</div>
+        <div className="pl-3">{formatDashboardDateTime(row.original.create_at)}</div>
       ),
     },
     {
@@ -171,7 +242,7 @@ export function Workflow() {
         );
       },
       cell: ({ row }) => (
-        <div className="capitalize pl-3">{row.getValue("update_at")}</div>
+        <div className="pl-3">{formatDashboardDateTime(row.original.update_at)}</div>
       ),
     },
     {

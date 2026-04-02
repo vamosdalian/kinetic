@@ -13,6 +13,7 @@ import (
 type fakeDashboardStore struct {
 	totalWorkflows int
 	nodes          []entity.NodeEntity
+	scheduled      []entity.WorkflowEntity
 	workflowRuns   []entity.WorkflowRunEntity
 	taskRuns       []entity.TaskRunEntity
 }
@@ -23,6 +24,10 @@ func (s *fakeDashboardStore) CountWorkflows() (int, error) {
 
 func (s *fakeDashboardStore) ListNodes() ([]entity.NodeEntity, error) {
 	return append([]entity.NodeEntity(nil), s.nodes...), nil
+}
+
+func (s *fakeDashboardStore) ListScheduledWorkflows() ([]entity.WorkflowEntity, error) {
+	return append([]entity.WorkflowEntity(nil), s.scheduled...), nil
 }
 
 func (s *fakeDashboardStore) ListWorkflowRunsByCreatedAt(start time.Time, end time.Time) ([]entity.WorkflowRunEntity, error) {
@@ -100,6 +105,25 @@ func TestDashboardService_GetDashboard(t *testing.T) {
 				LastHeartbeatAt: ptrTime(now.Add(-12 * time.Minute)),
 			},
 		},
+		scheduled: []entity.WorkflowEntity{
+			{
+				ID:          "workflow-cron-enabled",
+				Name:        "Cron Enabled",
+				Tag:         "node-default",
+				Enable:      true,
+				TriggerType: "cron",
+				NextRunAt:   localTimePtr(shanghai, 2026, 3, 20, 10, 0),
+				LastRunAt:   localTimePtr(shanghai, 2026, 3, 20, 9, 0),
+			},
+			{
+				ID:          "workflow-cron-disabled",
+				Name:        "Cron Disabled",
+				Tag:         "node-batch",
+				Enable:      false,
+				TriggerType: "cron",
+				LastRunAt:   localTimePtr(shanghai, 2026, 3, 19, 8, 0),
+			},
+		},
 		workflowRuns: []entity.WorkflowRunEntity{
 			newWorkflowRun("run-boundary-success", "workflow-boundary", "Boundary Success", "success", localTime(shanghai, 2026, 3, 20, 0, 15), localTimePtr(shanghai, 2026, 3, 20, 0, 16), localTimePtr(shanghai, 2026, 3, 20, 0, 18)),
 			newWorkflowRun("run-failed-today", "workflow-daily", "Daily Failure", "failed", localTime(shanghai, 2026, 3, 20, 9, 0), localTimePtr(shanghai, 2026, 3, 20, 9, 1), localTimePtr(shanghai, 2026, 3, 20, 9, 2)),
@@ -149,8 +173,13 @@ func TestDashboardService_GetDashboard(t *testing.T) {
 	require.Len(t, response.Tables.FailedRuns.Items, 1)
 	assert.Equal(t, "run-failed-today", response.Tables.FailedRuns.Items[0].RunID)
 
-	assert.Equal(t, 0, response.Tables.ScheduledRuns.Count)
-	assert.Empty(t, response.Tables.ScheduledRuns.Items)
+	assert.Equal(t, 2, response.Tables.ScheduledRuns.Count)
+	require.Len(t, response.Tables.ScheduledRuns.Items, 2)
+	assert.Equal(t, "workflow-cron-enabled", response.Tables.ScheduledRuns.Items[0].WorkflowID)
+	assert.Equal(t, "enabled", response.Tables.ScheduledRuns.Items[0].Status)
+	assert.Equal(t, "node-default", response.Tables.ScheduledRuns.Items[0].TargetTag)
+	assert.Equal(t, "disabled", response.Tables.ScheduledRuns.Items[1].Status)
+	assert.Equal(t, "node-batch", response.Tables.ScheduledRuns.Items[1].TargetTag)
 
 	assert.Equal(t, 3, response.Tables.NodeActivity.Count)
 	require.Len(t, response.Tables.NodeActivity.Items, 3)

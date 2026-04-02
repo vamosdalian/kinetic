@@ -48,7 +48,8 @@ func NewController(cfg *config.Config) (*Controller, error) {
 		heartbeatTimeout = 15 * time.Second
 	}
 	nodeService := service.NewNodeService(db, runService, streamHub, heartbeatTimeout)
-	sched := scheduler.NewScheduler(nodeService)
+	schedulerInterval := time.Duration(cfg.Controller.SchedulerInterval) * time.Second
+	sched := scheduler.NewSchedulerWithInterval(nodeService, schedulerInterval)
 
 	apiServer := apiserver.NewAPIServer(db, sched, r, runService, nodeService, authService, userService, cfg.Controller.AdminUsername)
 

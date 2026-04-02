@@ -26,6 +26,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { apiClient, apiClientFull } from "@/lib/api";
+import { formatDashboardDateTime } from "@/lib/dashboard";
 import { CommonTable } from "@/components/common-table";
 import { SiteHeader } from "@/components/site-header";
 import { type WorkflowRunListItem } from "./types";
@@ -174,17 +175,17 @@ export function Record() {
             </Button>
           );
         },
-        cell: ({ row }) => <div className="pl-3">{row.getValue("create_at")}</div>,
+        cell: ({ row }) => <div className="pl-3">{formatDashboardDateTime(row.original.create_at)}</div>,
       },
       {
         accessorKey: "started_at",
         header: "Started At",
-        cell: ({ row }) => <div>{row.getValue("started_at") || "-"}</div>,
+        cell: ({ row }) => <div>{formatDashboardDateTime(row.original.started_at || "")}</div>,
       },
       {
         accessorKey: "finished_at",
         header: "Finished At",
-        cell: ({ row }) => <div>{row.getValue("finished_at") || "-"}</div>,
+        cell: ({ row }) => <div>{formatDashboardDateTime(row.original.finished_at || "")}</div>,
       },
       {
         id: "actions",

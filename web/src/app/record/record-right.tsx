@@ -1,6 +1,7 @@
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
+import { formatDashboardDateTime } from "@/lib/dashboard";
 import type { TaskNodeRun } from "./types";
 import { getStatusBadgeClassName } from "./status";
 
@@ -16,7 +17,7 @@ export function RecordRight({ task, workflowTag }: RecordRightProps) {
     task.status === "cancelled"
       ? task.exit_code ?? "-"
       : "-";
-  const effectiveTag = task.effective_tag || task.tag || workflowTag || "Any node";
+  const requestedTag = task.effective_tag || task.tag || workflowTag || "Any node";
   const formattedResult = formatTaskResult(task.result);
 
   return (
@@ -52,8 +53,8 @@ export function RecordRight({ task, workflowTag }: RecordRightProps) {
               <div className="font-medium capitalize">{task.type}</div>
             </div>
             <div className="rounded-lg border bg-muted/30 p-3">
-              <div className="text-muted-foreground">Effective Tag</div>
-              <div className="font-medium break-words">{effectiveTag}</div>
+              <div className="text-muted-foreground">Requested Tag</div>
+              <div className="font-medium break-words">{requestedTag}</div>
             </div>
             <div className="rounded-lg border bg-muted/30 p-3">
               <div className="text-muted-foreground">Assigned Node</div>
@@ -62,35 +63,19 @@ export function RecordRight({ task, workflowTag }: RecordRightProps) {
               </div>
             </div>
             <div className="rounded-lg border bg-muted/30 p-3">
-              <div className="text-muted-foreground">Assigned At</div>
-              <div className="font-medium break-words">{task.assigned_at || "-"}</div>
-            </div>
-            <div className="rounded-lg border bg-muted/30 p-3">
               <div className="text-muted-foreground">Exit Code</div>
               <div className="font-medium">{exitCode}</div>
             </div>
             <div className="rounded-lg border bg-muted/30 p-3">
-              <div className="text-muted-foreground">Created</div>
-              <div className="font-medium break-words">{task.created_at || "-"}</div>
-            </div>
-            <div className="rounded-lg border bg-muted/30 p-3">
               <div className="text-muted-foreground">Started</div>
-              <div className="font-medium break-words">{task.started_at || "-"}</div>
+              <div className="font-medium break-words">
+                {formatDashboardDateTime(task.started_at || "")}
+              </div>
             </div>
             <div className="rounded-lg border bg-muted/30 p-3">
               <div className="text-muted-foreground">Finished</div>
-              <div className="font-medium break-words">{task.finished_at || "-"}</div>
-            </div>
-            <div className="rounded-lg border bg-muted/30 p-3 col-span-2">
-              <div className="text-muted-foreground">Requested Tag</div>
               <div className="font-medium break-words">
-                {task.tag || (workflowTag ? "Inherit workflow tag" : "Inherit any node")}
-              </div>
-            </div>
-            <div className="rounded-lg border bg-muted/30 p-3 col-span-2">
-              <div className="text-muted-foreground">Output Size</div>
-              <div className="font-medium break-words">
-                {task.output ? `${task.output.length} chars` : "No output captured"}
+                {formatDashboardDateTime(task.finished_at || "")}
               </div>
             </div>
           </div>

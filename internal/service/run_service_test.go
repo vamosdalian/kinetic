@@ -159,6 +159,23 @@ func TestRunService_LinearWorkflowSuccess(t *testing.T) {
 	}
 }
 
+func TestRunService_StartWorkflowRunRejectsDisabledWorkflow(t *testing.T) {
+	db := setupRunServiceDB(t)
+	service := NewRunService(db, 1)
+
+	workflowID := uuid.New().String()
+	err := db.SaveWorkflow(entity.WorkflowEntity{
+		ID:          workflowID,
+		Name:        "disabled workflow",
+		Description: "disabled",
+		Enable:      false,
+	})
+	assert.NoError(t, err)
+
+	_, err = service.StartWorkflowRun(workflowID)
+	assert.ErrorIs(t, err, ErrWorkflowDisabled)
+}
+
 func TestRunService_PersistsTaskResult(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 

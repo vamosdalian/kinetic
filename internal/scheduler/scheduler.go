@@ -11,6 +11,7 @@ import (
 type dispatcher interface {
 	DispatchQueuedTasks(ctx context.Context, limit int) error
 	SweepOfflineNodes(ctx context.Context) error
+	ScheduleDueWorkflowRuns(ctx context.Context, limit int) error
 }
 
 type Scheduler struct {
@@ -22,10 +23,17 @@ type Scheduler struct {
 }
 
 func NewScheduler(dispatcher dispatcher) *Scheduler {
+	return NewSchedulerWithInterval(dispatcher, 5*time.Second)
+}
+
+func NewSchedulerWithInterval(dispatcher dispatcher, interval time.Duration) *Scheduler {
+	if interval <= 0 {
+		interval = 5 * time.Second
+	}
 	return &Scheduler{
 		stopCh:     make(chan struct{}),
 		dispatcher: dispatcher,
-		interval:   2 * time.Second,
+		interval:   interval,
 	}
 }
 
@@ -47,6 +55,9 @@ func (s *Scheduler) Run() error {
 			ctx, cancel := context.WithTimeout(context.Background(), s.interval)
 			if err := s.dispatcher.SweepOfflineNodes(ctx); err != nil {
 				logrus.Warnf("scheduler sweep failed: %v", err)
+			}
+			if err := s.dispatcher.ScheduleDueWorkflowRuns(ctx, 32); err != nil {
+				logrus.Warnf("scheduler schedule failed: %v", err)
 			}
 			if err := s.dispatcher.DispatchQueuedTasks(ctx, 64); err != nil {
 				logrus.Warnf("scheduler dispatch failed: %v", err)

@@ -16,6 +16,7 @@ var ErrInvalidDashboardRange = errors.New("invalid dashboard range")
 type DashboardStore interface {
 	CountWorkflows() (int, error)
 	ListNodes() ([]entity.NodeEntity, error)
+	ListScheduledWorkflows() ([]entity.WorkflowEntity, error)
 	ListWorkflowRunsByCreatedAt(start time.Time, end time.Time) ([]entity.WorkflowRunEntity, error)
 	ListTaskRunsByRunIDs(runIDs []string) ([]entity.TaskRunEntity, error)
 	ListTaskRunsByAssignedAt(start time.Time, end time.Time) ([]entity.TaskRunEntity, error)
@@ -91,6 +92,10 @@ func (s *DashboardService) GetDashboard(rangeKey string, timezone string) (dto.D
 	if err != nil {
 		return dto.DashboardResponse{}, err
 	}
+	scheduledWorkflows, err := s.store.ListScheduledWorkflows()
+	if err != nil {
+		return dto.DashboardResponse{}, err
+	}
 
 	todayRuns := filterWorkflowRunsByLocalWindow(workflowRuns, startOfTodayLocal, endOfTodayLocal, loc)
 	todayTaskRuns, err := s.store.ListTaskRunsByAssignedAt(startOfTodayLocal.UTC(), endOfTodayLocal.UTC())
@@ -121,8 +126,8 @@ func (s *DashboardService) GetDashboard(rangeKey string, timezone string) (dto.D
 				Items: buildWorkflowRows(todayRuns, nodeLabels, nowUTC),
 			},
 			ScheduledRuns: dto.DashboardScheduledRunTable{
-				Count: 0,
-				Items: []dto.DashboardScheduledRunRow{},
+				Count: len(scheduledWorkflows),
+				Items: buildScheduledRunRows(scheduledWorkflows),
 			},
 			FailedRuns: dto.DashboardWorkflowTable{
 				Items: buildFailedWorkflowRows(todayRuns, nodeLabels, nowUTC),
@@ -254,6 +259,26 @@ func buildFailedWorkflowRows(runs []entity.WorkflowRunEntity, nodeLabels map[str
 		}
 	}
 	return buildWorkflowRows(failed, nodeLabels, now)
+}
+
+func buildScheduledRunRows(workflows []entity.WorkflowEntity) []dto.DashboardScheduledRunRow {
+	rows := make([]dto.DashboardScheduledRunRow, 0, len(workflows))
+	for _, workflow := range workflows {
+		status := "disabled"
+		if workflow.Enable {
+			status = "enabled"
+		}
+		rows = append(rows, dto.DashboardScheduledRunRow{
+			WorkflowID:   workflow.ID,
+			WorkflowName: workflow.Name,
+			Mode:         workflow.TriggerType,
+			Status:       status,
+			NextRunAt:    safeFormatTime(workflow.NextRunAt),
+			LastRunAt:    safeFormatTime(workflow.LastRunAt),
+			TargetTag:    workflow.Tag,
+		})
+	}
+	return rows
 }
 
 func buildNodeActivityRows(nodes []entity.NodeEntity, taskRuns []entity.TaskRunEntity) []dto.DashboardNodeActivityRow {

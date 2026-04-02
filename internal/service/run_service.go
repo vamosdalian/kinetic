@@ -19,6 +19,7 @@ import (
 )
 
 var ErrRunCancelled = errors.New("workflow run cancelled")
+var ErrWorkflowDisabled = errors.New("workflow is disabled")
 
 type RunService struct {
 	db               database.Database
@@ -30,6 +31,7 @@ type RunService struct {
 	nextSubscriberID int
 	distributed      bool
 	commandHub       *WorkerStreamHub
+	now              func() time.Time
 }
 
 type edgeState string
@@ -76,6 +78,7 @@ func NewRunService(db database.Database, maxConcurrency int) *RunService {
 		executor:    executor.NewExecutor(maxConcurrency),
 		cancels:     make(map[string]context.CancelCauseFunc),
 		subscribers: make(map[string]map[int]chan dto.WorkflowRunEvent),
+		now:         time.Now,
 	}
 }
 
@@ -87,8 +90,19 @@ func (s *RunService) EnableDistributed(hub *WorkerStreamHub) {
 }
 
 func (s *RunService) StartWorkflowRun(workflowID string) (string, error) {
+	workflow, err := s.db.GetWorkflowByID(workflowID)
+	if err != nil {
+		return "", err
+	}
+	if !workflow.Enable {
+		return "", ErrWorkflowDisabled
+	}
+
 	runID := uuid.New().String()
 	if err := s.db.CreateWorkflowRun(workflowID, runID); err != nil {
+		return "", err
+	}
+	if err := s.db.TouchWorkflowLastRun(workflowID, s.now().UTC()); err != nil {
 		return "", err
 	}
 
@@ -127,6 +141,40 @@ func (s *RunService) RerunWorkflowRun(runID string) (string, error) {
 		return "", err
 	}
 	return s.StartWorkflowRun(run.WorkflowID)
+}
+
+func (s *RunService) StartScheduledWorkflowRun(workflow entity.WorkflowEntity, scheduledAt time.Time, nextRunAt *time.Time) (string, bool, error) {
+	runID := uuid.New().String()
+	created, err := s.db.CreateScheduledWorkflowRun(workflow.ID, runID, scheduledAt.UTC(), nextRunAt)
+	if err != nil || !created {
+		return "", created, err
+	}
+
+	if s.distributed {
+		if err := s.db.MarkWorkflowRunRunning(runID); err != nil {
+			return "", true, err
+		}
+		s.publishRunStatus(runID)
+		taskRuns, err := s.db.GetTaskRuns(runID)
+		if err != nil {
+			return "", true, err
+		}
+		if len(taskRuns) == 0 {
+			if err := s.finishWorkflowRun(runID, "success"); err != nil {
+				return "", true, err
+			}
+			return runID, true, nil
+		}
+		if err := s.queueReadyTasks(runID); err != nil {
+			s.failRun(runID, "Skipped because workflow graph is invalid.", err)
+		}
+		return runID, true, nil
+	}
+
+	ctx, cancel := context.WithCancelCause(context.Background())
+	s.storeCancel(runID, cancel)
+	go s.executeRun(ctx, runID)
+	return runID, true, nil
 }
 
 func (s *RunService) CancelWorkflowRun(runID string) error {
