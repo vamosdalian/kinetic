@@ -59,6 +59,8 @@ type WorkflowListItem struct {
 	Name      string                      `json:"name"`
 	Enable    bool                        `json:"enable"`
 	Trigger   workflowcfg.WorkflowTrigger `json:"trigger"`
+	NextRunAt *time.Time                  `json:"next_run_at,omitempty"`
+	LastRunAt *time.Time                  `json:"last_run_at,omitempty"`
 	Version   int                         `json:"version,string"`
 	CreatedAt time.Time                   `json:"create_at"`
 	UpdatedAt time.Time                   `json:"update_at"`

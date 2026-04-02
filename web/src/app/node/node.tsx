@@ -22,6 +22,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { apiClient, apiClientFull } from "@/lib/api";
+import { formatDashboardDateTime } from "@/lib/dashboard";
 import { getNodeStatusBadgeClassName } from "@/lib/node-status";
 import { SiteHeader } from "@/components/site-header";
 import { cn } from "@/lib/utils";
@@ -204,7 +205,7 @@ export function Node() {
       {
         accessorKey: "last_heartbeat_at",
         header: "Last Heartbeat",
-        cell: ({ row }) => <div>{row.original.last_heartbeat_at || "-"}</div>,
+        cell: ({ row }) => <div>{formatDashboardDateTime(row.original.last_heartbeat_at || "")}</div>,
       },
       {
         accessorKey: "tags",

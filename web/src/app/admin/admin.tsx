@@ -27,6 +27,7 @@ import {
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { apiClient } from "@/lib/api"
+import { formatDashboardDateTime } from "@/lib/dashboard"
 import { type AdminUserListItem } from "@/lib/auth"
 
 type UserDialogMode = "create" | "password" | "delete" | null
@@ -182,10 +183,12 @@ export function Admin() {
       {
         accessorKey: "created_at",
         header: "Created",
+        cell: ({ row }) => formatDashboardDateTime(row.original.created_at),
       },
       {
         accessorKey: "updated_at",
         header: "Updated",
+        cell: ({ row }) => formatDashboardDateTime(row.original.updated_at),
       },
       {
         id: "actions",

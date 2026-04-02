@@ -28,6 +28,7 @@ import { apiClient, apiClientFull } from "@/lib/api";
 import { SiteHeader } from "@/components/site-header";
 import { CommonTable } from "@/components/common-table";
 import type {WorkflowListItem} from "./types"
+import { formatDashboardDateTime } from "@/lib/dashboard";
 // export type Workflow = {
 //   id: string;
 //   name: string;
@@ -174,6 +175,16 @@ export function Workflow() {
         <div className="capitalize">{row.getValue("version")}</div>
       ),
     },
+    {
+      accessorKey: "last_run_at",
+      header: "Last Run",
+      cell: ({ row }) => formatDashboardDateTime(row.original.last_run_at || ""),
+    },
+    {
+      accessorKey: "next_run_at",
+      header: "Next Run",
+      cell: ({ row }) => formatDashboardDateTime(row.original.next_run_at || ""),
+    },
     // {
     //   accessorKey: "last_running_status",
     //   header: "Last Running Status",
@@ -214,7 +225,7 @@ export function Workflow() {
         );
       },
       cell: ({ row }) => (
-        <div className="capitalize pl-3">{row.getValue("create_at")}</div>
+        <div className="pl-3">{formatDashboardDateTime(row.original.create_at)}</div>
       ),
     },
     {
@@ -231,7 +242,7 @@ export function Workflow() {
         );
       },
       cell: ({ row }) => (
-        <div className="capitalize pl-3">{row.getValue("update_at")}</div>
+        <div className="pl-3">{formatDashboardDateTime(row.original.update_at)}</div>
       ),
     },
     {

@@ -109,6 +109,8 @@ export interface WorkflowListItem {
   name: string;
   enable: boolean;
   trigger: WorkflowTrigger;
+  next_run_at?: string;
+  last_run_at?: string;
   version: string;
   create_at: string;
   update_at: string;

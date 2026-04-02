@@ -18,6 +18,7 @@ import {
 } from "lucide-react";
 
 import { apiClient } from "@/lib/api";
+import { formatDashboardDateTime } from "@/lib/dashboard";
 import { buildEventSourceURL } from "@/lib/auth";
 import { cn } from "@/lib/utils";
 import {
@@ -339,15 +340,15 @@ export function RecordDetail() {
           </div>
           <div>
             <span className="text-muted-foreground">Created:</span>{" "}
-            <span className="font-medium">{runData.create_at}</span>
+            <span className="font-medium">{formatDashboardDateTime(runData.create_at)}</span>
           </div>
           <div>
             <span className="text-muted-foreground">Started:</span>{" "}
-            <span className="font-medium">{runData.started_at || "-"}</span>
+            <span className="font-medium">{formatDashboardDateTime(runData.started_at || "")}</span>
           </div>
           <div>
             <span className="text-muted-foreground">Finished:</span>{" "}
-            <span className="font-medium">{runData.finished_at || "-"}</span>
+            <span className="font-medium">{formatDashboardDateTime(runData.finished_at || "")}</span>
           </div>
         </div>
       </div>

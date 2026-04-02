@@ -88,6 +88,8 @@ func (h *WorkflowHandler) List(c *gin.Context) {
 				NextRunAt: w.NextRunAt,
 				LastRunAt: w.LastRunAt,
 			},
+			NextRunAt: w.NextRunAt,
+			LastRunAt: w.LastRunAt,
 			Version:   w.Version,
 			CreatedAt: w.CreatedAt,
 			UpdatedAt: w.UpdatedAt,
