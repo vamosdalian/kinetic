@@ -1,3 +1,5 @@
+import { clearStoredAuthToken, getStoredAuthToken, redirectToLogin } from "@/lib/auth"
+
 export interface APIResponse<T> {
   success: boolean;
   data: T;
@@ -14,12 +16,41 @@ export interface APIResponse<T> {
   };
 }
 
+export interface APIClientInit extends RequestInit {
+  skipAuthRedirect?: boolean
+  skipAuthToken?: boolean
+}
+
+function buildRequestInit(init?: APIClientInit): RequestInit | undefined {
+  const token = init?.skipAuthToken ? "" : getStoredAuthToken()
+  if (!init && !token) {
+    return undefined
+  }
+
+  const headers = new Headers(init?.headers)
+  if (token) {
+    headers.set("Authorization", `Bearer ${token}`)
+  }
+
+  return {
+    ...init,
+    headers,
+  }
+}
+
+function handleUnauthorized(init?: APIClientInit) {
+  clearStoredAuthToken()
+  if (!init?.skipAuthRedirect) {
+    redirectToLogin()
+  }
+}
+
 export async function apiClient<T>(
   input: RequestInfo | URL,
-  init?: RequestInit
+  init?: APIClientInit
 ): Promise<T> {
   try {
-    const response = await fetch(input, init);
+    const response = await fetch(input, buildRequestInit(init));
 
     if (!response.ok) {
         // Try to parse error details if available
@@ -32,6 +63,9 @@ export async function apiClient<T>(
         } catch {
             // Ignore JSON parse error for error response
         }
+      if (response.status === 401) {
+        handleUnauthorized(init)
+      }
       console.error(errorMsg);
       throw new Error(errorMsg);
     }
@@ -53,10 +87,10 @@ export async function apiClient<T>(
 
 export async function apiClientFull<T>(
   input: RequestInfo | URL,
-  init?: RequestInit
+  init?: APIClientInit
 ): Promise<APIResponse<T>> {
   try {
-    const response = await fetch(input, init);
+    const response = await fetch(input, buildRequestInit(init));
 
     if (!response.ok) {
       // Try to parse error details if available
@@ -68,6 +102,9 @@ export async function apiClientFull<T>(
         }
       } catch {
         // Ignore JSON parse error for error response
+      }
+      if (response.status === 401) {
+        handleUnauthorized(init)
       }
       console.error(errorMsg);
       throw new Error(errorMsg);
@@ -87,3 +124,5 @@ export async function apiClientFull<T>(
     throw error;
   }
 }
+
+export const apiClientPublic = apiClient

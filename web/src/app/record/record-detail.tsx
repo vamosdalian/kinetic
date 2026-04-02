@@ -18,6 +18,7 @@ import {
 } from "lucide-react";
 
 import { apiClient } from "@/lib/api";
+import { buildEventSourceURL } from "@/lib/auth";
 import { cn } from "@/lib/utils";
 import {
   type WorkflowRunDetail,
@@ -118,7 +119,7 @@ export function RecordDetail() {
       return;
     }
 
-    const source = new EventSource(`/api/workflow_runs/${runId}/events`);
+    const source = new EventSource(buildEventSourceURL(`/api/workflow_runs/${runId}/events`));
 
     source.addEventListener("snapshot", (event) => {
       const payload = parseEventData<WorkflowRunDetail>(

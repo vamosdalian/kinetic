@@ -150,6 +150,18 @@ WHERE workflow_id IN (
 	SELECT DISTINCT workflow_id FROM tasks WHERE type = 'python'
 );
 `,
+	8: `
+CREATE TABLE IF NOT EXISTS users (
+	id TEXT PRIMARY KEY,
+	username TEXT NOT NULL UNIQUE,
+	password_hash TEXT NOT NULL,
+	permission TEXT NOT NULL,
+	created_at TEXT NOT NULL,
+	updated_at TEXT NOT NULL
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_users_username
+	ON users(username);
+`,
 }
 
 func (s *SqliteDB) Migrate() error {

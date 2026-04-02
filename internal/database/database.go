@@ -21,6 +21,13 @@ type Database interface {
 	SaveWorkflowDefinition(workflow entity.WorkflowEntity, tasks []entity.TaskEntity, edges []entity.EdgeEntity) error
 	DeleteWorkflow(id string) error
 	DeleteWorkflowDefinition(id string) (bool, error)
+	GetUserByID(id string) (entity.UserEntity, error)
+	GetUserByUsername(username string) (entity.UserEntity, error)
+	ListUsers() ([]entity.UserEntity, error)
+	CreateUser(user entity.UserEntity) (entity.UserEntity, error)
+	UpdateUserPassword(userID string, passwordHash string) error
+	UpsertUser(user entity.UserEntity) (entity.UserEntity, error)
+	DeleteUser(userID string) error
 	ListNodes() ([]entity.NodeEntity, error)
 	GetNodeByID(nodeID string) (entity.NodeEntity, error)
 	UpsertNode(node entity.NodeEntity) error

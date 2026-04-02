@@ -150,6 +150,9 @@ database:
 
 controller:
   embedded_worker_enabled: true
+  admin_username: admin
+  admin_password: change-me
+  auth_secret: replace-with-a-long-random-secret
 
 worker:
   id: node-local
@@ -172,10 +175,15 @@ Common environment variable overrides:
 - `KINETIC_API_PORT`
 - `KINETIC_DATABASE_PATH`
 - `KINETIC_CONTROLLER_EMBEDDED_WORKER_ENABLED`
+- `KINETIC_CONTROLLER_ADMIN_USERNAME`
+- `KINETIC_CONTROLLER_ADMIN_PASSWORD`
+- `KINETIC_CONTROLLER_AUTH_SECRET`
 - `KINETIC_WORKER_CONTROLLER_URL`
 - `KINETIC_WORKER_MAX_CONCURRENCY`
 - `KINETIC_LOG_LEVEL`
 - `KINETIC_LOG_FORMAT`
+
+Controller mode requires admin auth to be configured. The UI and business API use bearer token auth, while `/api/internal/*` remains open for worker traffic.
 
 ## Workflow Model
 

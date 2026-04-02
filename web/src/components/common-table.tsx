@@ -13,7 +13,7 @@ import {
   getSortedRowModel,
   useReactTable,
 } from "@tanstack/react-table";
-import { ChevronDown } from "lucide-react";
+import { ChevronDown, LoaderCircle } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -35,6 +35,8 @@ import { cn } from "@/lib/utils";
 interface CommonTableProps<TData, TValue> {
   columns: ColumnDef<TData, TValue>[];
   data: TData[];
+  loading?: boolean;
+  initialColumnVisibility?: VisibilityState;
 
   // Pagination
   pageCount?: number;
@@ -50,6 +52,8 @@ interface CommonTableProps<TData, TValue> {
 export function CommonTable<TData, TValue>({
   columns,
   data,
+  loading = false,
+  initialColumnVisibility,
   pageCount = -1,
   pagination,
   onPaginationChange,
@@ -62,7 +66,7 @@ export function CommonTable<TData, TValue>({
     []
   );
   const [columnVisibility, setColumnVisibility] =
-    React.useState<VisibilityState>({});
+    React.useState<VisibilityState>(initialColumnVisibility ?? {});
 
   const table = useReactTable({
     data,
@@ -141,7 +145,16 @@ export function CommonTable<TData, TValue>({
             ))}
           </TableHeader>
           <TableBody>
-            {table.getRowModel().rows?.length ? (
+            {loading ? (
+              <TableRow>
+                <TableCell colSpan={columns.length} className="h-24">
+                  <div className="flex items-center justify-center gap-2 text-sm text-muted-foreground">
+                    <LoaderCircle className="h-4 w-4 animate-spin" />
+                    Loading...
+                  </div>
+                </TableCell>
+              </TableRow>
+            ) : table.getRowModel().rows?.length ? (
               table.getRowModel().rows.map((row) => (
                 <TableRow
                   key={row.id}
@@ -178,7 +191,7 @@ export function CommonTable<TData, TValue>({
             variant="outline"
             size="sm"
             onClick={() => table.previousPage()}
-            disabled={!table.getCanPreviousPage()}
+            disabled={loading || !table.getCanPreviousPage()}
           >
             Previous
           </Button>
@@ -186,7 +199,7 @@ export function CommonTable<TData, TValue>({
             variant="outline"
             size="sm"
             onClick={() => table.nextPage()}
-            disabled={!table.getCanNextPage()}
+            disabled={loading || !table.getCanNextPage()}
           >
             Next
           </Button>

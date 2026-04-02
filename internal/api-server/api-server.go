@@ -22,10 +22,21 @@ type APIServer struct {
 	workflowHandler  *WorkflowHandler
 	nodeHandler      *NodeHandler
 	dashboardHandler *DashboardHandler
+	authHandler      *AuthHandler
+	adminHandler     *AdminHandler
 	staticHandler    *StaticHandler
 }
 
-func NewAPIServer(db database.Database, scheduler *scheduler.Scheduler, r *router.Router, runService RunManager, nodeService NodeManager) *APIServer {
+func NewAPIServer(
+	db database.Database,
+	scheduler *scheduler.Scheduler,
+	r *router.Router,
+	runService RunManager,
+	nodeService NodeManager,
+	authService AuthManager,
+	userService UserManager,
+	bootstrapUsername string,
+) *APIServer {
 	workflowHandler := NewWorkflowHandler(db)
 	workflowHandler.SetRunService(runService)
 
@@ -40,6 +51,8 @@ func NewAPIServer(db database.Database, scheduler *scheduler.Scheduler, r *route
 		workflowHandler:  workflowHandler,
 		nodeHandler:      NewNodeHandler(nodeService),
 		dashboardHandler: dashboardHandler,
+		authHandler:      NewAuthHandler(authService),
+		adminHandler:     NewAdminHandler(userService, bootstrapUsername),
 		staticHandler:    NewStaticHandler(),
 	}
 
@@ -61,35 +74,57 @@ func (a *APIServer) RegisterRoutes(engine *gin.Engine) {
 
 	api := engine.Group("/api")
 	{
-		if a.dashboardHandler != nil {
-			api.GET("/dashboard", a.dashboardHandler.Get)
+		auth := api.Group("/auth")
+		if a.authHandler != nil {
+			auth.POST("/login", a.authHandler.Login)
 		}
 
-		// Workflow routes
-		workflows := api.Group("/workflows")
-		{
-			workflows.GET("", a.workflowHandler.List)
-			workflows.GET("/:id", a.workflowHandler.Get)
-			workflows.PUT("/:id", a.workflowHandler.Save)
-			workflows.DELETE("/:id", a.workflowHandler.Delete)
-			workflows.POST("/:id/run", a.workflowHandler.Run)
+		protected := api.Group("")
+		if a.authHandler != nil {
+			protected.Use(AuthMiddleware(a.authHandler.auth))
+			protected.GET("/auth/me", a.authHandler.Me)
 		}
-
-		runs := api.Group("/workflow_runs")
 		{
-			runs.GET("", a.workflowHandler.ListRuns)
-			runs.GET("/:run_id", a.workflowHandler.GetRun)
-			runs.GET("/:run_id/events", a.workflowHandler.RunEvents)
-			runs.POST("/:run_id/rerun", a.workflowHandler.Rerun)
-			runs.POST("/:run_id/cancel", a.workflowHandler.Cancel)
-		}
+			if a.dashboardHandler != nil {
+				protected.GET("/dashboard", a.dashboardHandler.Get)
+			}
 
-		nodes := api.Group("/nodes")
-		{
-			nodes.GET("", a.nodeHandler.List)
-			nodes.GET("/:id", a.nodeHandler.Get)
-			nodes.POST("/:id/tags", a.nodeHandler.AddTag)
-			nodes.DELETE("/:id/tags/:tag", a.nodeHandler.DeleteTag)
+			// Workflow routes
+			workflows := protected.Group("/workflows")
+			{
+				workflows.GET("", a.workflowHandler.List)
+				workflows.GET("/:id", a.workflowHandler.Get)
+				workflows.PUT("/:id", a.workflowHandler.Save)
+				workflows.DELETE("/:id", a.workflowHandler.Delete)
+				workflows.POST("/:id/run", a.workflowHandler.Run)
+			}
+
+			runs := protected.Group("/workflow_runs")
+			{
+				runs.GET("", a.workflowHandler.ListRuns)
+				runs.GET("/:run_id", a.workflowHandler.GetRun)
+				runs.GET("/:run_id/events", a.workflowHandler.RunEvents)
+				runs.POST("/:run_id/rerun", a.workflowHandler.Rerun)
+				runs.POST("/:run_id/cancel", a.workflowHandler.Cancel)
+			}
+
+			nodes := protected.Group("/nodes")
+			{
+				nodes.GET("", a.nodeHandler.List)
+				nodes.GET("/:id", a.nodeHandler.Get)
+				nodes.POST("/:id/tags", a.nodeHandler.AddTag)
+				nodes.DELETE("/:id/tags/:tag", a.nodeHandler.DeleteTag)
+			}
+
+			if a.adminHandler != nil {
+				admin := protected.Group("/admin")
+				{
+					admin.GET("/users", a.adminHandler.ListUsers)
+					admin.POST("/users", a.adminHandler.CreateUser)
+					admin.PUT("/users/:id/password", a.adminHandler.UpdateUserPassword)
+					admin.DELETE("/users/:id", a.adminHandler.DeleteUser)
+				}
+			}
 		}
 
 		internal := api.Group("/internal")

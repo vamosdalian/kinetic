@@ -46,6 +46,20 @@ func TestLoadRuntimeConfig_AppliesOverridesInOrder(t *testing.T) {
 	assert.True(t, cfg.Controller.EmbeddedWorkerEnabled)
 }
 
+func TestLoadRuntimeConfig_ControllerModeBootstrapsAuthDefaults(t *testing.T) {
+	homeDir := t.TempDir()
+	t.Setenv("HOME", homeDir)
+
+	cfg, _, shouldPersist, err := loadRuntimeConfig(cliOptions{})
+	require.NoError(t, err)
+
+	assert.True(t, shouldPersist)
+	assert.Equal(t, config.ModeController, cfg.Mode)
+	assert.Equal(t, "kinetic", cfg.Controller.AdminUsername)
+	assert.Equal(t, "kinetic", cfg.Controller.AdminPassword)
+	assert.NotEmpty(t, cfg.Controller.AuthSecret)
+}
+
 func TestLoadRuntimeConfig_UsesExplicitConfigPath(t *testing.T) {
 	configPath := filepath.Join(t.TempDir(), "custom-config.yml")
 	require.NoError(t, os.WriteFile(configPath, []byte("mode: worker\n"), 0o644))
@@ -101,4 +115,26 @@ func TestPersistMissingConfig_ControllerModeCommentsRemoteWorkerFields(t *testin
 	assert.Contains(t, string(content), "#     controller_url:")
 	assert.Contains(t, string(content), "#     advertise_ip:")
 	assert.Contains(t, string(content), "#     stream_reconnect_interval:")
+}
+
+func TestValidateControllerAuthConfig_RequiresAdminCredentialsInControllerMode(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Mode = config.ModeController
+	cfg.Controller.AuthSecret = "secret"
+	require.NoError(t, validateControllerAuthConfig(cfg))
+
+	cfg.Controller.AdminUsername = "admin"
+	cfg.Controller.AdminPassword = "password"
+	cfg.Controller.AuthSecret = "secret"
+	require.NoError(t, validateControllerAuthConfig(cfg))
+
+	cfg.Controller.AdminUsername = ""
+	err := validateControllerAuthConfig(cfg)
+	require.Error(t, err)
+
+	cfg.Mode = config.ModeWorker
+	cfg.Controller.AdminUsername = ""
+	cfg.Controller.AdminPassword = ""
+	cfg.Controller.AuthSecret = ""
+	require.NoError(t, validateControllerAuthConfig(cfg))
 }

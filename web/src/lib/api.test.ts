@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest"
 
 import { apiClient, apiClientFull } from "./api"
+import { AUTH_TOKEN_STORAGE_KEY } from "./auth"
 
 describe("apiClient", () => {
   afterEach(() => {
@@ -65,6 +66,25 @@ describe("apiClient", () => {
     expect(consoleError).toHaveBeenCalledWith("API Error:", "validation failed", {
       message: "validation failed",
     })
+  })
+
+  it("adds the bearer token when one is stored", async () => {
+    window.localStorage.setItem(AUTH_TOKEN_STORAGE_KEY, "token-123")
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: vi.fn().mockResolvedValue({
+        success: true,
+        data: { ok: true },
+      }),
+    })
+    vi.stubGlobal("fetch", fetchMock)
+
+    await apiClient<{ ok: boolean }>("/api/dashboard")
+
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    const [, init] = fetchMock.mock.calls[0]
+    expect(init?.headers).toBeInstanceOf(Headers)
+    expect(new Headers(init?.headers).get("Authorization")).toBe("Bearer token-123")
   })
 })
 

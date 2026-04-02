@@ -99,9 +99,6 @@ describe("fetchDashboard", () => {
 
     await fetchDashboard("30d", "Asia/Shanghai")
 
-    expect(fetchMock).toHaveBeenCalledWith(
-      "/api/dashboard?range=30d&tz=Asia%2FShanghai",
-      undefined
-    )
+    expect(fetchMock).toHaveBeenCalledWith("/api/dashboard?range=30d&tz=Asia%2FShanghai", undefined)
   })
 })

@@ -1,5 +1,6 @@
 import * as React from "react";
 import { AppSidebar } from "@/components/app-sidebar";
+import { useAuth } from "@/components/auth-provider";
 
 // import { SiteHeader } from "@/components/site-header";
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
@@ -48,6 +49,8 @@ function RouteLoader() {
 }
 
 export default function Page() {
+  const { user, logout } = useAuth()
+
   return (
     <SidebarProvider
       style={
@@ -57,7 +60,7 @@ export default function Page() {
         } as React.CSSProperties
       }
     >
-      <AppSidebar />
+      <AppSidebar user={user} onLogout={logout} />
       <SidebarInset>
         {/* <SiteHeader /> */}
         <React.Suspense fallback={<RouteLoader />}>
