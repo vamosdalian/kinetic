@@ -1,6 +1,6 @@
 import * as React from "react";
 import { type ColumnDef } from "@tanstack/react-table";
-import { LoaderCircle, Plus, RefreshCw, X } from "lucide-react";
+import { BookmarkPlus, LoaderCircle, MoreHorizontal, Plus, RefreshCw, X } from "lucide-react";
 
 import { CommonTable } from "@/components/common-table";
 import { Badge } from "@/components/ui/badge";
@@ -13,6 +13,13 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { apiClient, apiClientFull } from "@/lib/api";
 import { getNodeStatusBadgeClassName } from "@/lib/node-status";
@@ -149,14 +156,16 @@ export function Node() {
   const columns = React.useMemo<ColumnDef<NodeItem>[]>(
     () => [
       {
+        accessorKey: "node_id",
+        header: "Node ID",
+        cell: ({ row }) => <div className="font-mono text-xs">{row.original.node_id}</div>,
+      },
+      {
         accessorKey: "name",
         header: "Node Name",
         cell: ({ row }) => (
           <div className="min-w-[160px]">
             <div className="font-medium">{row.original.name}</div>
-            <div className="font-mono text-xs text-muted-foreground">
-              {row.original.node_id}
-            </div>
           </div>
         ),
       },
@@ -242,31 +251,40 @@ export function Node() {
         id: "actions",
         header: "Action",
         enableHiding: false,
-        cell: ({ row }) => (
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => openAddTagDialog(row.original)}
-          >
-            <Plus className="h-4 w-4" />
-            Add Tag
-          </Button>
-        ),
+        cell: ({ row }) => {
+          const node = row.original
+
+          return (
+            <div className="flex items-center space-x-1">
+              <Button
+                variant="ghost"
+                className="h-8 w-8 p-0"
+                onClick={() => openAddTagDialog(node)}
+              >
+                <span className="sr-only">Add tag</span>
+                <BookmarkPlus className="h-4 w-4" />
+              </Button>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="ghost" className="h-8 w-8 p-0">
+                    <span className="sr-only">Open menu</span>
+                    <MoreHorizontal className="h-4 w-4" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuLabel>Actions</DropdownMenuLabel>
+                  <DropdownMenuItem onClick={() => navigator.clipboard.writeText(node.node_id)}>
+                    Copy Node ID
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </div>
+          )
+        },
       },
     ],
     [deletingKey, handleDeleteTag, openAddTagDialog]
   );
-
-  if (loading) {
-    return (
-      <div className="flex flex-1 flex-col min-h-0">
-        <SiteHeader breadcrumbs={[{ label: "Node", href: null }]} />
-        <div className="flex flex-1 items-center justify-center">
-          <LoaderCircle className="h-8 w-8 animate-spin text-muted-foreground" />
-        </div>
-      </div>
-    );
-  }
 
   return (
     <div className="flex flex-1 flex-col min-h-0">
@@ -274,6 +292,8 @@ export function Node() {
       <CommonTable
         columns={columns}
         data={nodes}
+        loading={loading}
+        initialColumnVisibility={{ node_id: false }}
         manualPagination={true}
         pageCount={pageCount}
         pagination={pagination}

@@ -77,6 +77,13 @@ export function Workflow() {
 
   const columns: ColumnDef<WorkflowListItem>[] = [
     {
+      accessorKey: "id",
+      header: "Workflow ID",
+      cell: ({ row }) => (
+        <div className="font-mono text-xs">{row.original.id}</div>
+      ),
+    },
+    {
       accessorKey: "name",
       header: ({ column }) => {
         return (
@@ -251,6 +258,7 @@ export function Workflow() {
       <CommonTable
         columns={columns}
         data={data}
+        initialColumnVisibility={{ id: false }}
         manualPagination={true}
         pageCount={pageCount}
         pagination={pagination}

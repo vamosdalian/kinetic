@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"os"
@@ -59,6 +61,9 @@ func main() {
 	if err := validateMode(cfg.Mode); err != nil {
 		logrus.WithError(err).Fatal("Invalid runtime config")
 	}
+	if err := validateControllerAuthConfig(cfg); err != nil {
+		logrus.WithError(err).Fatal("Invalid runtime config")
+	}
 
 	if err := persistMissingConfig(cfg, configPath, shouldPersistConfig); err != nil {
 		logrus.WithError(err).Fatal("Failed to persist config")
@@ -93,8 +98,12 @@ func loadRuntimeConfig(opts cliOptions) (*config.Config, string, bool, error) {
 
 	cfg := result.Config
 	applyCLIOverrides(cfg, opts)
+	changed, err := applyControllerAuthDefaults(cfg)
+	if err != nil {
+		return nil, "", false, err
+	}
 
-	return cfg, result.Path, !result.FileExists, nil
+	return cfg, result.Path, !result.FileExists || changed, nil
 }
 
 func applyCLIOverrides(cfg *config.Config, opts cliOptions) {
@@ -113,6 +122,56 @@ func validateMode(mode config.Mode) error {
 	default:
 		return fmt.Errorf("unknown mode %q", mode)
 	}
+}
+
+func validateControllerAuthConfig(cfg *config.Config) error {
+	if cfg == nil || cfg.Mode != config.ModeController {
+		return nil
+	}
+	if cfg.Controller.AdminUsername == "" {
+		return fmt.Errorf("controller.admin_username is required in controller mode")
+	}
+	if cfg.Controller.AdminPassword == "" {
+		return fmt.Errorf("controller.admin_password is required in controller mode")
+	}
+	if cfg.Controller.AuthSecret == "" {
+		return fmt.Errorf("controller.auth_secret is required in controller mode")
+	}
+	return nil
+}
+
+func applyControllerAuthDefaults(cfg *config.Config) (bool, error) {
+	if cfg == nil || cfg.Mode != config.ModeController {
+		return false, nil
+	}
+
+	changed := false
+	if cfg.Controller.AdminUsername == "" {
+		cfg.Controller.AdminUsername = "kinetic"
+		changed = true
+	}
+	if cfg.Controller.AdminPassword == "" {
+		cfg.Controller.AdminPassword = "kinetic"
+		changed = true
+	}
+	if cfg.Controller.AuthSecret == "" {
+		secret, err := generateAuthSecret()
+		if err != nil {
+			return false, fmt.Errorf("generate controller.auth_secret: %w", err)
+		}
+		cfg.Controller.AuthSecret = secret
+		changed = true
+	}
+
+	return changed, nil
+}
+
+func generateAuthSecret() (string, error) {
+	secret := make([]byte, 32)
+	if _, err := rand.Read(secret); err != nil {
+		return "", err
+	}
+	return base64.RawURLEncoding.EncodeToString(secret), nil
 }
 
 func persistMissingConfig(cfg *config.Config, path string, shouldPersist bool) error {

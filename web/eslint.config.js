@@ -30,7 +30,7 @@ export default tseslint.config([
     },
   },
   {
-    files: ['src/components/ui/**/*.{ts,tsx}', 'src/components/data-table.tsx'],
+    files: ['src/components/ui/**/*.{ts,tsx}', 'src/components/data-table.tsx', 'src/components/auth-provider.tsx'],
     rules: {
       'react-refresh/only-export-components': 'off',
     },

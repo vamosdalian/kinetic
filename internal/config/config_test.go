@@ -24,6 +24,9 @@ func TestLoad_CreatesDefaultConfigWhenMissing(t *testing.T) {
 	assert.Equal(t, 5, cfg.Worker.HeartbeatInterval)
 	assert.Equal(t, 10, cfg.Worker.MaxConcurrency)
 	assert.Equal(t, filepath.Join(homeDir, ".kinetic", "kinetic.db"), cfg.Database.Path)
+	assert.Equal(t, "kinetic", cfg.Controller.AdminUsername)
+	assert.Equal(t, "kinetic", cfg.Controller.AdminPassword)
+	assert.Empty(t, cfg.Controller.AuthSecret)
 
 	assert.False(t, result.FileExists)
 	assert.Equal(t, filepath.Join(homeDir, ".kinetic", "config.yml"), result.Path)
@@ -38,6 +41,8 @@ func TestLoad_AppliesFileThenEnvironmentOverrides(t *testing.T) {
 	t.Setenv("KINETIC_API_PORT", "9090")
 	t.Setenv("KINETIC_MODE", "controller")
 	t.Setenv("KINETIC_WORKER_CONTROLLER_URL", "http://env-controller:9898")
+	t.Setenv("KINETIC_CONTROLLER_ADMIN_USERNAME", "env-admin")
+	t.Setenv("KINETIC_CONTROLLER_AUTH_SECRET", "env-secret")
 
 	configDir := filepath.Join(homeDir, ".kinetic")
 	require.NoError(t, os.MkdirAll(configDir, 0o755))
@@ -52,6 +57,9 @@ database:
   path: /tmp/kinetic.db
 controller:
   embedded_worker_enabled: false
+  admin_username: file-admin
+  admin_password: file-password
+  auth_secret: file-secret
 worker:
   id: file-worker
   name: File Worker
@@ -76,6 +84,9 @@ log:
 	assert.Equal(t, "127.0.0.1", cfg.API.Host)
 	assert.Equal(t, 9090, cfg.API.Port)
 	assert.False(t, cfg.Controller.EmbeddedWorkerEnabled)
+	assert.Equal(t, "env-admin", cfg.Controller.AdminUsername)
+	assert.Equal(t, "file-password", cfg.Controller.AdminPassword)
+	assert.Equal(t, "env-secret", cfg.Controller.AuthSecret)
 	assert.Equal(t, "file-worker", cfg.Worker.ID)
 	assert.Equal(t, "File Worker", cfg.Worker.Name)
 	assert.Equal(t, "http://env-controller:9898", cfg.Worker.ControllerURL)
@@ -116,6 +127,9 @@ func TestRenderConfigBody_WorkerModeCommentsUnusedSections(t *testing.T) {
 	assert.Contains(t, body, "# controller:")
 	assert.Contains(t, body, "worker:")
 	assert.Contains(t, body, "log:")
+	assert.Contains(t, body, "#     admin_username:")
+	assert.Contains(t, body, "#     admin_password:")
+	assert.Contains(t, body, "#     auth_secret:")
 	assert.NotContains(t, body, "# worker:")
 	assert.NotContains(t, body, "# log:")
 }
@@ -130,6 +144,9 @@ func TestRenderConfigBody_ControllerModeCommentsRemoteWorkerFields(t *testing.T)
 	assert.Contains(t, body, "api:")
 	assert.Contains(t, body, "database:")
 	assert.Contains(t, body, "controller:")
+	assert.Contains(t, body, "  admin_username:")
+	assert.Contains(t, body, "  admin_password:")
+	assert.Contains(t, body, "  auth_secret:")
 	assert.Contains(t, body, "worker:")
 	assert.Contains(t, body, "  id:")
 	assert.Contains(t, body, "  name:")

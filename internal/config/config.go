@@ -51,7 +51,10 @@ type DatabaseConfig struct {
 }
 
 type ControllerConfig struct {
-	EmbeddedWorkerEnabled bool `yaml:"embedded_worker_enabled" env:"EMBEDDED_WORKER_ENABLED, overwrite"`
+	EmbeddedWorkerEnabled bool   `yaml:"embedded_worker_enabled" env:"EMBEDDED_WORKER_ENABLED, overwrite"`
+	AdminUsername         string `yaml:"admin_username" env:"ADMIN_USERNAME, overwrite"`
+	AdminPassword         string `yaml:"admin_password" env:"ADMIN_PASSWORD, overwrite"`
+	AuthSecret            string `yaml:"auth_secret" env:"AUTH_SECRET, overwrite"`
 }
 
 type WorkerConfig struct {
@@ -110,6 +113,9 @@ func DefaultConfig() *Config {
 		},
 		Controller: ControllerConfig{
 			EmbeddedWorkerEnabled: true,
+			AdminUsername:         "kinetic",
+			AdminPassword:         "kinetic",
+			AuthSecret:            "",
 		},
 		Worker: WorkerConfig{
 			ID:                     hostName,
@@ -230,6 +236,8 @@ func (c *Config) save(path string) error {
 #   KINETIC_API_HOST, KINETIC_API_PORT,
 #   KINETIC_DATABASE_TYPE, KINETIC_DATABASE_PATH,
 #   KINETIC_CONTROLLER_EMBEDDED_WORKER_ENABLED,
+#   KINETIC_CONTROLLER_ADMIN_USERNAME, KINETIC_CONTROLLER_ADMIN_PASSWORD,
+#   KINETIC_CONTROLLER_AUTH_SECRET,
 #   KINETIC_WORKER_ID, KINETIC_WORKER_NAME,
 #   KINETIC_WORKER_CONTROLLER_URL, KINETIC_WORKER_ADVERTISE_IP,
 #   KINETIC_WORKER_HEARTBEAT_INTERVAL, KINETIC_WORKER_STREAM_RECONNECT_INTERVAL,

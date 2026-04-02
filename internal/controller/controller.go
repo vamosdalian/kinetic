@@ -36,6 +36,11 @@ func NewController(cfg *config.Config) (*Controller, error) {
 	r := router.New(router.WithAddr(cfg.APIAddr()))
 
 	runService := service.NewRunService(db, cfg.Worker.MaxConcurrency)
+	authService := service.NewAuthService(db, cfg.Controller.AuthSecret)
+	if _, err := authService.SyncBootstrapAdmin(context.Background(), cfg.Controller.AdminUsername, cfg.Controller.AdminPassword); err != nil {
+		return nil, fmt.Errorf("failed to sync bootstrap admin: %w", err)
+	}
+	userService := service.NewUserService(db)
 	streamHub := service.NewWorkerStreamHub()
 	runService.EnableDistributed(streamHub)
 	heartbeatTimeout := time.Duration(cfg.Worker.HeartbeatInterval*3) * time.Second
@@ -45,7 +50,7 @@ func NewController(cfg *config.Config) (*Controller, error) {
 	nodeService := service.NewNodeService(db, runService, streamHub, heartbeatTimeout)
 	sched := scheduler.NewScheduler(nodeService)
 
-	apiServer := apiserver.NewAPIServer(db, sched, r, runService, nodeService)
+	apiServer := apiserver.NewAPIServer(db, sched, r, runService, nodeService, authService, userService, cfg.Controller.AdminUsername)
 
 	var embeddedWorker *worker.Worker
 	if cfg.Controller.EmbeddedWorkerEnabled {

@@ -121,3 +121,22 @@ func TestMigrateRemovesLegacyPythonWorkflows(t *testing.T) {
 		t.Fatal("Expected python workflow to be removed during migration")
 	}
 }
+
+func TestMigrateCreatesUsersTable(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "users_table.db")
+	db, err := NewSqliteDB(dbPath)
+	if err != nil {
+		t.Fatalf("Failed to create database: %v", err)
+	}
+	defer db.Close()
+
+	var count int
+	if err := db.db.QueryRow(`
+		SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'users'
+	`).Scan(&count); err != nil {
+		t.Fatalf("Failed to check users table: %v", err)
+	}
+	if count != 1 {
+		t.Fatalf("Expected users table to exist, got %d matches", count)
+	}
+}

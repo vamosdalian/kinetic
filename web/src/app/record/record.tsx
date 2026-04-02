@@ -246,6 +246,7 @@ export function Record() {
       <CommonTable
         columns={columns}
         data={data}
+        initialColumnVisibility={{ run_id: false }}
         manualPagination={true}
         pageCount={pageCount}
         pagination={pagination}
