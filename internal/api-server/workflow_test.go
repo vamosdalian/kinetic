@@ -306,6 +306,48 @@ func TestWorkflowHandler_List(t *testing.T) {
 	assert.True(t, apiResponse.Meta.Total > 0)
 }
 
+func TestWorkflowHandler_List_IncludesTrigger(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	db := setupTestDB(t)
+	handler := NewWorkflowHandler(db)
+	router := gin.New()
+	router.GET("/api/workflows", handler.List)
+
+	workflowID := uuid.New().String()
+	err := db.SaveWorkflow(entity.WorkflowEntity{
+		ID:          workflowID,
+		Name:        "Cron Workflow",
+		Description: "cron",
+		Enable:      true,
+		TriggerType: "cron",
+		TriggerExpr: "*/5 * * * *",
+	})
+	assert.NoError(t, err)
+
+	req, _ := http.NewRequest("GET", "/api/workflows?query=Cron%20Workflow", nil)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+
+	var apiResponse APIResponse
+	err = json.Unmarshal(w.Body.Bytes(), &apiResponse)
+	assert.NoError(t, err)
+	assert.True(t, apiResponse.Success)
+
+	items, ok := apiResponse.Data.([]interface{})
+	assert.True(t, ok)
+	if assert.Len(t, items, 1) {
+		item, ok := items[0].(map[string]interface{})
+		assert.True(t, ok)
+		trigger, ok := item["trigger"].(map[string]interface{})
+		assert.True(t, ok)
+		assert.Equal(t, "cron", trigger["type"])
+		assert.Equal(t, "*/5 * * * *", trigger["expr"])
+	}
+}
+
 func TestWorkflowHandler_Get(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
@@ -322,6 +364,8 @@ func TestWorkflowHandler_Get(t *testing.T) {
 		Config:      `{"env":{"API_TOKEN":"secret"}}`,
 		Version:     1,
 		Enable:      true,
+		TriggerType: "cron",
+		TriggerExpr: "0 * * * *",
 		CreatedAt:   time.Now(),
 		UpdatedAt:   time.Now(),
 	}
@@ -357,6 +401,10 @@ func TestWorkflowHandler_Get(t *testing.T) {
 	envMap, ok := configMap["env"].(map[string]interface{})
 	assert.True(t, ok)
 	assert.Equal(t, "secret", envMap["API_TOKEN"])
+	triggerMap, ok := dataMap["trigger"].(map[string]interface{})
+	assert.True(t, ok)
+	assert.Equal(t, "cron", triggerMap["type"])
+	assert.Equal(t, "0 * * * *", triggerMap["expr"])
 }
 
 func TestWorkflowHandler_SaveAndGet_WithWorkflowConfigAndTaskEnv(t *testing.T) {
@@ -379,6 +427,10 @@ func TestWorkflowHandler_SaveAndGet_WithWorkflowConfigAndTaskEnv(t *testing.T) {
 			},
 		},
 		Enable: true,
+		Trigger: workflowcfg.WorkflowTrigger{
+			Type: workflowcfg.WorkflowTriggerCron,
+			Expr: "*/30 * * * *",
+		},
 		TaskNodes: []dto.TaskNode{
 			{
 				ID:       taskID,
@@ -414,12 +466,48 @@ func TestWorkflowHandler_SaveAndGet_WithWorkflowConfigAndTaskEnv(t *testing.T) {
 	configMap := dataMap["config"].(map[string]interface{})
 	envMap := configMap["env"].(map[string]interface{})
 	assert.Equal(t, "secret", envMap["API_TOKEN"])
+	triggerMap := dataMap["trigger"].(map[string]interface{})
+	assert.Equal(t, "cron", triggerMap["type"])
+	assert.Equal(t, "*/30 * * * *", triggerMap["expr"])
 
 	taskNodes := dataMap["taskNodes"].([]interface{})
 	taskData := taskNodes[0].(map[string]interface{})
 	taskConfig := taskData["config"].(map[string]interface{})
 	taskEnv := taskConfig["env"].(map[string]interface{})
 	assert.Equal(t, "https://example.com", taskEnv["BASE_URL"])
+}
+
+func TestWorkflowHandler_UpdateEnable(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	db := setupTestDB(t)
+	handler := NewWorkflowHandler(db)
+	router := gin.New()
+	router.POST("/api/workflows/:id/enable", handler.UpdateEnable)
+
+	workflowID := uuid.New().String()
+	err := db.SaveWorkflow(entity.WorkflowEntity{
+		ID:          workflowID,
+		Name:        "Toggle Workflow",
+		Description: "toggle",
+		Enable:      true,
+		TriggerType: "cron",
+		TriggerExpr: "0 * * * *",
+	})
+	assert.NoError(t, err)
+
+	req, _ := http.NewRequest("POST", "/api/workflows/"+workflowID+"/enable", bytes.NewBufferString(`{"enable":false}`))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+
+	workflow, err := db.GetWorkflowByID(workflowID)
+	assert.NoError(t, err)
+	assert.False(t, workflow.Enable)
+	assert.Nil(t, workflow.NextRunAt)
+	assert.Equal(t, 1, workflow.Version)
 }
 
 func TestWorkflowHandler_Save_RejectsReservedEnvPrefix(t *testing.T) {

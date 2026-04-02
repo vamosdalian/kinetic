@@ -13,17 +13,18 @@ type Position struct {
 }
 
 type Workflow struct {
-	ID          string                     `json:"id"`
-	Name        string                     `json:"name"`
-	Description string                     `json:"description"`
-	Config      workflowcfg.WorkflowConfig `json:"config,omitempty"`
-	Tag         string                     `json:"tag,omitempty"`
-	Version     int                        `json:"version,string"`
-	Enable      bool                       `json:"enable"`
-	TaskNodes   []TaskNode                 `json:"taskNodes"`
-	Edges       []Edge                     `json:"edges"`
-	CreatedAt   time.Time                  `json:"created_at"`
-	UpdatedAt   time.Time                  `json:"updated_at"`
+	ID          string                      `json:"id"`
+	Name        string                      `json:"name"`
+	Description string                      `json:"description"`
+	Config      workflowcfg.WorkflowConfig  `json:"config,omitempty"`
+	Tag         string                      `json:"tag,omitempty"`
+	Version     int                         `json:"version,string"`
+	Enable      bool                        `json:"enable"`
+	Trigger     workflowcfg.WorkflowTrigger `json:"trigger"`
+	TaskNodes   []TaskNode                  `json:"taskNodes"`
+	Edges       []Edge                      `json:"edges"`
+	CreatedAt   time.Time                   `json:"created_at"`
+	UpdatedAt   time.Time                   `json:"updated_at"`
 }
 
 type TaskType string
@@ -54,10 +55,11 @@ type Edge struct {
 }
 
 type WorkflowListItem struct {
-	ID        string    `json:"id"`
-	Name      string    `json:"name"`
-	Enable    bool      `json:"enable"`
-	Version   int       `json:"version,string"`
-	CreatedAt time.Time `json:"create_at"`
-	UpdatedAt time.Time `json:"update_at"`
+	ID        string                      `json:"id"`
+	Name      string                      `json:"name"`
+	Enable    bool                        `json:"enable"`
+	Trigger   workflowcfg.WorkflowTrigger `json:"trigger"`
+	Version   int                         `json:"version,string"`
+	CreatedAt time.Time                   `json:"create_at"`
+	UpdatedAt time.Time                   `json:"update_at"`
 }

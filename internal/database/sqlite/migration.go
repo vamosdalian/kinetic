@@ -162,6 +162,14 @@ CREATE TABLE IF NOT EXISTS users (
 CREATE UNIQUE INDEX IF NOT EXISTS idx_users_username
 	ON users(username);
 `,
+	9: `
+ALTER TABLE workflows ADD COLUMN trigger_type TEXT NOT NULL DEFAULT 'manual';
+ALTER TABLE workflows ADD COLUMN trigger_expr TEXT NOT NULL DEFAULT '';
+ALTER TABLE workflows ADD COLUMN next_run_at TEXT;
+ALTER TABLE workflows ADD COLUMN last_run_at TEXT;
+CREATE INDEX IF NOT EXISTS idx_workflows_trigger_enable_next_run_at
+	ON workflows(trigger_type, enable, next_run_at ASC);
+`,
 }
 
 func (s *SqliteDB) Migrate() error {

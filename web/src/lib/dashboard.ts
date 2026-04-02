@@ -56,12 +56,13 @@ export interface DashboardScheduledRunTable {
 }
 
 export interface DashboardScheduledRunRow {
+  workflow_id: string
   workflow_name: string
   mode: string
   status: string
   next_run_at: string
   last_run_at: string
-  target_node: string
+  target_tag: string
 }
 
 export interface DashboardNodeActivityTable {

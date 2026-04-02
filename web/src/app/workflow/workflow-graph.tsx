@@ -67,6 +67,8 @@ function WorkflowGraph() {
     name: "",
     description: "",
     tag: "node-default",
+    enable: true,
+    trigger: { type: "manual" },
     config: { env: {} },
   });
   const [taskNodes, setTaskNodes] = React.useState<Record<string, TaskNode>>({});
@@ -122,7 +124,14 @@ function WorkflowGraph() {
 
   const clear = React.useCallback(() => {
     setWorkflowId("");
-    setWorkflowData({ name: "", description: "", tag: "node-default", config: { env: {} } });
+    setWorkflowData({
+      name: "",
+      description: "",
+      tag: "node-default",
+      enable: true,
+      trigger: { type: "manual" },
+      config: { env: {} },
+    });
     setTaskNodes({});
     setEdges([]);
     markClean();
@@ -141,6 +150,8 @@ function WorkflowGraph() {
       name: data.name,
       description: data.description,
       tag: data.tag || "node-default",
+      enable: data.enable,
+      trigger: data.trigger ?? { type: "manual" },
       config: data.config ?? { env: {} },
     });
     setTaskNodes(taskNodesRecord);
@@ -382,6 +393,13 @@ function WorkflowGraph() {
       toast.error(validation.errors[0] || "Workflow validation failed");
       return;
     }
+    if (
+      workflowData.trigger.type === "cron" &&
+      (workflowData.trigger.expr ?? "").trim().split(/\s+/).length !== 5
+    ) {
+      toast.error("Cron expression must contain exactly 5 fields");
+      return;
+    }
 
     setSaving(true);
 
@@ -389,6 +407,8 @@ function WorkflowGraph() {
       const payload = {
         name: workflowData.name || "Untitled Workflow",
         description: workflowData.description || "",
+        enable: workflowData.enable,
+        trigger: workflowData.trigger,
         config: workflowData.config,
         tag: workflowData.tag || "",
         taskNodes: Object.values(taskNodes),

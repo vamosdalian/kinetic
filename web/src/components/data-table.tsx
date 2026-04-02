@@ -96,6 +96,16 @@ function NodeRowActions({ onOpenNodes }: { onOpenNodes: () => void }) {
   )
 }
 
+function getScheduleStatusBadgeClassName(status: string) {
+  switch (status) {
+    case "enabled":
+      return "border-transparent bg-emerald-500 text-white hover:bg-emerald-500"
+    case "disabled":
+    default:
+      return "border-transparent bg-slate-400 text-white hover:bg-slate-400"
+  }
+}
+
 const workflowColumns = ({
   onViewWorkflowRun,
   onRerunWorkflowRun,
@@ -166,6 +176,14 @@ const scheduledRunColumns = ({
   {
     accessorKey: "workflow_name",
     header: "Workflow",
+    cell: ({ row }) => (
+      <div className="min-w-[180px]">
+        <div className="font-medium">{row.original.workflow_name}</div>
+        <div className="font-mono text-xs text-muted-foreground">
+          {row.original.workflow_id}
+        </div>
+      </div>
+    ),
   },
   {
     accessorKey: "mode",
@@ -182,7 +200,7 @@ const scheduledRunColumns = ({
     cell: ({ row }) => (
       <Badge
         variant="outline"
-        className={`capitalize ${getStatusBadgeClassName(row.original.status)}`}
+        className={`capitalize ${getScheduleStatusBadgeClassName(row.original.status)}`}
       >
         {row.original.status}
       </Badge>
@@ -199,8 +217,8 @@ const scheduledRunColumns = ({
     cell: ({ row }) => formatDashboardDateTime(row.original.last_run_at),
   },
   {
-    accessorKey: "target_node",
-    header: "Target Node",
+    accessorKey: "target_tag",
+    header: "Target Tag",
   },
   {
     id: "actions",

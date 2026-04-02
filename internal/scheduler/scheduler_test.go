@@ -14,6 +14,7 @@ type stubDispatcher struct {
 	mu            sync.Mutex
 	dispatchCalls int
 	sweepCalls    int
+	scheduleCalls int
 }
 
 func (s *stubDispatcher) DispatchQueuedTasks(ctx context.Context, limit int) error {
@@ -30,16 +31,22 @@ func (s *stubDispatcher) SweepOfflineNodes(ctx context.Context) error {
 	return nil
 }
 
-func (s *stubDispatcher) counts() (int, int) {
+func (s *stubDispatcher) ScheduleDueWorkflowRuns(ctx context.Context, limit int) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return s.dispatchCalls, s.sweepCalls
+	s.scheduleCalls++
+	return nil
+}
+
+func (s *stubDispatcher) counts() (int, int, int) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.dispatchCalls, s.sweepCalls, s.scheduleCalls
 }
 
 func TestScheduler_RunInvokesDispatcher(t *testing.T) {
 	dispatcher := &stubDispatcher{}
-	scheduler := NewScheduler(dispatcher)
-	scheduler.interval = 10 * time.Millisecond
+	scheduler := NewSchedulerWithInterval(dispatcher, 10*time.Millisecond)
 
 	done := make(chan error, 1)
 	go func() {
@@ -47,16 +54,17 @@ func TestScheduler_RunInvokesDispatcher(t *testing.T) {
 	}()
 
 	require.Eventually(t, func() bool {
-		dispatchCalls, sweepCalls := dispatcher.counts()
-		return dispatchCalls > 0 && sweepCalls > 0
+		dispatchCalls, sweepCalls, scheduleCalls := dispatcher.counts()
+		return dispatchCalls > 0 && sweepCalls > 0 && scheduleCalls > 0
 	}, time.Second, 10*time.Millisecond)
 
 	require.NoError(t, scheduler.Shutdown(context.Background()))
 	require.NoError(t, <-done)
 
-	dispatchCalls, sweepCalls := dispatcher.counts()
+	dispatchCalls, sweepCalls, scheduleCalls := dispatcher.counts()
 	assert.Greater(t, dispatchCalls, 0)
 	assert.Greater(t, sweepCalls, 0)
+	assert.Greater(t, scheduleCalls, 0)
 }
 
 func TestScheduler_RunWithoutDispatcherStopsCleanly(t *testing.T) {
@@ -76,4 +84,14 @@ func TestScheduler_ShutdownIsIdempotent(t *testing.T) {
 
 	require.NoError(t, scheduler.Shutdown(context.Background()))
 	require.NoError(t, scheduler.Shutdown(context.Background()))
+}
+
+func TestNewScheduler_DefaultIntervalIsFiveSeconds(t *testing.T) {
+	scheduler := NewScheduler(nil)
+	assert.Equal(t, 5*time.Second, scheduler.interval)
+}
+
+func TestNewSchedulerWithInterval_FallsBackToDefault(t *testing.T) {
+	scheduler := NewSchedulerWithInterval(nil, 0)
+	assert.Equal(t, 5*time.Second, scheduler.interval)
 }

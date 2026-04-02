@@ -13,6 +13,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/vamosdalian/kinetic/internal/model/dto"
 	"github.com/vamosdalian/kinetic/internal/model/entity"
+	"github.com/vamosdalian/kinetic/internal/service"
 )
 
 type stubRunStarter struct {
@@ -71,6 +72,24 @@ func TestWorkflowHandler_Run(t *testing.T) {
 	dataMap := response.Data.(map[string]interface{})
 	assert.Equal(t, "run-123", dataMap["run_id"])
 	assert.Equal(t, "workflow-123", starter.workflowID)
+}
+
+func TestWorkflowHandler_Run_RejectsDisabledWorkflow(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	db := setupTestDB(t)
+	handler := NewWorkflowHandler(db)
+	starter := &stubRunStarter{err: service.ErrWorkflowDisabled}
+	handler.SetRunService(starter)
+
+	router := gin.New()
+	router.POST("/api/workflows/:id/run", handler.Run)
+
+	req, _ := http.NewRequest("POST", "/api/workflows/workflow-disabled/run", nil)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusBadRequest, w.Code)
 }
 
 func TestWorkflowHandler_ListRuns(t *testing.T) {
@@ -227,6 +246,24 @@ func TestWorkflowHandler_Rerun(t *testing.T) {
 	dataMap := response.Data.(map[string]interface{})
 	assert.Equal(t, "rerun-456", dataMap["run_id"])
 	assert.Equal(t, "run-old", starter.workflowID)
+}
+
+func TestWorkflowHandler_Rerun_RejectsDisabledWorkflow(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	db := setupTestDB(t)
+	handler := NewWorkflowHandler(db)
+	starter := &stubRunStarter{err: service.ErrWorkflowDisabled}
+	handler.SetRunService(starter)
+
+	router := gin.New()
+	router.POST("/api/workflow_runs/:run_id/rerun", handler.Rerun)
+
+	req, _ := http.NewRequest("POST", "/api/workflow_runs/run-old/rerun", nil)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusBadRequest, w.Code)
 }
 
 func TestWorkflowHandler_Cancel(t *testing.T) {

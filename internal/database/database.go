@@ -2,6 +2,7 @@ package database
 
 import (
 	"context"
+	"time"
 
 	"github.com/vamosdalian/kinetic/internal/model/entity"
 	_ "modernc.org/sqlite"
@@ -16,11 +17,16 @@ type Database interface {
 	CountWorkflows() (int, error)
 	ListWorkflowsFiltered(offset int, limit int, query string) ([]entity.WorkflowEntity, error)
 	CountWorkflowsFiltered(query string) (int, error)
+	ListScheduledWorkflows() ([]entity.WorkflowEntity, error)
+	ListDueWorkflowsForScheduling(now time.Time, limit int) ([]entity.WorkflowEntity, error)
 	GetWorkflowByID(id string) (entity.WorkflowEntity, error)
 	SaveWorkflow(req entity.WorkflowEntity) error
+	UpdateWorkflowEnable(id string, enable bool) error
 	SaveWorkflowDefinition(workflow entity.WorkflowEntity, tasks []entity.TaskEntity, edges []entity.EdgeEntity) error
 	DeleteWorkflow(id string) error
 	DeleteWorkflowDefinition(id string) (bool, error)
+	TouchWorkflowLastRun(workflowID string, lastRunAt time.Time) error
+	CreateScheduledWorkflowRun(workflowID string, runID string, scheduledAt time.Time, nextRunAt *time.Time) (bool, error)
 	GetUserByID(id string) (entity.UserEntity, error)
 	GetUserByUsername(username string) (entity.UserEntity, error)
 	ListUsers() ([]entity.UserEntity, error)

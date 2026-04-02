@@ -2,6 +2,7 @@ package apiserver
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -9,6 +10,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/vamosdalian/kinetic/internal/model/dto"
+	"github.com/vamosdalian/kinetic/internal/service"
 )
 
 type WorkflowRunListQuery struct {
@@ -32,6 +34,10 @@ func (h *WorkflowHandler) Run(c *gin.Context) {
 
 	runID, err := h.runService.StartWorkflowRun(workflowID)
 	if err != nil {
+		if errors.Is(err, service.ErrWorkflowDisabled) {
+			ResponseError(c, http.StatusBadRequest, ErrorCodeInvalidRequest, err.Error())
+			return
+		}
 		ResponseError(c, http.StatusInternalServerError, ErrorCodeInternalError, err.Error())
 		return
 	}
@@ -115,6 +121,10 @@ func (h *WorkflowHandler) Rerun(c *gin.Context) {
 
 	newRunID, err := h.runService.RerunWorkflowRun(runID)
 	if err != nil {
+		if errors.Is(err, service.ErrWorkflowDisabled) {
+			ResponseError(c, http.StatusBadRequest, ErrorCodeInvalidRequest, err.Error())
+			return
+		}
 		ResponseError(c, http.StatusInternalServerError, ErrorCodeInternalError, err.Error())
 		return
 	}

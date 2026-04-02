@@ -53,12 +53,13 @@ type DashboardScheduledRunTable struct {
 }
 
 type DashboardScheduledRunRow struct {
+	WorkflowID   string `json:"workflow_id"`
 	WorkflowName string `json:"workflow_name"`
 	Mode         string `json:"mode"`
 	Status       string `json:"status"`
 	NextRunAt    string `json:"next_run_at"`
 	LastRunAt    string `json:"last_run_at"`
-	TargetNode   string `json:"target_node"`
+	TargetTag    string `json:"target_tag"`
 }
 
 type DashboardNodeActivityTable struct {

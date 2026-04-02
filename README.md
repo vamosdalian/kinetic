@@ -150,6 +150,7 @@ database:
 
 controller:
   embedded_worker_enabled: true
+  scheduler_interval: 5
   admin_username: admin
   admin_password: change-me
   auth_secret: replace-with-a-long-random-secret
@@ -175,6 +176,7 @@ Common environment variable overrides:
 - `KINETIC_API_PORT`
 - `KINETIC_DATABASE_PATH`
 - `KINETIC_CONTROLLER_EMBEDDED_WORKER_ENABLED`
+- `KINETIC_CONTROLLER_SCHEDULER_INTERVAL`
 - `KINETIC_CONTROLLER_ADMIN_USERNAME`
 - `KINETIC_CONTROLLER_ADMIN_PASSWORD`
 - `KINETIC_CONTROLLER_AUTH_SECRET`
@@ -213,6 +215,18 @@ Current workflow config fields:
 - `env`: environment variables inherited by tasks unless overridden
 
 Task-level settings remain inside each task's existing `config` object. Tasks may also define `config.env`.
+
+Workflow scheduling is configured outside `workflow.config` with the top-level fields:
+
+- `enable`: enables or disables the workflow trigger
+- `trigger.type`: `manual` or `cron`
+- `trigger.expr`: standard 5-field cron expression for `cron` triggers
+
+Scheduling notes:
+
+- cron expressions are evaluated in `UTC`
+- v1 does not backfill every missed schedule after controller downtime; it creates at most one catch-up run and advances to the next future window
+- `manual` workflows are never auto-scheduled
 
 Environment variable precedence is:
 
