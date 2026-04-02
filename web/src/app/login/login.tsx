@@ -43,7 +43,7 @@ export function Login() {
       <div className="flex flex-col gap-4 p-6 md:p-10">
         <div className="flex justify-center gap-2 md:justify-start">
           <a href="#" className="flex items-center gap-2 font-medium">
-            <div className="bg-primary text-primary-foreground flex size-6 items-center justify-center rounded-md">
+            <div className="flex size-6 items-center justify-center rounded-md border bg-background text-foreground">
               <Workflow className="size-4" />
             </div>
             Kinetic
@@ -66,9 +66,9 @@ export function Login() {
 
       <div className="relative hidden bg-muted lg:block">
         <img
-          alt="Image"
-          className="absolute inset-0 h-full w-full object-cover dark:brightness-[0.2] dark:grayscale"
-          src="/placeholder.svg"
+          alt="Kinetic workflow preview"
+          className="absolute inset-0 h-full w-full object-cover"
+          src="/placeholder.png"
         />
       </div>
     </div>
