@@ -3,6 +3,7 @@ package controller
 import (
 	"context"
 	"fmt"
+	"net"
 	"time"
 
 	"github.com/sirupsen/logrus"
@@ -59,6 +60,9 @@ func NewController(cfg *config.Config) (*Controller, error) {
 		embeddedCfg.Mode = config.ModeWorker
 		embeddedCfg.Worker.ID = cfg.Worker.ID + "-embedded"
 		embeddedCfg.Worker.Name = cfg.Worker.Name + " (local)"
+		if embeddedCfg.Worker.AdvertiseIP == "" {
+			embeddedCfg.Worker.AdvertiseIP = resolveOutboundIP()
+		}
 		embeddedWorker = worker.NewWorker(&embeddedCfg, "local")
 	}
 
@@ -72,6 +76,15 @@ func NewController(cfg *config.Config) (*Controller, error) {
 		nodeService:    nodeService,
 		embeddedWorker: embeddedWorker,
 	}, nil
+}
+
+func resolveOutboundIP() string {
+	conn, err := net.Dial("udp", "8.8.8.8:80")
+	if err != nil {
+		return ""
+	}
+	defer conn.Close()
+	return conn.LocalAddr().(*net.UDPAddr).IP.String()
 }
 
 func (c *Controller) Run() error {
