@@ -32,19 +32,45 @@ For local development or a simple self-hosted install, the default controller mo
 
 ## Quick Start
 
-### Run From Releases
+### Install (Linux)
 
-Download the archive for your platform from [GitHub Releases](https://github.com/vamosdalian/kinetic/releases), extract it, and run the `kinetic` binary.
-
-Controller quick start:
+Run the one-liner to download the latest release, install the binary, and register a systemd service that starts on boot:
 
 ```bash
-KINETIC_MODE=controller \
-KINETIC_CONTROLLER_EMBEDDED_WORKER_ENABLED=true \
+curl -sSL https://raw.githubusercontent.com/vamosdalian/kinetic/master/install.sh | bash
+```
+
+The service runs as the current user. On first start, Kinetic writes a default config to `~/.kinetic/config.yml` and a SQLite database to `~/.kinetic/kinetic.db`.
+
+```
+Status  : systemctl status kinetic
+Logs    : journalctl -u kinetic -f
+Web UI  : http://<host>:9898   (default credentials: kinetic / kinetic)
+```
+
+To install a worker node instead:
+
+```bash
+curl -sSL https://raw.githubusercontent.com/vamosdalian/kinetic/master/install.sh | bash -s -- \
+  --mode worker \
+  --controller-url http://<controller-host>:9898
+```
+
+To pin a specific version:
+
+```bash
+curl -sSL https://raw.githubusercontent.com/vamosdalian/kinetic/master/install.sh | bash -s -- --version v1.0.0
+```
+
+### Run Manually
+
+Download the archive for your platform from [GitHub Releases](https://github.com/vamosdalian/kinetic/releases), extract it, and run the binary directly:
+
+```bash
 ./kinetic
 ```
 
-This starts the controller, scheduler, web UI, and an embedded local worker in a single process.
+This starts the controller with an embedded worker. On first start the config file is created automatically.
 
 Then open:
 
@@ -52,15 +78,13 @@ Then open:
 - Health check: [http://localhost:9898/healthz](http://localhost:9898/healthz)
 - Readiness check: [http://localhost:9898/readyz](http://localhost:9898/readyz)
 
-Worker quick start:
+To run as a worker:
 
 ```bash
 KINETIC_MODE=worker \
 KINETIC_WORKER_CONTROLLER_URL=http://controller-host:9898 \
 ./kinetic
 ```
-
-On first start, Kinetic creates a default config file at `~/.kinetic/config.yml` and a SQLite database at `~/.kinetic/kinetic.db`.
 
 ## Development
 
@@ -124,68 +148,6 @@ KINETIC_MODE=worker \
 KINETIC_WORKER_CONTROLLER_URL=http://controller-host:9898 \
 ./kinetic
 ```
-
-## Configuration
-
-Kinetic loads configuration from `~/.kinetic/config.yml` by default, falling back to the legacy `~/.kinetic/config.yaml` if present. You can also specify a custom config file with `-c /path/to/config.yml`.
-
-Configuration priority is:
-
-1. `config.yml`
-2. environment variables
-3. CLI flags
-
-Example configuration:
-
-```yaml
-mode: controller
-
-api:
-  host: 0.0.0.0
-  port: 9898
-
-database:
-  type: sqlite
-  path: /home/your-user/.kinetic/kinetic.db
-
-controller:
-  embedded_worker_enabled: true
-  scheduler_interval: 5
-  admin_username: admin
-  admin_password: change-me
-  auth_secret: replace-with-a-long-random-secret
-
-worker:
-  id: node-local
-  name: node-local
-  controller_url: http://localhost:9898
-  advertise_ip: ""
-  heartbeat_interval: 5
-  stream_reconnect_interval: 5
-  max_concurrency: 10
-
-log:
-  level: info
-  format: text
-```
-
-Common environment variable overrides:
-
-- `KINETIC_MODE`
-- `KINETIC_API_HOST`
-- `KINETIC_API_PORT`
-- `KINETIC_DATABASE_PATH`
-- `KINETIC_CONTROLLER_EMBEDDED_WORKER_ENABLED`
-- `KINETIC_CONTROLLER_SCHEDULER_INTERVAL`
-- `KINETIC_CONTROLLER_ADMIN_USERNAME`
-- `KINETIC_CONTROLLER_ADMIN_PASSWORD`
-- `KINETIC_CONTROLLER_AUTH_SECRET`
-- `KINETIC_WORKER_CONTROLLER_URL`
-- `KINETIC_WORKER_MAX_CONCURRENCY`
-- `KINETIC_LOG_LEVEL`
-- `KINETIC_LOG_FORMAT`
-
-Controller mode requires admin auth to be configured. The UI and business API use bearer token auth, while `/api/internal/*` remains open for worker traffic.
 
 ## Workflow Model
 
