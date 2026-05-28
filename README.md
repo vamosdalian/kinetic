@@ -149,68 +149,6 @@ KINETIC_WORKER_CONTROLLER_URL=http://controller-host:9898 \
 ./kinetic
 ```
 
-## Configuration
-
-Kinetic loads configuration from `~/.kinetic/config.yml` by default, falling back to the legacy `~/.kinetic/config.yaml` if present. You can also specify a custom config file with `-c /path/to/config.yml`.
-
-Configuration priority is:
-
-1. `config.yml`
-2. environment variables
-3. CLI flags
-
-Example configuration:
-
-```yaml
-mode: controller
-
-api:
-  host: 0.0.0.0
-  port: 9898
-
-database:
-  type: sqlite
-  path: /home/your-user/.kinetic/kinetic.db
-
-controller:
-  embedded_worker_enabled: true
-  scheduler_interval: 5
-  admin_username: admin
-  admin_password: change-me
-  auth_secret: replace-with-a-long-random-secret
-
-worker:
-  id: node-local
-  name: node-local
-  controller_url: http://localhost:9898
-  advertise_ip: ""
-  heartbeat_interval: 5
-  stream_reconnect_interval: 5
-  max_concurrency: 10
-
-log:
-  level: info
-  format: text
-```
-
-Common environment variable overrides:
-
-- `KINETIC_MODE`
-- `KINETIC_API_HOST`
-- `KINETIC_API_PORT`
-- `KINETIC_DATABASE_PATH`
-- `KINETIC_CONTROLLER_EMBEDDED_WORKER_ENABLED`
-- `KINETIC_CONTROLLER_SCHEDULER_INTERVAL`
-- `KINETIC_CONTROLLER_ADMIN_USERNAME`
-- `KINETIC_CONTROLLER_ADMIN_PASSWORD`
-- `KINETIC_CONTROLLER_AUTH_SECRET`
-- `KINETIC_WORKER_CONTROLLER_URL`
-- `KINETIC_WORKER_MAX_CONCURRENCY`
-- `KINETIC_LOG_LEVEL`
-- `KINETIC_LOG_FORMAT`
-
-Controller mode requires admin auth to be configured. The UI and business API use bearer token auth, while `/api/internal/*` remains open for worker traffic.
-
 ## Workflow Model
 
 Kinetic workflows are stored as graph definitions made up of task nodes and edges.
