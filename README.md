@@ -32,19 +32,45 @@ For local development or a simple self-hosted install, the default controller mo
 
 ## Quick Start
 
-### Run From Releases
+### Install (Linux)
 
-Download the archive for your platform from [GitHub Releases](https://github.com/vamosdalian/kinetic/releases), extract it, and run the `kinetic` binary.
-
-Controller quick start:
+Run the one-liner to download the latest release, install the binary, and register a systemd service that starts on boot:
 
 ```bash
-KINETIC_MODE=controller \
-KINETIC_CONTROLLER_EMBEDDED_WORKER_ENABLED=true \
+curl -sSL https://raw.githubusercontent.com/vamosdalian/kinetic/master/install.sh | bash
+```
+
+The service runs as the current user. On first start, Kinetic writes a default config to `~/.kinetic/config.yml` and a SQLite database to `~/.kinetic/kinetic.db`.
+
+```
+Status  : systemctl status kinetic
+Logs    : journalctl -u kinetic -f
+Web UI  : http://<host>:9898   (default credentials: kinetic / kinetic)
+```
+
+To install a worker node instead:
+
+```bash
+curl -sSL https://raw.githubusercontent.com/vamosdalian/kinetic/master/install.sh | bash -s -- \
+  --mode worker \
+  --controller-url http://<controller-host>:9898
+```
+
+To pin a specific version:
+
+```bash
+curl -sSL https://raw.githubusercontent.com/vamosdalian/kinetic/master/install.sh | bash -s -- --version v1.0.0
+```
+
+### Run Manually
+
+Download the archive for your platform from [GitHub Releases](https://github.com/vamosdalian/kinetic/releases), extract it, and run the binary directly:
+
+```bash
 ./kinetic
 ```
 
-This starts the controller, scheduler, web UI, and an embedded local worker in a single process.
+This starts the controller with an embedded worker. On first start the config file is created automatically.
 
 Then open:
 
@@ -52,15 +78,13 @@ Then open:
 - Health check: [http://localhost:9898/healthz](http://localhost:9898/healthz)
 - Readiness check: [http://localhost:9898/readyz](http://localhost:9898/readyz)
 
-Worker quick start:
+To run as a worker:
 
 ```bash
 KINETIC_MODE=worker \
 KINETIC_WORKER_CONTROLLER_URL=http://controller-host:9898 \
 ./kinetic
 ```
-
-On first start, Kinetic creates a default config file at `~/.kinetic/config.yml` and a SQLite database at `~/.kinetic/kinetic.db`.
 
 ## Development
 
