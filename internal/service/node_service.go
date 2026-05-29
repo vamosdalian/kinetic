@@ -161,6 +161,10 @@ func (s *NodeService) DispatchQueuedTasks(ctx context.Context, limit int) error 
 		default:
 		}
 
+		if !s.runService.dispatchReady(task.RunID, task.TaskID) {
+			continue
+		}
+
 		selected, ok := s.selectNode(task.EffectiveTag, nodeMap, tagMap)
 		if !ok {
 			continue
@@ -230,6 +234,11 @@ func (s *NodeService) ScheduleDueWorkflowRuns(ctx context.Context, limit int) er
 	}
 
 	return nil
+}
+
+func (s *NodeService) RequeueStaleUnknownTasks(ctx context.Context) error {
+	_ = ctx
+	return s.runService.RequeueStaleUnknownTasks(UnknownTaskTimeoutSeconds * time.Second)
 }
 
 func (s *NodeService) SweepOfflineNodes(ctx context.Context) error {

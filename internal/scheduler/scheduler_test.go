@@ -15,6 +15,7 @@ type stubDispatcher struct {
 	dispatchCalls int
 	sweepCalls    int
 	scheduleCalls int
+	requeueCalls  int
 }
 
 func (s *stubDispatcher) DispatchQueuedTasks(ctx context.Context, limit int) error {
@@ -35,6 +36,13 @@ func (s *stubDispatcher) ScheduleDueWorkflowRuns(ctx context.Context, limit int)
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.scheduleCalls++
+	return nil
+}
+
+func (s *stubDispatcher) RequeueStaleUnknownTasks(ctx context.Context) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.requeueCalls++
 	return nil
 }
 

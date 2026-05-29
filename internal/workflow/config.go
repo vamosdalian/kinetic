@@ -8,6 +8,10 @@ import (
 
 const ReservedEnvPrefix = "KINETIC_"
 
+// DefaultTaskTimeoutSeconds is applied when a task does not specify a positive
+// timeout. It bounds every single task attempt to 10 minutes by default.
+const DefaultTaskTimeoutSeconds = 600
+
 type WorkflowConfig struct {
 	Env map[string]string `json:"env,omitempty"`
 }
@@ -76,6 +80,10 @@ func ParseTaskPolicy(raw string) (TaskPolicy, error) {
 	}
 	if err := ValidateEnvMap(policy.Env); err != nil {
 		return TaskPolicy{}, err
+	}
+
+	if policy.TimeoutSeconds <= 0 {
+		policy.TimeoutSeconds = DefaultTaskTimeoutSeconds
 	}
 
 	return policy, nil

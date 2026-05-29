@@ -12,6 +12,7 @@ type dispatcher interface {
 	DispatchQueuedTasks(ctx context.Context, limit int) error
 	SweepOfflineNodes(ctx context.Context) error
 	ScheduleDueWorkflowRuns(ctx context.Context, limit int) error
+	RequeueStaleUnknownTasks(ctx context.Context) error
 }
 
 type Scheduler struct {
@@ -55,6 +56,9 @@ func (s *Scheduler) Run() error {
 			ctx, cancel := context.WithTimeout(context.Background(), s.interval)
 			if err := s.dispatcher.SweepOfflineNodes(ctx); err != nil {
 				logrus.Warnf("scheduler sweep failed: %v", err)
+			}
+			if err := s.dispatcher.RequeueStaleUnknownTasks(ctx); err != nil {
+				logrus.Warnf("scheduler requeue stale unknown tasks failed: %v", err)
 			}
 			if err := s.dispatcher.ScheduleDueWorkflowRuns(ctx, 32); err != nil {
 				logrus.Warnf("scheduler schedule failed: %v", err)

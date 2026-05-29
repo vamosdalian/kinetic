@@ -39,14 +39,24 @@ export interface ConditionConfig extends TaskPolicy {
 
 export type TaskConfig = ShellConfig | HttpConfig | ConditionConfig;
 
+export const DEFAULT_TASK_TIMEOUT_SECONDS = 600;
+
 export function createTaskConfig(type: TaskType): TaskConfig {
   switch (type) {
     case "shell":
-      return { script: "" };
+      return { script: "", timeout_seconds: DEFAULT_TASK_TIMEOUT_SECONDS };
     case "http":
-      return { url: "", method: "GET", headers: {} };
+      return {
+        url: "",
+        method: "GET",
+        headers: {},
+        timeout_seconds: DEFAULT_TASK_TIMEOUT_SECONDS,
+      };
     case "condition":
-      return { expression: "" };
+      return {
+        expression: "",
+        timeout_seconds: DEFAULT_TASK_TIMEOUT_SECONDS,
+      };
   }
 }
 

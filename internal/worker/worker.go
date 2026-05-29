@@ -325,73 +325,47 @@ func (w *Worker) executeAssignedTask(ctx context.Context, task dto.AssignedTask)
 		})
 	}
 
-	attempts := policy.RetryCount + 1
-	var lastResult executor.TaskResult
-	var lastErr error
-
-	for attempt := 1; attempt <= attempts; attempt++ {
-		if attempt > 1 {
-			reportOutput(fmt.Sprintf("\n[retry %d/%d]\n", attempt-1, policy.RetryCount))
-			if policy.RetryBackoffSeconds > 0 {
-				select {
-				case <-time.After(time.Duration(policy.RetryBackoffSeconds) * time.Second):
-				case <-ctx.Done():
-					lastErr = ctx.Err()
-				}
-				if ctx.Err() != nil {
-					break
-				}
-			}
-		}
-
-		attemptCtx := ctx
-		cancel := func() {}
-		if policy.TimeoutSeconds > 0 {
-			attemptCtx, cancel = context.WithTimeout(ctx, time.Duration(policy.TimeoutSeconds)*time.Second)
-		}
-		lastResult, lastErr = w.runTaskAttempt(attemptCtx, task, reportOutput)
-		cancel()
-
-		if lastErr == nil {
-			exitCode := lastResult.ExitCode
-			_ = w.postTaskEvent(dto.WorkerTaskEvent{
-				Type:     "finished",
-				RunID:    task.RunID,
-				TaskID:   task.TaskID,
-				Result:   lastResult.Result,
-				ExitCode: &exitCode,
-			})
-			return
-		}
-
-		if ctx.Err() != nil {
-			break
-		}
-
-		if errorsIsDeadline(attemptCtx) {
-			reportOutput(fmt.Sprintf("\nTask timed out after %d seconds.\n", policy.TimeoutSeconds))
-		} else {
-			reportOutput(fmt.Sprintf("\nAttempt %d failed: %v\n", attempt, lastErr))
-		}
-
-		if attempt == attempts {
-			break
-		}
+	// Retries are driven by the controller (it requeues failed tasks). The worker
+	// only ever runs a single attempt, bounded by the task timeout.
+	attemptCtx := ctx
+	cancel := func() {}
+	if policy.TimeoutSeconds > 0 {
+		attemptCtx, cancel = context.WithTimeout(ctx, time.Duration(policy.TimeoutSeconds)*time.Second)
 	}
+	result, err := w.runTaskAttempt(attemptCtx, task, reportOutput)
+	cancel()
 
-	if ctx.Err() != nil {
-		exitCode := lastResult.ExitCode
+	if err == nil {
+		exitCode := result.ExitCode
 		_ = w.postTaskEvent(dto.WorkerTaskEvent{
-			Type:     "cancelled",
+			Type:     "finished",
 			RunID:    task.RunID,
 			TaskID:   task.TaskID,
-			Result:   lastResult.Result,
+			Result:   result.Result,
 			ExitCode: &exitCode,
 		})
 		return
 	}
 
-	exitCode := lastResult.ExitCode
+	if ctx.Err() != nil {
+		exitCode := result.ExitCode
+		_ = w.postTaskEvent(dto.WorkerTaskEvent{
+			Type:     "cancelled",
+			RunID:    task.RunID,
+			TaskID:   task.TaskID,
+			Result:   result.Result,
+			ExitCode: &exitCode,
+		})
+		return
+	}
+
+	if errorsIsDeadline(attemptCtx) {
+		reportOutput(fmt.Sprintf("\nTask timed out after %d seconds.\n", policy.TimeoutSeconds))
+	} else {
+		reportOutput(fmt.Sprintf("\nTask failed: %v\n", err))
+	}
+
+	exitCode := result.ExitCode
 	if exitCode == 0 {
 		exitCode = -1
 	}
@@ -399,7 +373,7 @@ func (w *Worker) executeAssignedTask(ctx context.Context, task dto.AssignedTask)
 		Type:     "failed",
 		RunID:    task.RunID,
 		TaskID:   task.TaskID,
-		Result:   lastResult.Result,
+		Result:   result.Result,
 		ExitCode: &exitCode,
 	})
 }
