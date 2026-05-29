@@ -27,12 +27,13 @@ const (
 )
 
 type Config struct {
-	Mode       Mode             `yaml:"mode"       env:"KINETIC_MODE, overwrite"`
-	API        APIConfig        `yaml:"api"        env:", prefix=KINETIC_API_"`
-	Database   DatabaseConfig   `yaml:"database"   env:", prefix=KINETIC_DATABASE_"`
-	Controller ControllerConfig `yaml:"controller" env:", prefix=KINETIC_CONTROLLER_"`
-	Worker     WorkerConfig     `yaml:"worker"     env:", prefix=KINETIC_WORKER_"`
-	Log        LogConfig        `yaml:"log"        env:", prefix=KINETIC_LOG_"`
+	Mode          Mode             `yaml:"mode" env:"KINETIC_MODE, overwrite"`
+	ClusterSecret string           `yaml:"cluster_secret" env:"KINETIC_CLUSTER_SECRET, overwrite"`
+	API           APIConfig        `yaml:"api" env:", prefix=KINETIC_API_"`
+	Database      DatabaseConfig   `yaml:"database" env:", prefix=KINETIC_DATABASE_"`
+	Controller    ControllerConfig `yaml:"controller" env:", prefix=KINETIC_CONTROLLER_"`
+	Worker        WorkerConfig     `yaml:"worker" env:", prefix=KINETIC_WORKER_"`
+	Log           LogConfig        `yaml:"log" env:", prefix=KINETIC_LOG_"`
 }
 
 type APIConfig struct {
@@ -235,6 +236,7 @@ func (c *Config) save(path string) error {
 #
 # Environment variables can override any setting:
 #   KINETIC_MODE,
+#   KINETIC_CLUSTER_SECRET,
 #   KINETIC_API_HOST, KINETIC_API_PORT,
 #   KINETIC_DATABASE_TYPE, KINETIC_DATABASE_PATH,
 #   KINETIC_CONTROLLER_EMBEDDED_WORKER_ENABLED,

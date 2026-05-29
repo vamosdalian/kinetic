@@ -25,6 +25,7 @@ type APIServer struct {
 	authHandler      *AuthHandler
 	adminHandler     *AdminHandler
 	staticHandler    *StaticHandler
+	clusterSecret    string
 }
 
 func NewAPIServer(
@@ -36,6 +37,7 @@ func NewAPIServer(
 	authService AuthManager,
 	userService UserManager,
 	bootstrapUsername string,
+	clusterSecret string,
 ) *APIServer {
 	workflowHandler := NewWorkflowHandler(db)
 	workflowHandler.SetRunService(runService)
@@ -54,6 +56,7 @@ func NewAPIServer(
 		authHandler:      NewAuthHandler(authService),
 		adminHandler:     NewAdminHandler(userService, bootstrapUsername),
 		staticHandler:    NewStaticHandler(),
+		clusterSecret:    clusterSecret,
 	}
 
 	// 注册 API 路由
@@ -129,6 +132,7 @@ func (a *APIServer) RegisterRoutes(engine *gin.Engine) {
 		}
 
 		internal := api.Group("/internal")
+		internal.Use(InternalAuthMiddleware(a.clusterSecret))
 		{
 			internal.POST("/nodes/register", a.nodeHandler.Register)
 			internal.GET("/nodes/:id/stream", a.nodeHandler.Stream)

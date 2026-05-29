@@ -52,7 +52,7 @@ func NewController(cfg *config.Config) (*Controller, error) {
 	schedulerInterval := time.Duration(cfg.Controller.SchedulerInterval) * time.Second
 	sched := scheduler.NewSchedulerWithInterval(nodeService, schedulerInterval)
 
-	apiServer := apiserver.NewAPIServer(db, sched, r, runService, nodeService, authService, userService, cfg.Controller.AdminUsername)
+	apiServer := apiserver.NewAPIServer(db, sched, r, runService, nodeService, authService, userService, cfg.Controller.AdminUsername, cfg.ClusterSecret)
 
 	var embeddedWorker *worker.Worker
 	if cfg.Controller.EmbeddedWorkerEnabled {
