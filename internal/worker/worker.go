@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/sirupsen/logrus"
+	"github.com/vamosdalian/kinetic/internal/clusterauth"
 	"github.com/vamosdalian/kinetic/internal/config"
 	"github.com/vamosdalian/kinetic/internal/executor"
 	"github.com/vamosdalian/kinetic/internal/model/dto"
@@ -183,11 +184,13 @@ func (w *Worker) runStream() error {
 		w.mu.Unlock()
 	}()
 
-	url := strings.TrimRight(w.cfg.Worker.ControllerURL, "/") + fmt.Sprintf("/api/internal/nodes/%s/stream", w.cfg.Worker.ID)
+	path := fmt.Sprintf("/api/internal/nodes/%s/stream", w.cfg.Worker.ID)
+	url := strings.TrimRight(w.cfg.Worker.ControllerURL, "/") + path
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return err
 	}
+	w.signRequest(req, http.MethodGet, path, nil)
 	resp, err := (&http.Client{}).Do(req)
 	if err != nil {
 		return err
@@ -457,6 +460,7 @@ func (w *Worker) postJSON(path string, payload any, out any) error {
 		return err
 	}
 	req.Header.Set("Content-Type", "application/json")
+	w.signRequest(req, http.MethodPost, path, body)
 
 	resp, err := w.client.Do(req)
 	if err != nil {
@@ -470,6 +474,12 @@ func (w *Worker) postJSON(path string, payload any, out any) error {
 		return json.NewDecoder(resp.Body).Decode(out)
 	}
 	return nil
+}
+
+func (w *Worker) signRequest(req *http.Request, method string, path string, body []byte) {
+	for key, value := range clusterauth.Headers(w.cfg.ClusterSecret, method, path, body, time.Now()) {
+		req.Header.Set(key, value)
+	}
 }
 
 func (w *Worker) waitReconnect(delay time.Duration) bool {
