@@ -849,7 +849,11 @@ func (s *RunService) HandleWorkerTaskEvent(nodeID string, event dto.WorkerTaskEv
 		return nil
 	}
 	if isTerminalTaskStatus(task.Status) {
-		return nil
+		finalStatus := mapWorkerEventStatus(event.Type)
+		if finalStatus == "" || task.Status != finalStatus {
+			return nil
+		}
+		return s.advanceTerminalTaskProgress(task)
 	}
 
 	switch event.Type {
@@ -879,6 +883,13 @@ func (s *RunService) HandleWorkerTaskEvent(nodeID string, event dto.WorkerTaskEv
 		})
 		return nil
 	case "finished", "failed", "cancelled":
+		finalStatus := mapWorkerEventStatus(event.Type)
+		if finalStatus == "" {
+			return nil
+		}
+		if task.Status == "pending" || (task.Status == "queued" && task.AssignedNodeID == "") {
+			return nil
+		}
 		if event.Output != "" {
 			if err := s.db.AppendTaskRunOutput(event.RunID, event.TaskID, event.Output); err != nil {
 				return err
@@ -890,7 +901,6 @@ func (s *RunService) HandleWorkerTaskEvent(nodeID string, event dto.WorkerTaskEv
 			return err
 		}
 
-		finalStatus := mapWorkerEventStatus(event.Type)
 		exitCode := updatedTask.ExitCode
 		if event.ExitCode != nil {
 			exitCode = *event.ExitCode
@@ -903,31 +913,8 @@ func (s *RunService) HandleWorkerTaskEvent(nodeID string, event dto.WorkerTaskEv
 		}
 		s.publishTaskStatus(event.RunID, event.TaskID)
 
-		switch finalStatus {
-		case "success":
-			s.clearWorkerOutputSequence(event.RunID, event.TaskID)
-			s.clearRetryState(event.RunID, event.TaskID)
-			return s.queueReadyTasks(event.RunID)
-		case "failed":
-			if s.shouldRetryTask(updatedTask) {
-				policy, _ := workflowcfg.ParseTaskPolicy(updatedTask.TaskConfig)
-				return s.requeueForRetry(event.RunID, event.TaskID, updatedTask.EffectiveTag, policy.RetryBackoffSeconds)
-			}
-			s.clearWorkerOutputSequence(event.RunID, event.TaskID)
-			s.clearRetryState(event.RunID, event.TaskID)
-			return s.failWorkflowRunFromTask(event.RunID)
-		case "cancelled":
-			s.clearWorkerOutputSequence(event.RunID, event.TaskID)
-			s.clearRetryState(event.RunID, event.TaskID)
-			run, err := s.db.GetWorkflowRun(event.RunID)
-			if err != nil {
-				return err
-			}
-			if run.Status == "cancelled" {
-				return nil
-			}
-			return s.queueReadyTasks(event.RunID)
-		}
+		updatedTask.Status = finalStatus
+		return s.advanceTerminalTaskProgress(updatedTask)
 	}
 
 	return nil
@@ -973,6 +960,37 @@ func (s *RunService) shouldRetryTask(task entity.TaskRunEntity) bool {
 		return false
 	}
 	return s.getAttemptCount(task.RunID, task.TaskID) < policy.RetryCount+1
+}
+
+func (s *RunService) advanceTerminalTaskProgress(task entity.TaskRunEntity) error {
+	run, err := s.db.GetWorkflowRun(task.RunID)
+	if err != nil {
+		return err
+	}
+	if isTerminalWorkflowRunStatus(run.Status) {
+		return nil
+	}
+
+	switch task.Status {
+	case "success":
+		s.clearWorkerOutputSequence(task.RunID, task.TaskID)
+		s.clearRetryState(task.RunID, task.TaskID)
+		return s.queueReadyTasks(task.RunID)
+	case "failed":
+		if s.shouldRetryTask(task) {
+			policy, _ := workflowcfg.ParseTaskPolicy(task.TaskConfig)
+			return s.requeueForRetry(task.RunID, task.TaskID, task.EffectiveTag, policy.RetryBackoffSeconds)
+		}
+		s.clearWorkerOutputSequence(task.RunID, task.TaskID)
+		s.clearRetryState(task.RunID, task.TaskID)
+		return s.failWorkflowRunFromTask(task.RunID)
+	case "cancelled":
+		s.clearWorkerOutputSequence(task.RunID, task.TaskID)
+		s.clearRetryState(task.RunID, task.TaskID)
+		return s.queueReadyTasks(task.RunID)
+	default:
+		return nil
+	}
 }
 
 // requeueForRetry puts a task back on the queue after a backoff delay so it can
@@ -1438,6 +1456,10 @@ func mapWorkerEventStatus(eventType string) string {
 
 func isTerminalTaskStatus(status string) bool {
 	return status == "success" || status == "failed" || status == "skipped" || status == "cancelled"
+}
+
+func isTerminalWorkflowRunStatus(status string) bool {
+	return status == "success" || status == "failed" || status == "cancelled"
 }
 
 // UnknownTaskTimeoutSeconds is how long a task may stay in the unknown state
