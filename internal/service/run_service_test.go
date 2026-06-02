@@ -8,8 +8,10 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"github.com/vamosdalian/kinetic/internal/database"
 	"github.com/vamosdalian/kinetic/internal/database/sqlite"
+	"github.com/vamosdalian/kinetic/internal/model/dto"
 	"github.com/vamosdalian/kinetic/internal/model/entity"
 )
 
@@ -203,6 +205,51 @@ func TestRunService_PersistsTaskResult(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, "done", taskRun.Output)
 	assert.JSONEq(t, `{"count":1}`, taskRun.Result)
+}
+
+func TestRunService_HandleWorkerTaskEventDeduplicatesOutputSequence(t *testing.T) {
+	db := setupRunServiceDB(t)
+	service := NewRunService(db, 1)
+
+	taskID := uuid.New().String()
+	workflowID := seedWorkflow(t, db, []entity.TaskEntity{
+		{
+			ID:       taskID,
+			Name:     "task-with-retried-output",
+			Type:     "shell",
+			Config:   `{"script":"printf 'hello'"}`,
+			Position: `{"x":0,"y":0}`,
+			NodeType: "baseNodeFull",
+		},
+	}, nil)
+
+	runID := uuid.New().String()
+	require.NoError(t, db.CreateWorkflowRun(workflowID, runID))
+	require.NoError(t, service.HandleWorkerTaskEvent("node-1", dto.WorkerTaskEvent{
+		Type:     "output",
+		RunID:    runID,
+		TaskID:   taskID,
+		Sequence: 1,
+		Output:   "hello",
+	}))
+	require.NoError(t, service.HandleWorkerTaskEvent("node-1", dto.WorkerTaskEvent{
+		Type:     "output",
+		RunID:    runID,
+		TaskID:   taskID,
+		Sequence: 1,
+		Output:   "hello",
+	}))
+	require.NoError(t, service.HandleWorkerTaskEvent("node-1", dto.WorkerTaskEvent{
+		Type:     "output",
+		RunID:    runID,
+		TaskID:   taskID,
+		Sequence: 2,
+		Output:   " world",
+	}))
+
+	taskRun, err := db.GetTaskRun(runID, taskID)
+	require.NoError(t, err)
+	assert.Equal(t, "hello world", taskRun.Output)
 }
 
 func TestRunService_BranchedWorkflowSuccess(t *testing.T) {

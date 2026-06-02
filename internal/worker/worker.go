@@ -294,35 +294,59 @@ func (w *Worker) cancelTask(runID string, taskID string) {
 }
 
 func (w *Worker) executeAssignedTask(ctx context.Context, task dto.AssignedTask) {
-	_ = w.postTaskEvent(dto.WorkerTaskEvent{
-		Type:   "started",
-		RunID:  task.RunID,
-		TaskID: task.TaskID,
-	})
+	reportCtx, cancelReport := w.taskReportContext()
+	defer cancelReport()
 
-	policy, err := workflowcfg.ParseTaskPolicy(string(task.Config))
-	if err != nil {
-		exitCode := -1
-		_ = w.postTaskEvent(dto.WorkerTaskEvent{
-			Type:     "failed",
-			RunID:    task.RunID,
-			TaskID:   task.TaskID,
-			Output:   fmt.Sprintf("Invalid task policy: %v", err),
-			ExitCode: &exitCode,
-		})
-		return
+	var outputMu sync.Mutex
+	var outputSequence int64
+	reportEvent := func(event dto.WorkerTaskEvent) bool {
+		if err := w.postTaskEventWithRetry(reportCtx, event); err != nil {
+			w.logger().WithError(err).WithFields(logrus.Fields{
+				"run_id":  event.RunID,
+				"task_id": event.TaskID,
+				"type":    event.Type,
+			}).Warn("Worker task event delivery stopped")
+			return false
+		}
+		return true
 	}
-
 	reportOutput := func(chunk string) {
 		if chunk == "" {
 			return
 		}
-		_ = w.postTaskEvent(dto.WorkerTaskEvent{
-			Type:   "output",
-			RunID:  task.RunID,
-			TaskID: task.TaskID,
-			Output: chunk,
+
+		outputMu.Lock()
+		defer outputMu.Unlock()
+
+		outputSequence++
+		reportEvent(dto.WorkerTaskEvent{
+			Type:     "output",
+			RunID:    task.RunID,
+			TaskID:   task.TaskID,
+			Sequence: outputSequence,
+			Output:   chunk,
 		})
+	}
+
+	if !reportEvent(dto.WorkerTaskEvent{
+		Type:   "started",
+		RunID:  task.RunID,
+		TaskID: task.TaskID,
+	}) {
+		return
+	}
+
+	policy, err := workflowcfg.ParseTaskPolicy(string(task.Config))
+	if err != nil {
+		exitCode := -1
+		reportOutput(fmt.Sprintf("Invalid task policy: %v", err))
+		reportEvent(dto.WorkerTaskEvent{
+			Type:     "failed",
+			RunID:    task.RunID,
+			TaskID:   task.TaskID,
+			ExitCode: &exitCode,
+		})
+		return
 	}
 
 	// Retries are driven by the controller (it requeues failed tasks). The worker
@@ -337,7 +361,7 @@ func (w *Worker) executeAssignedTask(ctx context.Context, task dto.AssignedTask)
 
 	if err == nil {
 		exitCode := result.ExitCode
-		_ = w.postTaskEvent(dto.WorkerTaskEvent{
+		reportEvent(dto.WorkerTaskEvent{
 			Type:     "finished",
 			RunID:    task.RunID,
 			TaskID:   task.TaskID,
@@ -349,7 +373,7 @@ func (w *Worker) executeAssignedTask(ctx context.Context, task dto.AssignedTask)
 
 	if ctx.Err() != nil {
 		exitCode := result.ExitCode
-		_ = w.postTaskEvent(dto.WorkerTaskEvent{
+		reportEvent(dto.WorkerTaskEvent{
 			Type:     "cancelled",
 			RunID:    task.RunID,
 			TaskID:   task.TaskID,
@@ -369,7 +393,7 @@ func (w *Worker) executeAssignedTask(ctx context.Context, task dto.AssignedTask)
 	if exitCode == 0 {
 		exitCode = -1
 	}
-	_ = w.postTaskEvent(dto.WorkerTaskEvent{
+	reportEvent(dto.WorkerTaskEvent{
 		Type:     "failed",
 		RunID:    task.RunID,
 		TaskID:   task.TaskID,
@@ -419,17 +443,43 @@ func (w *Worker) runTaskAttempt(ctx context.Context, task dto.AssignedTask, onOu
 }
 
 func (w *Worker) postTaskEvent(event dto.WorkerTaskEvent) error {
-	return w.postJSON(fmt.Sprintf("/api/internal/nodes/%s/task-events", w.cfg.Worker.ID), event, nil)
+	return w.postTaskEventWithContext(context.Background(), event)
 }
 
 func (w *Worker) postJSON(path string, payload any, out any) error {
+	return w.postJSONWithContext(context.Background(), path, payload, out)
+}
+
+func (w *Worker) postTaskEventWithRetry(ctx context.Context, event dto.WorkerTaskEvent) error {
+	for {
+		if err := w.postTaskEventWithContext(ctx, event); err != nil {
+			timer := time.NewTimer(workerTaskEventRetryDelay)
+			select {
+			case <-ctx.Done():
+				if !timer.Stop() {
+					<-timer.C
+				}
+				return ctx.Err()
+			case <-timer.C:
+			}
+			continue
+		}
+		return nil
+	}
+}
+
+func (w *Worker) postTaskEventWithContext(ctx context.Context, event dto.WorkerTaskEvent) error {
+	return w.postJSONWithContext(ctx, fmt.Sprintf("/api/internal/nodes/%s/task-events", w.cfg.Worker.ID), event, nil)
+}
+
+func (w *Worker) postJSONWithContext(ctx context.Context, path string, payload any, out any) error {
 	body, err := json.Marshal(payload)
 	if err != nil {
 		return err
 	}
 
 	url := strings.TrimRight(w.cfg.Worker.ControllerURL, "/") + path
-	req, err := http.NewRequest(http.MethodPost, url, bytes.NewReader(body))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
 	if err != nil {
 		return err
 	}
@@ -448,6 +498,18 @@ func (w *Worker) postJSON(path string, payload any, out any) error {
 		return json.NewDecoder(resp.Body).Decode(out)
 	}
 	return nil
+}
+
+func (w *Worker) taskReportContext() (context.Context, context.CancelFunc) {
+	ctx, cancel := context.WithCancel(context.Background())
+	go func() {
+		select {
+		case <-w.stopCh:
+			cancel()
+		case <-ctx.Done():
+		}
+	}()
+	return ctx, cancel
 }
 
 func (w *Worker) signRequest(req *http.Request, method string, path string, body []byte) {
@@ -474,6 +536,8 @@ func taskKey(runID string, taskID string) string {
 func errorsIsDeadline(ctx context.Context) bool {
 	return ctx.Err() == context.DeadlineExceeded
 }
+
+const workerTaskEventRetryDelay = 200 * time.Millisecond
 
 func isExpectedStreamDisconnect(err error) bool {
 	return errors.Is(err, io.EOF) ||

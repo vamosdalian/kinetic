@@ -34,6 +34,7 @@ type RunService struct {
 	now              func() time.Time
 	retryMu          sync.Mutex
 	retryState       map[string]*taskRetryState
+	outputSequences  map[string]int64
 }
 
 // taskRetryState tracks per-task retry bookkeeping in memory. It is intentionally
@@ -85,12 +86,13 @@ type runtimeTaskResult struct {
 
 func NewRunService(db database.Database, maxConcurrency int) *RunService {
 	return &RunService{
-		db:          db,
-		executor:    executor.NewExecutor(maxConcurrency),
-		cancels:     make(map[string]context.CancelCauseFunc),
-		subscribers: make(map[string]map[int]chan dto.WorkflowRunEvent),
-		now:         time.Now,
-		retryState:  make(map[string]*taskRetryState),
+		db:              db,
+		executor:        executor.NewExecutor(maxConcurrency),
+		cancels:         make(map[string]context.CancelCauseFunc),
+		subscribers:     make(map[string]map[int]chan dto.WorkflowRunEvent),
+		now:             time.Now,
+		retryState:      make(map[string]*taskRetryState),
+		outputSequences: make(map[string]int64),
 	}
 }
 
@@ -219,6 +221,7 @@ func (s *RunService) CancelWorkflowRun(runID string) error {
 				if err := s.db.FinishTaskRun(runID, task.TaskID, "cancelled", task.ExitCode, output, task.Result); err != nil {
 					return err
 				}
+				s.clearWorkerOutputSequence(runID, task.TaskID)
 				if task.AssignedNodeID != "" {
 					_ = s.db.DecrementNodeRunningCount(task.AssignedNodeID)
 					if s.commandHub != nil && (task.Status == "assigned" || task.Status == "running") {
@@ -861,9 +864,13 @@ func (s *RunService) HandleWorkerTaskEvent(nodeID string, event dto.WorkerTaskEv
 		if event.Output == "" {
 			return nil
 		}
+		if s.seenWorkerOutputEvent(event.RunID, event.TaskID, event.Sequence) {
+			return nil
+		}
 		if err := s.db.AppendTaskRunOutput(event.RunID, event.TaskID, event.Output); err != nil {
 			return err
 		}
+		s.recordWorkerOutputEvent(event.RunID, event.TaskID, event.Sequence)
 		s.publishEvent(dto.WorkflowRunEvent{
 			Type:   "task_output",
 			RunID:  event.RunID,
@@ -898,6 +905,7 @@ func (s *RunService) HandleWorkerTaskEvent(nodeID string, event dto.WorkerTaskEv
 
 		switch finalStatus {
 		case "success":
+			s.clearWorkerOutputSequence(event.RunID, event.TaskID)
 			s.clearRetryState(event.RunID, event.TaskID)
 			return s.queueReadyTasks(event.RunID)
 		case "failed":
@@ -905,9 +913,11 @@ func (s *RunService) HandleWorkerTaskEvent(nodeID string, event dto.WorkerTaskEv
 				policy, _ := workflowcfg.ParseTaskPolicy(updatedTask.TaskConfig)
 				return s.requeueForRetry(event.RunID, event.TaskID, updatedTask.EffectiveTag, policy.RetryBackoffSeconds)
 			}
+			s.clearWorkerOutputSequence(event.RunID, event.TaskID)
 			s.clearRetryState(event.RunID, event.TaskID)
 			return s.failWorkflowRunFromTask(event.RunID)
 		case "cancelled":
+			s.clearWorkerOutputSequence(event.RunID, event.TaskID)
 			s.clearRetryState(event.RunID, event.TaskID)
 			run, err := s.db.GetWorkflowRun(event.RunID)
 			if err != nil {
@@ -968,6 +978,7 @@ func (s *RunService) shouldRetryTask(task entity.TaskRunEntity) bool {
 // requeueForRetry puts a task back on the queue after a backoff delay so it can
 // be redispatched (possibly to a different node).
 func (s *RunService) requeueForRetry(runID string, taskID string, effectiveTag string, backoffSeconds int) error {
+	s.clearWorkerOutputSequence(runID, taskID)
 	s.setRetryBackoff(runID, taskID, backoffSeconds)
 	if err := s.db.QueueTaskRun(runID, taskID, effectiveTag); err != nil {
 		return err
@@ -1436,6 +1447,24 @@ const UnknownTaskTimeoutSeconds = 600
 
 func taskRetryKey(runID string, taskID string) string {
 	return runID + ":" + taskID
+}
+
+func (s *RunService) seenWorkerOutputEvent(runID string, taskID string, sequence int64) bool {
+	if sequence <= 0 {
+		return false
+	}
+	return sequence <= s.outputSequences[taskRetryKey(runID, taskID)]
+}
+
+func (s *RunService) recordWorkerOutputEvent(runID string, taskID string, sequence int64) {
+	if sequence <= 0 {
+		return
+	}
+	s.outputSequences[taskRetryKey(runID, taskID)] = sequence
+}
+
+func (s *RunService) clearWorkerOutputSequence(runID string, taskID string) {
+	delete(s.outputSequences, taskRetryKey(runID, taskID))
 }
 
 func (s *RunService) retryEntry(key string) *taskRetryState {

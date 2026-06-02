@@ -38,6 +38,7 @@ type WorkerTaskEvent struct {
 	Type       string `json:"type"`
 	RunID      string `json:"run_id"`
 	TaskID     string `json:"task_id"`
+	Sequence   int64  `json:"sequence,omitempty"`
 	Status     string `json:"status,omitempty"`
 	Output     string `json:"output,omitempty"`
 	Result     string `json:"result,omitempty"`
