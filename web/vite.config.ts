@@ -55,11 +55,13 @@ function createStaticDirMiddleware(baseDir: string, defaultFile: string) {
 
 function docsContentPlugin() {
   let outDir = path.resolve(__dirname, "dist")
+  let shouldCopyDocs = false
 
   return {
     name: "kinetic-docs-content",
-    configResolved(config: { build: { outDir: string } }) {
+    configResolved(config: { command: string; build: { outDir: string } }) {
       outDir = path.resolve(__dirname, config.build.outDir)
+      shouldCopyDocs = config.command === "build"
     },
     configureServer(server: {
       middlewares: {
@@ -70,6 +72,10 @@ function docsContentPlugin() {
       server.middlewares.use(`/${docsifyOutputDirName}`, createStaticDirMiddleware(docsifySourceDir, "docsify.min.js"))
     },
     async closeBundle() {
+      if (!shouldCopyDocs) {
+        return
+      }
+
       const docsTargetDir = path.join(outDir, docsOutputDirName)
       const docsifyTargetDir = path.join(outDir, docsifyOutputDirName)
       await fs.rm(docsTargetDir, { recursive: true, force: true })
