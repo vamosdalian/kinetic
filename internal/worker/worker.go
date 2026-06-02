@@ -294,140 +294,144 @@ func (w *Worker) cancelTask(runID string, taskID string) {
 }
 
 func (w *Worker) executeAssignedTask(ctx context.Context, task dto.AssignedTask) {
-	_ = w.postTaskEvent(dto.WorkerTaskEvent{
-		Type:   "started",
-		RunID:  task.RunID,
-		TaskID: task.TaskID,
-	})
+	reportCtx, cancelReport := w.taskReportContext()
+	defer cancelReport()
 
-	policy, err := workflowcfg.ParseTaskPolicy(string(task.Config))
-	if err != nil {
-		exitCode := -1
-		_ = w.postTaskEvent(dto.WorkerTaskEvent{
-			Type:     "failed",
-			RunID:    task.RunID,
-			TaskID:   task.TaskID,
-			Output:   fmt.Sprintf("Invalid task policy: %v", err),
-			ExitCode: &exitCode,
-		})
-		return
+	var outputMu sync.Mutex
+	var outputSequence int64
+	reportEvent := func(event dto.WorkerTaskEvent) bool {
+		if err := w.postTaskEventWithRetry(reportCtx, event); err != nil {
+			w.logger().WithError(err).WithFields(logrus.Fields{
+				"run_id":  event.RunID,
+				"task_id": event.TaskID,
+				"type":    event.Type,
+			}).Warn("Worker task event delivery stopped")
+			return false
+		}
+		return true
 	}
-
 	reportOutput := func(chunk string) {
 		if chunk == "" {
 			return
 		}
-		_ = w.postTaskEvent(dto.WorkerTaskEvent{
-			Type:   "output",
-			RunID:  task.RunID,
-			TaskID: task.TaskID,
-			Output: chunk,
+
+		outputMu.Lock()
+		defer outputMu.Unlock()
+
+		outputSequence++
+		reportEvent(dto.WorkerTaskEvent{
+			Type:     "output",
+			RunID:    task.RunID,
+			TaskID:   task.TaskID,
+			Sequence: outputSequence,
+			Output:   chunk,
 		})
 	}
 
-	attempts := policy.RetryCount + 1
-	var lastResult executor.TaskResult
-	var lastErr error
-
-	for attempt := 1; attempt <= attempts; attempt++ {
-		if attempt > 1 {
-			reportOutput(fmt.Sprintf("\n[retry %d/%d]\n", attempt-1, policy.RetryCount))
-			if policy.RetryBackoffSeconds > 0 {
-				select {
-				case <-time.After(time.Duration(policy.RetryBackoffSeconds) * time.Second):
-				case <-ctx.Done():
-					lastErr = ctx.Err()
-				}
-				if ctx.Err() != nil {
-					break
-				}
-			}
-		}
-
-		attemptCtx := ctx
-		cancel := func() {}
-		if policy.TimeoutSeconds > 0 {
-			attemptCtx, cancel = context.WithTimeout(ctx, time.Duration(policy.TimeoutSeconds)*time.Second)
-		}
-		lastResult, lastErr = w.runTaskAttempt(attemptCtx, task, reportOutput)
-		cancel()
-
-		if lastErr == nil {
-			exitCode := lastResult.ExitCode
-			_ = w.postTaskEvent(dto.WorkerTaskEvent{
-				Type:     "finished",
-				RunID:    task.RunID,
-				TaskID:   task.TaskID,
-				Result:   lastResult.Result,
-				ExitCode: &exitCode,
-			})
-			return
-		}
-
-		if ctx.Err() != nil {
-			break
-		}
-
-		if errorsIsDeadline(attemptCtx) {
-			reportOutput(fmt.Sprintf("\nTask timed out after %d seconds.\n", policy.TimeoutSeconds))
-		} else {
-			reportOutput(fmt.Sprintf("\nAttempt %d failed: %v\n", attempt, lastErr))
-		}
-
-		if attempt == attempts {
-			break
-		}
+	if !reportEvent(dto.WorkerTaskEvent{
+		Type:   "started",
+		RunID:  task.RunID,
+		TaskID: task.TaskID,
+	}) {
+		return
 	}
 
-	if ctx.Err() != nil {
-		exitCode := lastResult.ExitCode
-		_ = w.postTaskEvent(dto.WorkerTaskEvent{
-			Type:     "cancelled",
+	policy, err := workflowcfg.ParseTaskPolicy(string(task.Config))
+	if err != nil {
+		exitCode := -1
+		reportOutput(fmt.Sprintf("Invalid task policy: %v", err))
+		reportEvent(dto.WorkerTaskEvent{
+			Type:     "failed",
 			RunID:    task.RunID,
 			TaskID:   task.TaskID,
-			Result:   lastResult.Result,
 			ExitCode: &exitCode,
 		})
 		return
 	}
 
-	exitCode := lastResult.ExitCode
+	// Retries are driven by the controller (it requeues failed tasks). The worker
+	// only ever runs a single attempt, bounded by the task timeout.
+	attemptCtx := ctx
+	cancel := func() {}
+	if policy.TimeoutSeconds > 0 {
+		attemptCtx, cancel = context.WithTimeout(ctx, time.Duration(policy.TimeoutSeconds)*time.Second)
+	}
+	result, selectedBranch, err := w.runTaskAttempt(attemptCtx, task, reportOutput)
+	cancel()
+
+	if err == nil {
+		exitCode := result.ExitCode
+		reportEvent(dto.WorkerTaskEvent{
+			Type:           "finished",
+			RunID:          task.RunID,
+			TaskID:         task.TaskID,
+			SelectedBranch: selectedBranch,
+			Result:         result.Result,
+			ExitCode:       &exitCode,
+		})
+		return
+	}
+
+	if ctx.Err() != nil {
+		exitCode := result.ExitCode
+		reportEvent(dto.WorkerTaskEvent{
+			Type:     "cancelled",
+			RunID:    task.RunID,
+			TaskID:   task.TaskID,
+			Result:   result.Result,
+			ExitCode: &exitCode,
+		})
+		return
+	}
+
+	if errorsIsDeadline(attemptCtx) {
+		reportOutput(fmt.Sprintf("\nTask timed out after %d seconds.\n", policy.TimeoutSeconds))
+	} else {
+		reportOutput(fmt.Sprintf("\nTask failed: %v\n", err))
+	}
+
+	exitCode := result.ExitCode
 	if exitCode == 0 {
 		exitCode = -1
 	}
-	_ = w.postTaskEvent(dto.WorkerTaskEvent{
+	reportEvent(dto.WorkerTaskEvent{
 		Type:     "failed",
 		RunID:    task.RunID,
 		TaskID:   task.TaskID,
-		Result:   lastResult.Result,
+		Result:   result.Result,
 		ExitCode: &exitCode,
 	})
 }
 
-func (w *Worker) runTaskAttempt(ctx context.Context, task dto.AssignedTask, onOutput executor.OutputFunc) (executor.TaskResult, error) {
+func (w *Worker) runTaskAttempt(ctx context.Context, task dto.AssignedTask, onOutput executor.OutputFunc) (executor.TaskResult, string, error) {
 	if task.Type == dto.TaskTypeCondition {
 		var cfg workflowcfg.ConditionConfig
 		if err := json.Unmarshal(task.Config, &cfg); err != nil {
-			return executor.TaskResult{ExitCode: -1}, fmt.Errorf("invalid condition config: %w", err)
+			return executor.TaskResult{ExitCode: -1}, "", fmt.Errorf("invalid condition config: %w", err)
 		}
 		if task.ConditionInput == nil {
-			return executor.TaskResult{ExitCode: -1}, fmt.Errorf("condition task is missing input")
+			return executor.TaskResult{ExitCode: -1}, "", fmt.Errorf("condition task is missing input")
 		}
 		expr, err := workflowcfg.ParseConditionExpression(cfg.Expression)
 		if err != nil {
-			return executor.TaskResult{ExitCode: -1}, err
+			return executor.TaskResult{ExitCode: -1}, "", err
 		}
 		matched, err := expr.Evaluate(workflowcfg.ConditionInput{
 			Status:   task.ConditionInput.Status,
 			ExitCode: task.ConditionInput.ExitCode,
 			Output:   task.ConditionInput.Output,
+			Result:   task.ConditionInput.Result,
 		})
 		if err != nil {
-			return executor.TaskResult{ExitCode: -1}, err
+			return executor.TaskResult{ExitCode: -1}, "", err
+		}
+		selectedBranch := "false"
+		if matched {
+			selectedBranch = "true"
 		}
 		message := fmt.Sprintf("Condition %q evaluated to %t", cfg.Expression, matched)
 		onOutput(message)
-		return executor.TaskResult{Output: message, ExitCode: 0}, nil
+		return executor.TaskResult{Output: message, ExitCode: 0}, selectedBranch, nil
 	}
 
 	execTask, err := executor.NewTask(executor.TaskEntity{
@@ -438,24 +442,51 @@ func (w *Worker) runTaskAttempt(ctx context.Context, task dto.AssignedTask, onOu
 		Env:    task.Env,
 	})
 	if err != nil {
-		return executor.TaskResult{ExitCode: -1}, err
+		return executor.TaskResult{ExitCode: -1}, "", err
 	}
 
-	return w.executor.Execute(ctx, execTask, onOutput)
+	result, err := w.executor.Execute(ctx, execTask, onOutput)
+	return result, "", err
 }
 
 func (w *Worker) postTaskEvent(event dto.WorkerTaskEvent) error {
-	return w.postJSON(fmt.Sprintf("/api/internal/nodes/%s/task-events", w.cfg.Worker.ID), event, nil)
+	return w.postTaskEventWithContext(context.Background(), event)
 }
 
 func (w *Worker) postJSON(path string, payload any, out any) error {
+	return w.postJSONWithContext(context.Background(), path, payload, out)
+}
+
+func (w *Worker) postTaskEventWithRetry(ctx context.Context, event dto.WorkerTaskEvent) error {
+	for {
+		if err := w.postTaskEventWithContext(ctx, event); err != nil {
+			timer := time.NewTimer(workerTaskEventRetryDelay)
+			select {
+			case <-ctx.Done():
+				if !timer.Stop() {
+					<-timer.C
+				}
+				return ctx.Err()
+			case <-timer.C:
+			}
+			continue
+		}
+		return nil
+	}
+}
+
+func (w *Worker) postTaskEventWithContext(ctx context.Context, event dto.WorkerTaskEvent) error {
+	return w.postJSONWithContext(ctx, fmt.Sprintf("/api/internal/nodes/%s/task-events", w.cfg.Worker.ID), event, nil)
+}
+
+func (w *Worker) postJSONWithContext(ctx context.Context, path string, payload any, out any) error {
 	body, err := json.Marshal(payload)
 	if err != nil {
 		return err
 	}
 
 	url := strings.TrimRight(w.cfg.Worker.ControllerURL, "/") + path
-	req, err := http.NewRequest(http.MethodPost, url, bytes.NewReader(body))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
 	if err != nil {
 		return err
 	}
@@ -474,6 +505,18 @@ func (w *Worker) postJSON(path string, payload any, out any) error {
 		return json.NewDecoder(resp.Body).Decode(out)
 	}
 	return nil
+}
+
+func (w *Worker) taskReportContext() (context.Context, context.CancelFunc) {
+	ctx, cancel := context.WithCancel(context.Background())
+	go func() {
+		select {
+		case <-w.stopCh:
+			cancel()
+		case <-ctx.Done():
+		}
+	}()
+	return ctx, cancel
 }
 
 func (w *Worker) signRequest(req *http.Request, method string, path string, body []byte) {
@@ -500,6 +543,8 @@ func taskKey(runID string, taskID string) string {
 func errorsIsDeadline(ctx context.Context) bool {
 	return ctx.Err() == context.DeadlineExceeded
 }
+
+const workerTaskEventRetryDelay = 200 * time.Millisecond
 
 func isExpectedStreamDisconnect(err error) bool {
 	return errors.Is(err, io.EOF) ||

@@ -80,6 +80,8 @@ type Database interface {
 	AppendTaskRunOutput(runID string, taskID string, chunk string) error
 	ListQueuedTaskRuns(limit int) ([]entity.TaskRunEntity, error)
 	ListNodeActiveTaskRuns(nodeID string) ([]entity.TaskRunEntity, error)
+	ListAssignedTaskRunsBefore(cutoff time.Time) ([]entity.TaskRunEntity, error)
+	ListUnknownTaskRuns() ([]entity.TaskRunEntity, error)
 	IncrementNodeRunningCount(nodeID string) error
 	DecrementNodeRunningCount(nodeID string) error
 }

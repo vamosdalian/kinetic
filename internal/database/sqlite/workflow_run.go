@@ -417,6 +417,80 @@ func (s *SqliteDB) ListQueuedTaskRuns(limit int) ([]entity.TaskRunEntity, error)
 	return tasks, nil
 }
 
+func (s *SqliteDB) ListUnknownTaskRuns() ([]entity.TaskRunEntity, error) {
+	rows, err := s.db.Query(`
+		SELECT run_id, task_id, workflow_id, task_name, task_description,
+		       task_type, task_config, task_tag, task_position, task_node_type, effective_tag, assigned_node_id, assigned_at,
+		       status, created_at, started_at, finished_at, exit_code, output, result
+		FROM task_runs
+		WHERE status = 'unknown'
+		ORDER BY created_at ASC, task_id ASC
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var tasks []entity.TaskRunEntity
+	for rows.Next() {
+		var task entity.TaskRunEntity
+		var createdAtStr string
+		var assignedAtStr, startedAtStr, finishedAtStr sql.NullString
+		if err := rows.Scan(
+			&task.RunID, &task.TaskID, &task.WorkflowID, &task.TaskName, &task.TaskDescription,
+			&task.TaskType, &task.TaskConfig, &task.TaskTag, &task.TaskPosition, &task.TaskNodeType, &task.EffectiveTag, &task.AssignedNodeID, &assignedAtStr,
+			&task.Status, &createdAtStr, &startedAtStr, &finishedAtStr, &task.ExitCode, &task.Output, &task.Result,
+		); err != nil {
+			return nil, err
+		}
+		task.CreatedAt, _ = parseTime(createdAtStr)
+		task.AssignedAt = parseNullableTime(assignedAtStr)
+		task.StartedAt = parseNullableTime(startedAtStr)
+		task.FinishedAt = parseNullableTime(finishedAtStr)
+		tasks = append(tasks, task)
+	}
+	return tasks, nil
+}
+
+func (s *SqliteDB) ListAssignedTaskRunsBefore(cutoff time.Time) ([]entity.TaskRunEntity, error) {
+	rows, err := s.db.Query(`
+		SELECT t.run_id, t.task_id, t.workflow_id, t.task_name, t.task_description,
+		       t.task_type, t.task_config, t.task_tag, t.task_position, t.task_node_type, t.effective_tag, t.assigned_node_id, t.assigned_at,
+		       t.status, t.created_at, t.started_at, t.finished_at, t.exit_code, t.output, t.result
+		FROM task_runs t
+		JOIN workflow_runs r ON r.run_id = t.run_id
+		WHERE t.status = 'assigned'
+		  AND t.assigned_at IS NOT NULL
+		  AND t.assigned_at <= ?
+		  AND r.status = 'running'
+		ORDER BY t.assigned_at ASC, t.task_id ASC
+	`, cutoff.UTC().Format("2006-01-02 15:04:05"))
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var tasks []entity.TaskRunEntity
+	for rows.Next() {
+		var task entity.TaskRunEntity
+		var createdAtStr string
+		var assignedAtStr, startedAtStr, finishedAtStr sql.NullString
+		if err := rows.Scan(
+			&task.RunID, &task.TaskID, &task.WorkflowID, &task.TaskName, &task.TaskDescription,
+			&task.TaskType, &task.TaskConfig, &task.TaskTag, &task.TaskPosition, &task.TaskNodeType, &task.EffectiveTag, &task.AssignedNodeID, &assignedAtStr,
+			&task.Status, &createdAtStr, &startedAtStr, &finishedAtStr, &task.ExitCode, &task.Output, &task.Result,
+		); err != nil {
+			return nil, err
+		}
+		task.CreatedAt, _ = parseTime(createdAtStr)
+		task.AssignedAt = parseNullableTime(assignedAtStr)
+		task.StartedAt = parseNullableTime(startedAtStr)
+		task.FinishedAt = parseNullableTime(finishedAtStr)
+		tasks = append(tasks, task)
+	}
+	return tasks, nil
+}
+
 func (s *SqliteDB) ListNodeActiveTaskRuns(nodeID string) ([]entity.TaskRunEntity, error) {
 	rows, err := s.db.Query(`
 		SELECT run_id, task_id, workflow_id, task_name, task_description,

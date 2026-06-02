@@ -370,7 +370,7 @@ export function Taskform({
               id="timeout_seconds"
               type="number"
               min="0"
-              placeholder="0"
+              placeholder="600"
               value={config.timeout_seconds ?? ""}
               onChange={(e) => updatePolicy("timeout_seconds", e.target.value)}
             />

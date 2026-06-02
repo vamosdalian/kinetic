@@ -19,6 +19,24 @@ func TestParseTaskPolicyRejectsReservedPrefix(t *testing.T) {
 	}
 }
 
+func TestParseTaskPolicyAppliesDefaultTimeout(t *testing.T) {
+	policy, err := ParseTaskPolicy(`{"retry_count":2}`)
+	if err != nil {
+		t.Fatalf("expected task policy to parse: %v", err)
+	}
+	if policy.TimeoutSeconds != DefaultTaskTimeoutSeconds {
+		t.Fatalf("expected default timeout %d, got %d", DefaultTaskTimeoutSeconds, policy.TimeoutSeconds)
+	}
+
+	explicit, err := ParseTaskPolicy(`{"timeout_seconds":30}`)
+	if err != nil {
+		t.Fatalf("expected task policy to parse: %v", err)
+	}
+	if explicit.TimeoutSeconds != 30 {
+		t.Fatalf("expected explicit timeout 30 to be preserved, got %d", explicit.TimeoutSeconds)
+	}
+}
+
 func TestParseWorkflowConfigAcceptsUserEnv(t *testing.T) {
 	config, err := ParseWorkflowConfig(`{"env":{"API_TOKEN":"secret"}}`)
 	if err != nil {

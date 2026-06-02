@@ -101,6 +101,59 @@ func TestNodeService_DispatchQueuedTasksAssignsToSubscribedNode(t *testing.T) {
 	assert.Equal(t, 1, updatedNode.RunningCount)
 }
 
+func TestNodeService_DispatchQueuedTasksRollsBackWhenStreamBufferIsFull(t *testing.T) {
+	runService, nodeService := setupNodeService(t, 5*time.Second)
+
+	node, err := nodeService.RegisterNode(dto.RegisterNodeRequest{
+		NodeID:         "node-full-stream",
+		Name:           "Node Full Stream",
+		MaxConcurrency: 1,
+	})
+	require.NoError(t, err)
+
+	_, cleanup, err := nodeService.SubscribeStream(node.NodeID)
+	require.NoError(t, err)
+	defer cleanup()
+
+	nodeService.hub.mu.RLock()
+	var listener chan dto.NodeCommand
+	for _, stream := range nodeService.hub.listeners[node.NodeID] {
+		listener = stream
+		break
+	}
+	nodeService.hub.mu.RUnlock()
+	require.NotNil(t, listener)
+	for cap(listener) > len(listener) {
+		listener <- dto.NodeCommand{Type: "queued"}
+	}
+
+	workflowID := seedWorkflow(t, runService.db, []entity.TaskEntity{
+		{
+			ID:       uuid.New().String(),
+			Name:     "task-full-stream",
+			Type:     "shell",
+			Config:   `{"script":"printf 'hello'"}`,
+			Position: `{"x":0,"y":0}`,
+			NodeType: "baseNodeFull",
+		},
+	}, nil)
+
+	runID, err := runService.StartWorkflowRun(workflowID)
+	require.NoError(t, err)
+
+	require.NoError(t, nodeService.DispatchQueuedTasks(context.Background(), 64))
+
+	taskRuns, err := runService.db.GetTaskRuns(runID)
+	require.NoError(t, err)
+	require.Len(t, taskRuns, 1)
+	assert.Equal(t, "queued", taskRuns[0].Status)
+	assert.Empty(t, taskRuns[0].AssignedNodeID)
+
+	updatedNode, err := nodeService.GetNodeDTO(node.NodeID)
+	require.NoError(t, err)
+	assert.Equal(t, 0, updatedNode.RunningCount)
+}
+
 func TestNodeService_SweepOfflineNodesResetsAssignedTasks(t *testing.T) {
 	runService, nodeService := setupNodeService(t, time.Second)
 
@@ -267,4 +320,194 @@ func TestNodeService_DispatchQueuedTasksRespectsCapacityWithinBatch(t *testing.T
 	require.NoError(t, err)
 	assert.Equal(t, 1, updatedFirstNode.RunningCount)
 	assert.Equal(t, 1, updatedSecondNode.RunningCount)
+}
+
+func TestNodeService_FailedTaskRequeuesWithinBudgetThenFails(t *testing.T) {
+	runService, nodeService := setupNodeService(t, 5*time.Second)
+
+	node, err := nodeService.RegisterNode(dto.RegisterNodeRequest{NodeID: "node-retry", MaxConcurrency: 1})
+	require.NoError(t, err)
+	_, cleanup, err := nodeService.SubscribeStream(node.NodeID)
+	require.NoError(t, err)
+	defer cleanup()
+
+	workflowID := seedWorkflow(t, runService.db, []entity.TaskEntity{
+		{
+			ID:       uuid.New().String(),
+			Name:     "task-retry",
+			Type:     "shell",
+			Config:   `{"script":"exit 1","retry_count":1}`,
+			Position: `{"x":0,"y":0}`,
+			NodeType: "baseNodeFull",
+		},
+	}, nil)
+
+	runID, err := runService.StartWorkflowRun(workflowID)
+	require.NoError(t, err)
+
+	taskRuns, err := runService.db.GetTaskRuns(runID)
+	require.NoError(t, err)
+	require.Len(t, taskRuns, 1)
+	taskID := taskRuns[0].TaskID
+
+	failOnce := func() {
+		require.NoError(t, nodeService.DispatchQueuedTasks(context.Background(), 64))
+		require.NoError(t, runService.HandleWorkerTaskEvent(node.NodeID, dto.WorkerTaskEvent{Type: "started", RunID: runID, TaskID: taskID}))
+		exit := 1
+		require.NoError(t, runService.HandleWorkerTaskEvent(node.NodeID, dto.WorkerTaskEvent{Type: "failed", RunID: runID, TaskID: taskID, ExitCode: &exit}))
+	}
+
+	// First attempt fails but the retry budget (retry_count=1) remains, so the
+	// task is requeued and the run keeps running.
+	failOnce()
+	assert.Equal(t, 1, runService.getAttemptCount(runID, taskID))
+	got, err := runService.db.GetTaskRun(runID, taskID)
+	require.NoError(t, err)
+	assert.Equal(t, "queued", got.Status)
+	run, err := runService.db.GetWorkflowRun(runID)
+	require.NoError(t, err)
+	assert.Equal(t, "running", run.Status)
+
+	// Second attempt exhausts the shared budget, so the run fails. The in-memory
+	// retry state is cleared once the task reaches a terminal failure.
+	failOnce()
+	assert.Equal(t, 0, runService.getAttemptCount(runID, taskID))
+	got, err = runService.db.GetTaskRun(runID, taskID)
+	require.NoError(t, err)
+	assert.Equal(t, "failed", got.Status)
+	run, err = runService.db.GetWorkflowRun(runID)
+	require.NoError(t, err)
+	assert.Equal(t, "failed", run.Status)
+}
+
+func TestNodeService_StaleUnknownTaskRequeuesWithinBudget(t *testing.T) {
+	runService, nodeService := setupNodeService(t, 5*time.Second)
+
+	clock := time.Now().UTC()
+	runService.now = func() time.Time { return clock }
+
+	runID, taskID, node := seedRunningTaskOnNode(t, runService, nodeService, `{"script":"sleep 1","retry_count":1}`)
+
+	require.NoError(t, runService.HandleNodeOffline(node))
+	got, err := runService.db.GetTaskRun(runID, taskID)
+	require.NoError(t, err)
+	require.Equal(t, "unknown", got.Status)
+
+	timeout := UnknownTaskTimeoutSeconds * time.Second
+
+	// Not stale yet: nothing happens.
+	require.NoError(t, runService.RequeueStaleUnknownTasks(timeout))
+	got, err = runService.db.GetTaskRun(runID, taskID)
+	require.NoError(t, err)
+	assert.Equal(t, "unknown", got.Status)
+
+	// Advance past the timeout: budget remains so the task is requeued.
+	clock = clock.Add(timeout + time.Second)
+	require.NoError(t, runService.RequeueStaleUnknownTasks(timeout))
+	got, err = runService.db.GetTaskRun(runID, taskID)
+	require.NoError(t, err)
+	assert.Equal(t, "queued", got.Status)
+	run, err := runService.db.GetWorkflowRun(runID)
+	require.NoError(t, err)
+	assert.Equal(t, "running", run.Status)
+}
+
+func TestNodeService_StaleAssignedTaskRequeues(t *testing.T) {
+	runService, nodeService := setupNodeService(t, 5*time.Second)
+
+	node, err := nodeService.RegisterNode(dto.RegisterNodeRequest{NodeID: "node-assigned-stale", MaxConcurrency: 1})
+	require.NoError(t, err)
+	_, cleanup, err := nodeService.SubscribeStream(node.NodeID)
+	require.NoError(t, err)
+	defer cleanup()
+
+	workflowID := seedWorkflow(t, runService.db, []entity.TaskEntity{
+		{
+			ID:       uuid.New().String(),
+			Name:     "task-assigned-stale",
+			Type:     "shell",
+			Config:   `{"script":"printf 'assigned'"}`,
+			Position: `{"x":0,"y":0}`,
+			NodeType: "baseNodeFull",
+		},
+	}, nil)
+	runID, err := runService.StartWorkflowRun(workflowID)
+	require.NoError(t, err)
+	require.NoError(t, nodeService.DispatchQueuedTasks(context.Background(), 64))
+
+	taskRuns, err := runService.db.GetTaskRuns(runID)
+	require.NoError(t, err)
+	require.Len(t, taskRuns, 1)
+	require.Equal(t, "assigned", taskRuns[0].Status)
+	require.Equal(t, node.NodeID, taskRuns[0].AssignedNodeID)
+
+	require.NoError(t, runService.RequeueStaleAssignedTasks(0))
+
+	taskRun, err := runService.db.GetTaskRun(runID, taskRuns[0].TaskID)
+	require.NoError(t, err)
+	assert.Equal(t, "queued", taskRun.Status)
+	assert.Empty(t, taskRun.AssignedNodeID)
+
+	updatedNode, err := nodeService.GetNodeDTO(node.NodeID)
+	require.NoError(t, err)
+	assert.Equal(t, 0, updatedNode.RunningCount)
+}
+
+func TestNodeService_StaleUnknownTaskFailsRunWhenBudgetExhausted(t *testing.T) {
+	runService, nodeService := setupNodeService(t, 5*time.Second)
+
+	clock := time.Now().UTC()
+	runService.now = func() time.Time { return clock }
+
+	runID, taskID, node := seedRunningTaskOnNode(t, runService, nodeService, `{"script":"sleep 1"}`)
+
+	require.NoError(t, runService.HandleNodeOffline(node))
+
+	timeout := UnknownTaskTimeoutSeconds * time.Second
+	clock = clock.Add(timeout + time.Second)
+	require.NoError(t, runService.RequeueStaleUnknownTasks(timeout))
+
+	got, err := runService.db.GetTaskRun(runID, taskID)
+	require.NoError(t, err)
+	assert.Equal(t, "failed", got.Status)
+	run, err := runService.db.GetWorkflowRun(runID)
+	require.NoError(t, err)
+	assert.Equal(t, "failed", run.Status)
+}
+
+// seedRunningTaskOnNode creates a single-shell-task workflow, dispatches it to a
+// freshly registered node, and drives it into the running state. It returns the
+// run id, task id, and node id.
+func seedRunningTaskOnNode(t *testing.T, runService *RunService, nodeService *NodeService, config string) (string, string, string) {
+	t.Helper()
+
+	node, err := nodeService.RegisterNode(dto.RegisterNodeRequest{NodeID: "node-unknown", MaxConcurrency: 1})
+	require.NoError(t, err)
+	_, cleanup, err := nodeService.SubscribeStream(node.NodeID)
+	require.NoError(t, err)
+	t.Cleanup(cleanup)
+
+	workflowID := seedWorkflow(t, runService.db, []entity.TaskEntity{
+		{
+			ID:       uuid.New().String(),
+			Name:     "task-unknown",
+			Type:     "shell",
+			Config:   config,
+			Position: `{"x":0,"y":0}`,
+			NodeType: "baseNodeFull",
+		},
+	}, nil)
+
+	runID, err := runService.StartWorkflowRun(workflowID)
+	require.NoError(t, err)
+
+	taskRuns, err := runService.db.GetTaskRuns(runID)
+	require.NoError(t, err)
+	require.Len(t, taskRuns, 1)
+	taskID := taskRuns[0].TaskID
+
+	require.NoError(t, nodeService.DispatchQueuedTasks(context.Background(), 64))
+	require.NoError(t, runService.HandleWorkerTaskEvent(node.NodeID, dto.WorkerTaskEvent{Type: "started", RunID: runID, TaskID: taskID}))
+
+	return runID, taskID, node.NodeID
 }

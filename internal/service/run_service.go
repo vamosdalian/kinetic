@@ -32,6 +32,18 @@ type RunService struct {
 	distributed      bool
 	commandHub       *WorkerStreamHub
 	now              func() time.Time
+	retryMu          sync.Mutex
+	retryState       map[string]*taskRetryState
+	outputSequences  map[string]int64
+}
+
+// taskRetryState tracks per-task retry bookkeeping in memory. It is intentionally
+// not persisted: if the controller restarts, in-flight runs lose this state and
+// retry budgets/unknown timers simply restart.
+type taskRetryState struct {
+	attemptCount  int
+	nextAttemptAt time.Time // backoff window before a requeued task may dispatch; zero = ready now
+	unknownSince  time.Time // when the task entered the unknown state; zero = not recorded
 }
 
 type edgeState string
@@ -74,11 +86,13 @@ type runtimeTaskResult struct {
 
 func NewRunService(db database.Database, maxConcurrency int) *RunService {
 	return &RunService{
-		db:          db,
-		executor:    executor.NewExecutor(maxConcurrency),
-		cancels:     make(map[string]context.CancelCauseFunc),
-		subscribers: make(map[string]map[int]chan dto.WorkflowRunEvent),
-		now:         time.Now,
+		db:              db,
+		executor:        executor.NewExecutor(maxConcurrency),
+		cancels:         make(map[string]context.CancelCauseFunc),
+		subscribers:     make(map[string]map[int]chan dto.WorkflowRunEvent),
+		now:             time.Now,
+		retryState:      make(map[string]*taskRetryState),
+		outputSequences: make(map[string]int64),
 	}
 }
 
@@ -207,6 +221,7 @@ func (s *RunService) CancelWorkflowRun(runID string) error {
 				if err := s.db.FinishTaskRun(runID, task.TaskID, "cancelled", task.ExitCode, output, task.Result); err != nil {
 					return err
 				}
+				s.clearWorkerOutputSequence(runID, task.TaskID)
 				if task.AssignedNodeID != "" {
 					_ = s.db.DecrementNodeRunningCount(task.AssignedNodeID)
 					if s.commandHub != nil && (task.Status == "assigned" || task.Status == "running") {
@@ -816,6 +831,7 @@ func (s *RunService) PrepareAssignedTask(runID string, taskID string) (*dto.Assi
 			Status:   conditionInput.Status,
 			ExitCode: conditionInput.ExitCode,
 			Output:   conditionInput.Output,
+			Result:   conditionInput.Result,
 		}
 	}
 
@@ -834,7 +850,11 @@ func (s *RunService) HandleWorkerTaskEvent(nodeID string, event dto.WorkerTaskEv
 		return nil
 	}
 	if isTerminalTaskStatus(task.Status) {
-		return nil
+		finalStatus := mapWorkerEventStatus(event.Type)
+		if finalStatus == "" || task.Status != finalStatus {
+			return nil
+		}
+		return s.advanceTerminalTaskProgress(task)
 	}
 
 	switch event.Type {
@@ -842,15 +862,20 @@ func (s *RunService) HandleWorkerTaskEvent(nodeID string, event dto.WorkerTaskEv
 		if err := s.db.MarkTaskRunRunning(event.RunID, event.TaskID); err != nil {
 			return err
 		}
+		s.recordAttempt(event.RunID, event.TaskID)
 		s.publishTaskStatus(event.RunID, event.TaskID)
 		return nil
 	case "output":
 		if event.Output == "" {
 			return nil
 		}
+		if s.seenWorkerOutputEvent(event.RunID, event.TaskID, event.Sequence) {
+			return nil
+		}
 		if err := s.db.AppendTaskRunOutput(event.RunID, event.TaskID, event.Output); err != nil {
 			return err
 		}
+		s.recordWorkerOutputEvent(event.RunID, event.TaskID, event.Sequence)
 		s.publishEvent(dto.WorkflowRunEvent{
 			Type:   "task_output",
 			RunID:  event.RunID,
@@ -859,6 +884,13 @@ func (s *RunService) HandleWorkerTaskEvent(nodeID string, event dto.WorkerTaskEv
 		})
 		return nil
 	case "finished", "failed", "cancelled":
+		finalStatus := mapWorkerEventStatus(event.Type)
+		if finalStatus == "" {
+			return nil
+		}
+		if task.Status == "pending" || (task.Status == "queued" && task.AssignedNodeID == "") {
+			return nil
+		}
 		if event.Output != "" {
 			if err := s.db.AppendTaskRunOutput(event.RunID, event.TaskID, event.Output); err != nil {
 				return err
@@ -870,12 +902,15 @@ func (s *RunService) HandleWorkerTaskEvent(nodeID string, event dto.WorkerTaskEv
 			return err
 		}
 
-		finalStatus := mapWorkerEventStatus(event.Type)
 		exitCode := updatedTask.ExitCode
 		if event.ExitCode != nil {
 			exitCode = *event.ExitCode
 		}
-		if err := s.db.FinishTaskRun(event.RunID, event.TaskID, finalStatus, exitCode, updatedTask.Output, event.Result); err != nil {
+		result, err := taskResultForWorkerEvent(updatedTask, finalStatus, event)
+		if err != nil {
+			return err
+		}
+		if err := s.db.FinishTaskRun(event.RunID, event.TaskID, finalStatus, exitCode, updatedTask.Output, result); err != nil {
 			return err
 		}
 		if updatedTask.AssignedNodeID != "" {
@@ -883,32 +918,9 @@ func (s *RunService) HandleWorkerTaskEvent(nodeID string, event dto.WorkerTaskEv
 		}
 		s.publishTaskStatus(event.RunID, event.TaskID)
 
-		switch finalStatus {
-		case "success":
-			return s.queueReadyTasks(event.RunID)
-		case "failed":
-			if err := s.db.SkipPendingTaskRuns(event.RunID, "Skipped because another task in the workflow failed."); err != nil {
-				return err
-			}
-			taskRuns, err := s.db.GetTaskRuns(event.RunID)
-			if err == nil {
-				for _, openTask := range taskRuns {
-					if openTask.Status == "queued" {
-						s.publishTaskStatus(event.RunID, openTask.TaskID)
-					}
-				}
-			}
-			return s.finishWorkflowRun(event.RunID, "failed")
-		case "cancelled":
-			run, err := s.db.GetWorkflowRun(event.RunID)
-			if err != nil {
-				return err
-			}
-			if run.Status == "cancelled" {
-				return nil
-			}
-			return s.queueReadyTasks(event.RunID)
-		}
+		updatedTask.Status = finalStatus
+		updatedTask.Result = result
+		return s.advanceTerminalTaskProgress(updatedTask)
 	}
 
 	return nil
@@ -937,8 +949,155 @@ func (s *RunService) HandleNodeOffline(nodeID string) error {
 			if err := s.db.MarkTaskRunUnknown(task.RunID, task.TaskID, "\nWorker went offline.\n"); err != nil {
 				return err
 			}
+			s.markUnknown(task.RunID, task.TaskID)
 			s.publishTaskStatus(task.RunID, task.TaskID)
 		}
+	}
+
+	return nil
+}
+
+// shouldRetryTask reports whether a failed task still has retry budget left.
+// The budget (retry_count + 1 total attempts) is shared across normal failures
+// and unknown-timeout requeues via the in-memory attempt counter.
+func (s *RunService) shouldRetryTask(task entity.TaskRunEntity) bool {
+	policy, err := workflowcfg.ParseTaskPolicy(task.TaskConfig)
+	if err != nil {
+		return false
+	}
+	return s.getAttemptCount(task.RunID, task.TaskID) < policy.RetryCount+1
+}
+
+func (s *RunService) advanceTerminalTaskProgress(task entity.TaskRunEntity) error {
+	run, err := s.db.GetWorkflowRun(task.RunID)
+	if err != nil {
+		return err
+	}
+	if isTerminalWorkflowRunStatus(run.Status) {
+		return nil
+	}
+
+	switch task.Status {
+	case "success":
+		s.clearWorkerOutputSequence(task.RunID, task.TaskID)
+		s.clearRetryState(task.RunID, task.TaskID)
+		return s.queueReadyTasks(task.RunID)
+	case "failed":
+		if s.shouldRetryTask(task) {
+			policy, _ := workflowcfg.ParseTaskPolicy(task.TaskConfig)
+			return s.requeueForRetry(task.RunID, task.TaskID, task.EffectiveTag, policy.RetryBackoffSeconds)
+		}
+		s.clearWorkerOutputSequence(task.RunID, task.TaskID)
+		s.clearRetryState(task.RunID, task.TaskID)
+		return s.failWorkflowRunFromTask(task.RunID)
+	case "cancelled":
+		s.clearWorkerOutputSequence(task.RunID, task.TaskID)
+		s.clearRetryState(task.RunID, task.TaskID)
+		return s.queueReadyTasks(task.RunID)
+	default:
+		return nil
+	}
+}
+
+// requeueForRetry puts a task back on the queue after a backoff delay so it can
+// be redispatched (possibly to a different node).
+func (s *RunService) requeueForRetry(runID string, taskID string, effectiveTag string, backoffSeconds int) error {
+	s.clearWorkerOutputSequence(runID, taskID)
+	s.setRetryBackoff(runID, taskID, backoffSeconds)
+	if err := s.db.QueueTaskRun(runID, taskID, effectiveTag); err != nil {
+		return err
+	}
+	s.publishTaskStatus(runID, taskID)
+	return nil
+}
+
+// failWorkflowRunFromTask skips the remaining open tasks and marks the run failed
+// after a task has exhausted its retry budget.
+func (s *RunService) failWorkflowRunFromTask(runID string) error {
+	if err := s.db.SkipPendingTaskRuns(runID, "Skipped because another task in the workflow failed."); err != nil {
+		return err
+	}
+	taskRuns, err := s.db.GetTaskRuns(runID)
+	if err == nil {
+		for _, openTask := range taskRuns {
+			if openTask.Status == "queued" {
+				s.publishTaskStatus(runID, openTask.TaskID)
+			}
+		}
+	}
+	return s.finishWorkflowRun(runID, "failed")
+}
+
+// RequeueStaleUnknownTasks scans tasks stuck in the unknown state and, once they
+// exceed the timeout, either requeues them (retry budget remaining) or fails the
+// run (budget exhausted). This recovers runs whose worker crashed mid-task.
+func (s *RunService) RequeueStaleUnknownTasks(timeout time.Duration) error {
+	s.stateMu.Lock()
+	defer s.stateMu.Unlock()
+
+	tasks, err := s.db.ListUnknownTaskRuns()
+	if err != nil {
+		return err
+	}
+
+	for _, task := range tasks {
+		// Lazily start the timer so unknown tasks left over from a controller
+		// restart still get a full timeout window before being acted on.
+		s.markUnknown(task.RunID, task.TaskID)
+		if !s.staleUnknown(task.RunID, task.TaskID, timeout) {
+			continue
+		}
+
+		if s.shouldRetryTask(task) {
+			policy, _ := workflowcfg.ParseTaskPolicy(task.TaskConfig)
+			if err := s.requeueForRetry(task.RunID, task.TaskID, task.EffectiveTag, policy.RetryBackoffSeconds); err != nil {
+				logrus.Errorf("failed to requeue stale unknown task %s/%s: %v", task.RunID, task.TaskID, err)
+			}
+			continue
+		}
+
+		output := task.Output
+		if output != "" && !strings.HasSuffix(output, "\n") {
+			output += "\n"
+		}
+		output += "Failed because the worker did not report a result before the unknown timeout."
+		if err := s.db.FinishTaskRun(task.RunID, task.TaskID, "failed", task.ExitCode, output, task.Result); err != nil {
+			logrus.Errorf("failed to fail stale unknown task %s/%s: %v", task.RunID, task.TaskID, err)
+			continue
+		}
+		s.clearRetryState(task.RunID, task.TaskID)
+		s.publishTaskStatus(task.RunID, task.TaskID)
+		if err := s.failWorkflowRunFromTask(task.RunID); err != nil {
+			logrus.Errorf("failed to fail run %s after stale unknown task: %v", task.RunID, err)
+		}
+	}
+
+	return nil
+}
+
+// RequeueStaleAssignedTasks resets tasks that were assigned to a worker but did
+// not report a start event before the assignment timeout. This covers lost assign
+// commands and worker failures before task execution begins.
+func (s *RunService) RequeueStaleAssignedTasks(timeout time.Duration) error {
+	s.stateMu.Lock()
+	defer s.stateMu.Unlock()
+
+	cutoff := s.now().Add(-timeout)
+	tasks, err := s.db.ListAssignedTaskRunsBefore(cutoff)
+	if err != nil {
+		return err
+	}
+
+	for _, task := range tasks {
+		if task.AssignedNodeID != "" {
+			if err := s.db.DecrementNodeRunningCount(task.AssignedNodeID); err != nil {
+				return err
+			}
+		}
+		if err := s.db.ResetAssignedTaskRun(task.RunID, task.TaskID); err != nil {
+			return err
+		}
+		s.publishTaskStatus(task.RunID, task.TaskID)
 	}
 
 	return nil
@@ -985,11 +1144,7 @@ func (s *RunService) queueReadyTasks(runID string) error {
 		}
 		selectedBranch := ""
 		if task.TaskType == "condition" {
-			input, err := graph.nodes[task.TaskID].buildConditionInput(completed)
-			if err != nil {
-				return err
-			}
-			selectedBranch, err = resolveConditionBranch(task, input)
+			selectedBranch, err = selectedBranchForCompletedConditionTask(graph, completed, task)
 			if err != nil {
 				return err
 			}
@@ -1090,11 +1245,7 @@ func (s *RunService) conditionInputForTask(runID string, taskID string) (*workfl
 		}
 		selectedBranch := ""
 		if task.TaskType == "condition" {
-			input, err := graph.nodes[task.TaskID].buildConditionInput(completed)
-			if err != nil {
-				return nil, err
-			}
-			selectedBranch, err = resolveConditionBranch(task, input)
+			selectedBranch, err = selectedBranchForCompletedConditionTask(graph, completed, task)
 			if err != nil {
 				return nil, err
 			}
@@ -1291,6 +1442,74 @@ func templateRunStartTime(run entity.WorkflowRunEntity) string {
 	return run.CreatedAt.UTC().Format(time.RFC3339)
 }
 
+func taskResultForWorkerEvent(task entity.TaskRunEntity, finalStatus string, event dto.WorkerTaskEvent) (string, error) {
+	if finalStatus != "success" || task.TaskType != "condition" || event.SelectedBranch == "" {
+		return event.Result, nil
+	}
+	selectedBranch, err := normalizeConditionBranch(event.SelectedBranch)
+	if err != nil {
+		return "", err
+	}
+	return resultWithSelectedBranch(event.Result, selectedBranch), nil
+}
+
+func resultWithSelectedBranch(raw string, selectedBranch string) string {
+	result := map[string]any{}
+	if strings.TrimSpace(raw) != "" {
+		if err := json.Unmarshal([]byte(raw), &result); err != nil || result == nil {
+			result = map[string]any{"result": raw}
+		}
+	}
+	result["selected_branch"] = selectedBranch
+	encoded, err := json.Marshal(result)
+	if err != nil {
+		return raw
+	}
+	return string(encoded)
+}
+
+func selectedBranchForConditionTask(task entity.TaskRunEntity, input *workflowcfg.ConditionInput) (string, error) {
+	if selectedBranch, ok, err := selectedBranchFromResult(task.Result); ok || err != nil {
+		return selectedBranch, err
+	}
+	return resolveConditionBranch(task, input)
+}
+
+func selectedBranchForCompletedConditionTask(graph runGraph, completed map[string]completedTaskState, task entity.TaskRunEntity) (string, error) {
+	if selectedBranch, ok, err := selectedBranchFromResult(task.Result); ok || err != nil {
+		return selectedBranch, err
+	}
+	input, err := graph.nodes[task.TaskID].buildConditionInput(completed)
+	if err != nil {
+		return "", err
+	}
+	return resolveConditionBranch(task, input)
+}
+
+func selectedBranchFromResult(raw string) (string, bool, error) {
+	if strings.TrimSpace(raw) == "" {
+		return "", false, nil
+	}
+	var result map[string]any
+	if err := json.Unmarshal([]byte(raw), &result); err != nil {
+		return "", false, nil
+	}
+	rawBranch, ok := result["selected_branch"].(string)
+	if !ok || strings.TrimSpace(rawBranch) == "" {
+		return "", false, nil
+	}
+	selectedBranch, err := normalizeConditionBranch(rawBranch)
+	return selectedBranch, true, err
+}
+
+func normalizeConditionBranch(selectedBranch string) (string, error) {
+	selectedBranch = strings.TrimSpace(selectedBranch)
+	if selectedBranch == "true" || selectedBranch == "false" {
+		return selectedBranch, nil
+	}
+	return "", fmt.Errorf("invalid condition branch %q", selectedBranch)
+}
+
 func resolveConditionBranch(task entity.TaskRunEntity, input *workflowcfg.ConditionInput) (string, error) {
 	if task.TaskType != "condition" {
 		return "", nil
@@ -1331,4 +1550,125 @@ func mapWorkerEventStatus(eventType string) string {
 
 func isTerminalTaskStatus(status string) bool {
 	return status == "success" || status == "failed" || status == "skipped" || status == "cancelled"
+}
+
+func isTerminalWorkflowRunStatus(status string) bool {
+	return status == "success" || status == "failed" || status == "cancelled"
+}
+
+// UnknownTaskTimeoutSeconds is how long a task may stay in the unknown state
+// before it is treated as a failed attempt and requeued (or failed if the retry
+// budget is exhausted).
+const UnknownTaskTimeoutSeconds = 600
+
+// AssignedTaskTimeoutSeconds is how long a task may remain assigned without a
+// worker start event before it is returned to the queue.
+const AssignedTaskTimeoutSeconds = 60
+
+func taskRetryKey(runID string, taskID string) string {
+	return runID + ":" + taskID
+}
+
+func (s *RunService) seenWorkerOutputEvent(runID string, taskID string, sequence int64) bool {
+	if sequence <= 0 {
+		return false
+	}
+	return sequence <= s.outputSequences[taskRetryKey(runID, taskID)]
+}
+
+func (s *RunService) recordWorkerOutputEvent(runID string, taskID string, sequence int64) {
+	if sequence <= 0 {
+		return
+	}
+	s.outputSequences[taskRetryKey(runID, taskID)] = sequence
+}
+
+func (s *RunService) clearWorkerOutputSequence(runID string, taskID string) {
+	delete(s.outputSequences, taskRetryKey(runID, taskID))
+}
+
+func (s *RunService) retryEntry(key string) *taskRetryState {
+	state, ok := s.retryState[key]
+	if !ok {
+		state = &taskRetryState{}
+		s.retryState[key] = state
+	}
+	return state
+}
+
+// recordAttempt increments the attempt counter for a task and clears any pending
+// backoff/unknown markers. Called when a task actually starts executing.
+func (s *RunService) recordAttempt(runID string, taskID string) {
+	key := taskRetryKey(runID, taskID)
+	s.retryMu.Lock()
+	defer s.retryMu.Unlock()
+	state := s.retryEntry(key)
+	state.attemptCount++
+	state.nextAttemptAt = time.Time{}
+	state.unknownSince = time.Time{}
+}
+
+func (s *RunService) getAttemptCount(runID string, taskID string) int {
+	key := taskRetryKey(runID, taskID)
+	s.retryMu.Lock()
+	defer s.retryMu.Unlock()
+	if state, ok := s.retryState[key]; ok {
+		return state.attemptCount
+	}
+	return 0
+}
+
+func (s *RunService) setRetryBackoff(runID string, taskID string, backoffSeconds int) {
+	key := taskRetryKey(runID, taskID)
+	s.retryMu.Lock()
+	defer s.retryMu.Unlock()
+	state := s.retryEntry(key)
+	if backoffSeconds > 0 {
+		state.nextAttemptAt = s.now().Add(time.Duration(backoffSeconds) * time.Second)
+	} else {
+		state.nextAttemptAt = time.Time{}
+	}
+	state.unknownSince = time.Time{}
+}
+
+// dispatchReady reports whether a queued task has cleared its backoff window.
+func (s *RunService) dispatchReady(runID string, taskID string) bool {
+	key := taskRetryKey(runID, taskID)
+	s.retryMu.Lock()
+	defer s.retryMu.Unlock()
+	state, ok := s.retryState[key]
+	if !ok {
+		return true
+	}
+	return state.nextAttemptAt.IsZero() || !state.nextAttemptAt.After(s.now())
+}
+
+// markUnknown lazily records when a task entered the unknown state.
+func (s *RunService) markUnknown(runID string, taskID string) {
+	key := taskRetryKey(runID, taskID)
+	s.retryMu.Lock()
+	defer s.retryMu.Unlock()
+	state := s.retryEntry(key)
+	if state.unknownSince.IsZero() {
+		state.unknownSince = s.now()
+	}
+}
+
+// staleUnknown reports whether a task has been unknown for at least timeout.
+func (s *RunService) staleUnknown(runID string, taskID string, timeout time.Duration) bool {
+	key := taskRetryKey(runID, taskID)
+	s.retryMu.Lock()
+	defer s.retryMu.Unlock()
+	state, ok := s.retryState[key]
+	if !ok || state.unknownSince.IsZero() {
+		return false
+	}
+	return !s.now().Before(state.unknownSince.Add(timeout))
+}
+
+func (s *RunService) clearRetryState(runID string, taskID string) {
+	key := taskRetryKey(runID, taskID)
+	s.retryMu.Lock()
+	defer s.retryMu.Unlock()
+	delete(s.retryState, key)
 }
