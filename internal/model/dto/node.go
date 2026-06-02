@@ -35,16 +35,17 @@ type AddNodeTagRequest struct {
 }
 
 type WorkerTaskEvent struct {
-	Type       string `json:"type"`
-	RunID      string `json:"run_id"`
-	TaskID     string `json:"task_id"`
-	Sequence   int64  `json:"sequence,omitempty"`
-	Status     string `json:"status,omitempty"`
-	Output     string `json:"output,omitempty"`
-	Result     string `json:"result,omitempty"`
-	ExitCode   *int   `json:"exit_code,omitempty"`
-	StartedAt  string `json:"started_at,omitempty"`
-	FinishedAt string `json:"finished_at,omitempty"`
+	Type           string `json:"type"`
+	RunID          string `json:"run_id"`
+	TaskID         string `json:"task_id"`
+	Sequence       int64  `json:"sequence,omitempty"`
+	SelectedBranch string `json:"selected_branch,omitempty"`
+	Status         string `json:"status,omitempty"`
+	Output         string `json:"output,omitempty"`
+	Result         string `json:"result,omitempty"`
+	ExitCode       *int   `json:"exit_code,omitempty"`
+	StartedAt      string `json:"started_at,omitempty"`
+	FinishedAt     string `json:"finished_at,omitempty"`
 }
 
 type NodeCommand struct {
@@ -66,4 +67,5 @@ type ConditionInput struct {
 	Status   string `json:"status"`
 	ExitCode int    `json:"exit_code"`
 	Output   string `json:"output"`
+	Result   string `json:"result,omitempty"`
 }

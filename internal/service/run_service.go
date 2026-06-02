@@ -831,6 +831,7 @@ func (s *RunService) PrepareAssignedTask(runID string, taskID string) (*dto.Assi
 			Status:   conditionInput.Status,
 			ExitCode: conditionInput.ExitCode,
 			Output:   conditionInput.Output,
+			Result:   conditionInput.Result,
 		}
 	}
 
@@ -905,7 +906,11 @@ func (s *RunService) HandleWorkerTaskEvent(nodeID string, event dto.WorkerTaskEv
 		if event.ExitCode != nil {
 			exitCode = *event.ExitCode
 		}
-		if err := s.db.FinishTaskRun(event.RunID, event.TaskID, finalStatus, exitCode, updatedTask.Output, event.Result); err != nil {
+		result, err := taskResultForWorkerEvent(updatedTask, finalStatus, event)
+		if err != nil {
+			return err
+		}
+		if err := s.db.FinishTaskRun(event.RunID, event.TaskID, finalStatus, exitCode, updatedTask.Output, result); err != nil {
 			return err
 		}
 		if updatedTask.AssignedNodeID != "" {
@@ -914,6 +919,7 @@ func (s *RunService) HandleWorkerTaskEvent(nodeID string, event dto.WorkerTaskEv
 		s.publishTaskStatus(event.RunID, event.TaskID)
 
 		updatedTask.Status = finalStatus
+		updatedTask.Result = result
 		return s.advanceTerminalTaskProgress(updatedTask)
 	}
 
@@ -1114,7 +1120,7 @@ func (s *RunService) queueReadyTasks(runID string) error {
 			if err != nil {
 				return err
 			}
-			selectedBranch, err = resolveConditionBranch(task, input)
+			selectedBranch, err = selectedBranchForConditionTask(task, input)
 			if err != nil {
 				return err
 			}
@@ -1219,7 +1225,7 @@ func (s *RunService) conditionInputForTask(runID string, taskID string) (*workfl
 			if err != nil {
 				return nil, err
 			}
-			selectedBranch, err = resolveConditionBranch(task, input)
+			selectedBranch, err = selectedBranchForConditionTask(task, input)
 			if err != nil {
 				return nil, err
 			}
@@ -1414,6 +1420,63 @@ func templateRunStartTime(run entity.WorkflowRunEntity) string {
 		return run.StartedAt.UTC().Format(time.RFC3339)
 	}
 	return run.CreatedAt.UTC().Format(time.RFC3339)
+}
+
+func taskResultForWorkerEvent(task entity.TaskRunEntity, finalStatus string, event dto.WorkerTaskEvent) (string, error) {
+	if finalStatus != "success" || task.TaskType != "condition" || event.SelectedBranch == "" {
+		return event.Result, nil
+	}
+	selectedBranch, err := normalizeConditionBranch(event.SelectedBranch)
+	if err != nil {
+		return "", err
+	}
+	return resultWithSelectedBranch(event.Result, selectedBranch), nil
+}
+
+func resultWithSelectedBranch(raw string, selectedBranch string) string {
+	result := map[string]any{}
+	if strings.TrimSpace(raw) != "" {
+		if err := json.Unmarshal([]byte(raw), &result); err != nil || result == nil {
+			result = map[string]any{"result": raw}
+		}
+	}
+	result["selected_branch"] = selectedBranch
+	encoded, err := json.Marshal(result)
+	if err != nil {
+		return raw
+	}
+	return string(encoded)
+}
+
+func selectedBranchForConditionTask(task entity.TaskRunEntity, input *workflowcfg.ConditionInput) (string, error) {
+	if selectedBranch, ok, err := selectedBranchFromResult(task.Result); ok || err != nil {
+		return selectedBranch, err
+	}
+	return resolveConditionBranch(task, input)
+}
+
+func selectedBranchFromResult(raw string) (string, bool, error) {
+	if strings.TrimSpace(raw) == "" {
+		return "", false, nil
+	}
+	var result map[string]any
+	if err := json.Unmarshal([]byte(raw), &result); err != nil {
+		return "", false, nil
+	}
+	rawBranch, ok := result["selected_branch"].(string)
+	if !ok || strings.TrimSpace(rawBranch) == "" {
+		return "", false, nil
+	}
+	selectedBranch, err := normalizeConditionBranch(rawBranch)
+	return selectedBranch, true, err
+}
+
+func normalizeConditionBranch(selectedBranch string) (string, error) {
+	selectedBranch = strings.TrimSpace(selectedBranch)
+	if selectedBranch == "true" || selectedBranch == "false" {
+		return selectedBranch, nil
+	}
+	return "", fmt.Errorf("invalid condition branch %q", selectedBranch)
 }
 
 func resolveConditionBranch(task entity.TaskRunEntity, input *workflowcfg.ConditionInput) (string, error) {

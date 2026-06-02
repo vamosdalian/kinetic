@@ -356,17 +356,18 @@ func (w *Worker) executeAssignedTask(ctx context.Context, task dto.AssignedTask)
 	if policy.TimeoutSeconds > 0 {
 		attemptCtx, cancel = context.WithTimeout(ctx, time.Duration(policy.TimeoutSeconds)*time.Second)
 	}
-	result, err := w.runTaskAttempt(attemptCtx, task, reportOutput)
+	result, selectedBranch, err := w.runTaskAttempt(attemptCtx, task, reportOutput)
 	cancel()
 
 	if err == nil {
 		exitCode := result.ExitCode
 		reportEvent(dto.WorkerTaskEvent{
-			Type:     "finished",
-			RunID:    task.RunID,
-			TaskID:   task.TaskID,
-			Result:   result.Result,
-			ExitCode: &exitCode,
+			Type:           "finished",
+			RunID:          task.RunID,
+			TaskID:         task.TaskID,
+			SelectedBranch: selectedBranch,
+			Result:         result.Result,
+			ExitCode:       &exitCode,
 		})
 		return
 	}
@@ -402,30 +403,35 @@ func (w *Worker) executeAssignedTask(ctx context.Context, task dto.AssignedTask)
 	})
 }
 
-func (w *Worker) runTaskAttempt(ctx context.Context, task dto.AssignedTask, onOutput executor.OutputFunc) (executor.TaskResult, error) {
+func (w *Worker) runTaskAttempt(ctx context.Context, task dto.AssignedTask, onOutput executor.OutputFunc) (executor.TaskResult, string, error) {
 	if task.Type == dto.TaskTypeCondition {
 		var cfg workflowcfg.ConditionConfig
 		if err := json.Unmarshal(task.Config, &cfg); err != nil {
-			return executor.TaskResult{ExitCode: -1}, fmt.Errorf("invalid condition config: %w", err)
+			return executor.TaskResult{ExitCode: -1}, "", fmt.Errorf("invalid condition config: %w", err)
 		}
 		if task.ConditionInput == nil {
-			return executor.TaskResult{ExitCode: -1}, fmt.Errorf("condition task is missing input")
+			return executor.TaskResult{ExitCode: -1}, "", fmt.Errorf("condition task is missing input")
 		}
 		expr, err := workflowcfg.ParseConditionExpression(cfg.Expression)
 		if err != nil {
-			return executor.TaskResult{ExitCode: -1}, err
+			return executor.TaskResult{ExitCode: -1}, "", err
 		}
 		matched, err := expr.Evaluate(workflowcfg.ConditionInput{
 			Status:   task.ConditionInput.Status,
 			ExitCode: task.ConditionInput.ExitCode,
 			Output:   task.ConditionInput.Output,
+			Result:   task.ConditionInput.Result,
 		})
 		if err != nil {
-			return executor.TaskResult{ExitCode: -1}, err
+			return executor.TaskResult{ExitCode: -1}, "", err
+		}
+		selectedBranch := "false"
+		if matched {
+			selectedBranch = "true"
 		}
 		message := fmt.Sprintf("Condition %q evaluated to %t", cfg.Expression, matched)
 		onOutput(message)
-		return executor.TaskResult{Output: message, ExitCode: 0}, nil
+		return executor.TaskResult{Output: message, ExitCode: 0}, selectedBranch, nil
 	}
 
 	execTask, err := executor.NewTask(executor.TaskEntity{
@@ -436,10 +442,11 @@ func (w *Worker) runTaskAttempt(ctx context.Context, task dto.AssignedTask, onOu
 		Env:    task.Env,
 	})
 	if err != nil {
-		return executor.TaskResult{ExitCode: -1}, err
+		return executor.TaskResult{ExitCode: -1}, "", err
 	}
 
-	return w.executor.Execute(ctx, execTask, onOutput)
+	result, err := w.executor.Execute(ctx, execTask, onOutput)
+	return result, "", err
 }
 
 func (w *Worker) postTaskEvent(event dto.WorkerTaskEvent) error {

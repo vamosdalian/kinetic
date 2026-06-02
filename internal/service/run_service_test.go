@@ -335,6 +335,82 @@ func TestRunService_ReplayedFailedEventDoesNotRegressRequeuedTask(t *testing.T) 
 	assert.Equal(t, "queued", taskRun.Status)
 }
 
+func TestRunService_DistributedConditionUsesWorkerSelectedBranch(t *testing.T) {
+	db := setupRunServiceDB(t)
+	service := NewRunService(db, 1)
+	service.EnableDistributed(NewWorkerStreamHub())
+
+	rootID := uuid.New().String()
+	conditionID := uuid.New().String()
+	trueID := uuid.New().String()
+	falseID := uuid.New().String()
+	workflowID := seedWorkflow(t, db, []entity.TaskEntity{
+		{
+			ID:       rootID,
+			Name:     "root",
+			Type:     "shell",
+			Config:   `{"script":"printf 'go'"}`,
+			Position: `{"x":0,"y":0}`,
+			NodeType: "baseNodeFull",
+		},
+		{
+			ID:       conditionID,
+			Name:     "condition",
+			Type:     "condition",
+			Config:   `{"expression":"output == \"${{ .upstream.output }}\""}`,
+			Position: `{"x":1,"y":0}`,
+			NodeType: "baseNodeFull",
+		},
+		{
+			ID:       trueID,
+			Name:     "true-branch",
+			Type:     "shell",
+			Config:   `{"script":"printf 'true'"}`,
+			Position: `{"x":2,"y":0}`,
+			NodeType: "baseNodeFull",
+		},
+		{
+			ID:       falseID,
+			Name:     "false-branch",
+			Type:     "shell",
+			Config:   `{"script":"printf 'false'"}`,
+			Position: `{"x":3,"y":0}`,
+			NodeType: "baseNodeFull",
+		},
+	}, []entity.EdgeEntity{
+		{ID: uuid.New().String(), Source: rootID, Target: conditionID},
+		{ID: uuid.New().String(), Source: conditionID, Target: trueID, SourceHandle: "true"},
+		{ID: uuid.New().String(), Source: conditionID, Target: falseID, SourceHandle: "false"},
+	})
+
+	runID := uuid.New().String()
+	require.NoError(t, db.CreateWorkflowRun(workflowID, runID))
+	require.NoError(t, db.MarkWorkflowRunRunning(runID))
+	require.NoError(t, db.FinishTaskRun(runID, rootID, "success", 0, "go", ""))
+	require.NoError(t, db.QueueTaskRun(runID, conditionID, ""))
+	require.NoError(t, db.AssignTaskRun(runID, conditionID, "node-1"))
+	require.NoError(t, db.MarkTaskRunRunning(runID, conditionID))
+
+	exitCode := 0
+	require.NoError(t, service.HandleWorkerTaskEvent("node-1", dto.WorkerTaskEvent{
+		Type:           "finished",
+		RunID:          runID,
+		TaskID:         conditionID,
+		SelectedBranch: "true",
+		ExitCode:       &exitCode,
+	}))
+
+	conditionRun, err := db.GetTaskRun(runID, conditionID)
+	require.NoError(t, err)
+	assert.JSONEq(t, `{"selected_branch":"true"}`, conditionRun.Result)
+	trueRun, err := db.GetTaskRun(runID, trueID)
+	require.NoError(t, err)
+	assert.Equal(t, "queued", trueRun.Status)
+	falseRun, err := db.GetTaskRun(runID, falseID)
+	require.NoError(t, err)
+	assert.Equal(t, "skipped", falseRun.Status)
+}
+
 func TestRunService_BranchedWorkflowSuccess(t *testing.T) {
 	db := setupRunServiceDB(t)
 	service := NewRunService(db, 4)

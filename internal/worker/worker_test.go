@@ -191,6 +191,43 @@ func TestWorker_ExecuteAssignedTaskRetriesOutputAndTerminalEvents(t *testing.T) 
 	assert.Equal(t, 2, finishedAttempts)
 }
 
+func TestWorker_ExecuteAssignedConditionReportsSelectedBranch(t *testing.T) {
+	finished := make(chan dto.WorkerTaskEvent, 1)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/internal/nodes/worker-test/task-events" {
+			defer r.Body.Close()
+			var event dto.WorkerTaskEvent
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&event))
+			if event.Type == "finished" {
+				finished <- event
+			}
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"success":true}`))
+	}))
+	defer server.Close()
+
+	worker := NewWorker(testWorkerConfig(server.URL), "remote")
+	worker.executeAssignedTask(context.Background(), dto.AssignedTask{
+		RunID:  "run-1",
+		TaskID: "condition-1",
+		Type:   dto.TaskTypeCondition,
+		Config: json.RawMessage(`{"expression":"json.ok == true"}`),
+		ConditionInput: &dto.ConditionInput{
+			Status:   "success",
+			ExitCode: 0,
+			Output:   `{"ok":true}`,
+		},
+	})
+
+	select {
+	case event := <-finished:
+		assert.Equal(t, "true", event.SelectedBranch)
+	case <-time.After(2 * time.Second):
+		t.Fatal("expected finished condition event")
+	}
+}
+
 func TestWorker_Run_ReconnectsAfterStreamDisconnect(t *testing.T) {
 	var mu sync.Mutex
 	registerCount := 0
