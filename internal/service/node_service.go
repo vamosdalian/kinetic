@@ -241,6 +241,11 @@ func (s *NodeService) RequeueStaleUnknownTasks(ctx context.Context) error {
 	return s.runService.RequeueStaleUnknownTasks(UnknownTaskTimeoutSeconds * time.Second)
 }
 
+func (s *NodeService) RequeueStaleAssignedTasks(ctx context.Context) error {
+	_ = ctx
+	return s.runService.RequeueStaleAssignedTasks(AssignedTaskTimeoutSeconds * time.Second)
+}
+
 func (s *NodeService) SweepOfflineNodes(ctx context.Context) error {
 	nodes, err := s.db.ListNodes()
 	if err != nil {

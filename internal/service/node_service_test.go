@@ -412,6 +412,47 @@ func TestNodeService_StaleUnknownTaskRequeuesWithinBudget(t *testing.T) {
 	assert.Equal(t, "running", run.Status)
 }
 
+func TestNodeService_StaleAssignedTaskRequeues(t *testing.T) {
+	runService, nodeService := setupNodeService(t, 5*time.Second)
+
+	node, err := nodeService.RegisterNode(dto.RegisterNodeRequest{NodeID: "node-assigned-stale", MaxConcurrency: 1})
+	require.NoError(t, err)
+	_, cleanup, err := nodeService.SubscribeStream(node.NodeID)
+	require.NoError(t, err)
+	defer cleanup()
+
+	workflowID := seedWorkflow(t, runService.db, []entity.TaskEntity{
+		{
+			ID:       uuid.New().String(),
+			Name:     "task-assigned-stale",
+			Type:     "shell",
+			Config:   `{"script":"printf 'assigned'"}`,
+			Position: `{"x":0,"y":0}`,
+			NodeType: "baseNodeFull",
+		},
+	}, nil)
+	runID, err := runService.StartWorkflowRun(workflowID)
+	require.NoError(t, err)
+	require.NoError(t, nodeService.DispatchQueuedTasks(context.Background(), 64))
+
+	taskRuns, err := runService.db.GetTaskRuns(runID)
+	require.NoError(t, err)
+	require.Len(t, taskRuns, 1)
+	require.Equal(t, "assigned", taskRuns[0].Status)
+	require.Equal(t, node.NodeID, taskRuns[0].AssignedNodeID)
+
+	require.NoError(t, runService.RequeueStaleAssignedTasks(0))
+
+	taskRun, err := runService.db.GetTaskRun(runID, taskRuns[0].TaskID)
+	require.NoError(t, err)
+	assert.Equal(t, "queued", taskRun.Status)
+	assert.Empty(t, taskRun.AssignedNodeID)
+
+	updatedNode, err := nodeService.GetNodeDTO(node.NodeID)
+	require.NoError(t, err)
+	assert.Equal(t, 0, updatedNode.RunningCount)
+}
+
 func TestNodeService_StaleUnknownTaskFailsRunWhenBudgetExhausted(t *testing.T) {
 	runService, nodeService := setupNodeService(t, 5*time.Second)
 

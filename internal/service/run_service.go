@@ -1075,6 +1075,34 @@ func (s *RunService) RequeueStaleUnknownTasks(timeout time.Duration) error {
 	return nil
 }
 
+// RequeueStaleAssignedTasks resets tasks that were assigned to a worker but did
+// not report a start event before the assignment timeout. This covers lost assign
+// commands and worker failures before task execution begins.
+func (s *RunService) RequeueStaleAssignedTasks(timeout time.Duration) error {
+	s.stateMu.Lock()
+	defer s.stateMu.Unlock()
+
+	cutoff := s.now().Add(-timeout)
+	tasks, err := s.db.ListAssignedTaskRunsBefore(cutoff)
+	if err != nil {
+		return err
+	}
+
+	for _, task := range tasks {
+		if task.AssignedNodeID != "" {
+			if err := s.db.DecrementNodeRunningCount(task.AssignedNodeID); err != nil {
+				return err
+			}
+		}
+		if err := s.db.ResetAssignedTaskRun(task.RunID, task.TaskID); err != nil {
+			return err
+		}
+		s.publishTaskStatus(task.RunID, task.TaskID)
+	}
+
+	return nil
+}
+
 func (s *RunService) queueReadyTasks(runID string) error {
 	taskRuns, err := s.db.GetTaskRuns(runID)
 	if err != nil {
@@ -1116,11 +1144,7 @@ func (s *RunService) queueReadyTasks(runID string) error {
 		}
 		selectedBranch := ""
 		if task.TaskType == "condition" {
-			input, err := graph.nodes[task.TaskID].buildConditionInput(completed)
-			if err != nil {
-				return err
-			}
-			selectedBranch, err = selectedBranchForConditionTask(task, input)
+			selectedBranch, err = selectedBranchForCompletedConditionTask(graph, completed, task)
 			if err != nil {
 				return err
 			}
@@ -1221,11 +1245,7 @@ func (s *RunService) conditionInputForTask(runID string, taskID string) (*workfl
 		}
 		selectedBranch := ""
 		if task.TaskType == "condition" {
-			input, err := graph.nodes[task.TaskID].buildConditionInput(completed)
-			if err != nil {
-				return nil, err
-			}
-			selectedBranch, err = selectedBranchForConditionTask(task, input)
+			selectedBranch, err = selectedBranchForCompletedConditionTask(graph, completed, task)
 			if err != nil {
 				return nil, err
 			}
@@ -1455,6 +1475,17 @@ func selectedBranchForConditionTask(task entity.TaskRunEntity, input *workflowcf
 	return resolveConditionBranch(task, input)
 }
 
+func selectedBranchForCompletedConditionTask(graph runGraph, completed map[string]completedTaskState, task entity.TaskRunEntity) (string, error) {
+	if selectedBranch, ok, err := selectedBranchFromResult(task.Result); ok || err != nil {
+		return selectedBranch, err
+	}
+	input, err := graph.nodes[task.TaskID].buildConditionInput(completed)
+	if err != nil {
+		return "", err
+	}
+	return resolveConditionBranch(task, input)
+}
+
 func selectedBranchFromResult(raw string) (string, bool, error) {
 	if strings.TrimSpace(raw) == "" {
 		return "", false, nil
@@ -1529,6 +1560,10 @@ func isTerminalWorkflowRunStatus(status string) bool {
 // before it is treated as a failed attempt and requeued (or failed if the retry
 // budget is exhausted).
 const UnknownTaskTimeoutSeconds = 600
+
+// AssignedTaskTimeoutSeconds is how long a task may remain assigned without a
+// worker start event before it is returned to the queue.
+const AssignedTaskTimeoutSeconds = 60
 
 func taskRetryKey(runID string, taskID string) string {
 	return runID + ":" + taskID

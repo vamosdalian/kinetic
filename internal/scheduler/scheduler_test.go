@@ -15,6 +15,7 @@ type stubDispatcher struct {
 	dispatchCalls int
 	sweepCalls    int
 	scheduleCalls int
+	assignedCalls int
 	requeueCalls  int
 }
 
@@ -39,6 +40,13 @@ func (s *stubDispatcher) ScheduleDueWorkflowRuns(ctx context.Context, limit int)
 	return nil
 }
 
+func (s *stubDispatcher) RequeueStaleAssignedTasks(ctx context.Context) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.assignedCalls++
+	return nil
+}
+
 func (s *stubDispatcher) RequeueStaleUnknownTasks(ctx context.Context) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -46,10 +54,10 @@ func (s *stubDispatcher) RequeueStaleUnknownTasks(ctx context.Context) error {
 	return nil
 }
 
-func (s *stubDispatcher) counts() (int, int, int) {
+func (s *stubDispatcher) counts() (int, int, int, int) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return s.dispatchCalls, s.sweepCalls, s.scheduleCalls
+	return s.dispatchCalls, s.sweepCalls, s.scheduleCalls, s.assignedCalls
 }
 
 func TestScheduler_RunInvokesDispatcher(t *testing.T) {
@@ -62,17 +70,18 @@ func TestScheduler_RunInvokesDispatcher(t *testing.T) {
 	}()
 
 	require.Eventually(t, func() bool {
-		dispatchCalls, sweepCalls, scheduleCalls := dispatcher.counts()
-		return dispatchCalls > 0 && sweepCalls > 0 && scheduleCalls > 0
+		dispatchCalls, sweepCalls, scheduleCalls, assignedCalls := dispatcher.counts()
+		return dispatchCalls > 0 && sweepCalls > 0 && scheduleCalls > 0 && assignedCalls > 0
 	}, time.Second, 10*time.Millisecond)
 
 	require.NoError(t, scheduler.Shutdown(context.Background()))
 	require.NoError(t, <-done)
 
-	dispatchCalls, sweepCalls, scheduleCalls := dispatcher.counts()
+	dispatchCalls, sweepCalls, scheduleCalls, assignedCalls := dispatcher.counts()
 	assert.Greater(t, dispatchCalls, 0)
 	assert.Greater(t, sweepCalls, 0)
 	assert.Greater(t, scheduleCalls, 0)
+	assert.Greater(t, assignedCalls, 0)
 }
 
 func TestScheduler_RunWithoutDispatcherStopsCleanly(t *testing.T) {
