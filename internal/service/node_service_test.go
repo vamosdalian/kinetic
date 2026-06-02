@@ -101,6 +101,59 @@ func TestNodeService_DispatchQueuedTasksAssignsToSubscribedNode(t *testing.T) {
 	assert.Equal(t, 1, updatedNode.RunningCount)
 }
 
+func TestNodeService_DispatchQueuedTasksRollsBackWhenStreamBufferIsFull(t *testing.T) {
+	runService, nodeService := setupNodeService(t, 5*time.Second)
+
+	node, err := nodeService.RegisterNode(dto.RegisterNodeRequest{
+		NodeID:         "node-full-stream",
+		Name:           "Node Full Stream",
+		MaxConcurrency: 1,
+	})
+	require.NoError(t, err)
+
+	_, cleanup, err := nodeService.SubscribeStream(node.NodeID)
+	require.NoError(t, err)
+	defer cleanup()
+
+	nodeService.hub.mu.RLock()
+	var listener chan dto.NodeCommand
+	for _, stream := range nodeService.hub.listeners[node.NodeID] {
+		listener = stream
+		break
+	}
+	nodeService.hub.mu.RUnlock()
+	require.NotNil(t, listener)
+	for cap(listener) > len(listener) {
+		listener <- dto.NodeCommand{Type: "queued"}
+	}
+
+	workflowID := seedWorkflow(t, runService.db, []entity.TaskEntity{
+		{
+			ID:       uuid.New().String(),
+			Name:     "task-full-stream",
+			Type:     "shell",
+			Config:   `{"script":"printf 'hello'"}`,
+			Position: `{"x":0,"y":0}`,
+			NodeType: "baseNodeFull",
+		},
+	}, nil)
+
+	runID, err := runService.StartWorkflowRun(workflowID)
+	require.NoError(t, err)
+
+	require.NoError(t, nodeService.DispatchQueuedTasks(context.Background(), 64))
+
+	taskRuns, err := runService.db.GetTaskRuns(runID)
+	require.NoError(t, err)
+	require.Len(t, taskRuns, 1)
+	assert.Equal(t, "queued", taskRuns[0].Status)
+	assert.Empty(t, taskRuns[0].AssignedNodeID)
+
+	updatedNode, err := nodeService.GetNodeDTO(node.NodeID)
+	require.NoError(t, err)
+	assert.Equal(t, 0, updatedNode.RunningCount)
+}
+
 func TestNodeService_SweepOfflineNodesResetsAssignedTasks(t *testing.T) {
 	runService, nodeService := setupNodeService(t, time.Second)
 

@@ -59,13 +59,15 @@ func (h *WorkerStreamHub) Publish(nodeID string, command dto.NodeCommand) bool {
 		return false
 	}
 
+	delivered := false
 	for _, listener := range listeners {
 		select {
 		case listener <- command:
+			delivered = true
 		default:
 		}
 	}
-	return true
+	return delivered
 }
 
 func (h *WorkerStreamHub) HasSubscriber(nodeID string) bool {
