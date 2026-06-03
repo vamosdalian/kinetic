@@ -245,9 +245,11 @@ function WorkflowGraph() {
     setTimeout(() => {
       setViewport({ x: 0, y: 0, zoom: 2 }, { duration: 0 });
     }, 0);
+    // 新建 workflow 时默认弹出 Workflow Info 抽屉
+    setSelectedTaskId("ROOT");
     // 新建 workflow 标记为 dirty
     markDirty();
-  }, [clear, setWorkflowId, addTaskNode, setEdges, setViewport, markDirty]);
+  }, [clear, setWorkflowId, addTaskNode, setEdges, setViewport, setSelectedTaskId, markDirty]);
 
   // 加载已有 workflow 数据
   const fetchWorkflow = React.useCallback(async (id: string) => {
