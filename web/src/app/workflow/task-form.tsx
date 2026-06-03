@@ -17,7 +17,7 @@ import {
   HoverCardContent,
   HoverCardTrigger,
 } from "@/components/ui/hover-card";
-import { CircleQuestionMark } from "lucide-react";
+import { CircleQuestionMark, Copy } from "lucide-react";
 import { KeyValueEditor } from "./key-value-editor";
 import {
   createTaskConfig,
@@ -35,6 +35,7 @@ interface TaskFormProps {
   node: TaskNode | null;
   tagOptions: string[];
   onUpdate: (id: string, data: Partial<Omit<TaskNode, "id">>) => void;
+  onDuplicate: (id: string) => void;
 }
 
 function HelpHint({ content }: { content: React.ReactNode }) {
@@ -61,6 +62,7 @@ export function Taskform({
   node,
   tagOptions,
   onUpdate,
+  onDuplicate,
 }: TaskFormProps) {
   const config = React.useMemo(() => {
     if (!node) {
@@ -107,7 +109,17 @@ export function Taskform({
   return (
     <div className="grid gap-6 m-4">
       <div className="grid gap-2">
-        <h1 className="text-xl">Task Node</h1>
+        <div className="flex items-center justify-between">
+          <h1 className="text-xl">Task Node</h1>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => onDuplicate(taskId)}
+          >
+            <Copy className="h-4 w-4" />
+            Duplicate
+          </Button>
+        </div>
         <Separator style={{ margin: "0" }} />
       </div>
 

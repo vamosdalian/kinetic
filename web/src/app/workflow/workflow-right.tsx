@@ -10,6 +10,7 @@ interface WorkflowRightProps {
   onUpdateWorkflowData: (data: Partial<WorkflowData>) => void;
   taskNodes: Record<string, TaskNode>;
   onUpdateTaskNode: (id: string, data: Partial<Omit<TaskNode, "id">>) => void;
+  onDuplicateTaskNode: (id: string) => void;
 }
 
 export function WorkflowRight({
@@ -19,6 +20,7 @@ export function WorkflowRight({
   onUpdateWorkflowData,
   taskNodes,
   onUpdateTaskNode,
+  onDuplicateTaskNode,
 }: WorkflowRightProps) {
   return (
     <ScrollArea className="h-full">
@@ -34,6 +36,7 @@ export function WorkflowRight({
           node={taskNodes[selectedTaskId]}
           tagOptions={tagOptions}
           onUpdate={onUpdateTaskNode}
+          onDuplicate={onDuplicateTaskNode}
         />
       )}
     </ScrollArea>
