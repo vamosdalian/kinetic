@@ -2,7 +2,9 @@ package apiserver
 
 import (
 	"io/fs"
+	"mime"
 	"net/http"
+	"path"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -48,6 +50,15 @@ func (h *StaticHandler) RegisterRoutes(engine *gin.Engine) {
 		h.staticServer.ServeHTTP(c.Writer, c.Request)
 	})
 
+	// Docs assets must be served as real static files. If they fall through to
+	// the SPA fallback, the docs iframe renders the application shell instead.
+	engine.GET("/docsify/*filepath", func(c *gin.Context) {
+		h.serveStaticFile(c, "docsify", "index.html")
+	})
+	engine.GET("/docs-content/*filepath", func(c *gin.Context) {
+		h.serveStaticFile(c, "docs-content", "README.md")
+	})
+
 	// SPA fallback: 所有非 API、非静态资源的请求都返回 index.html
 	engine.NoRoute(func(c *gin.Context) {
 		path := c.Request.URL.Path
@@ -75,4 +86,43 @@ func (h *StaticHandler) RegisterRoutes(engine *gin.Engine) {
 		}
 		c.Data(200, "text/html; charset=utf-8", indexFile)
 	})
+}
+
+func (h *StaticHandler) serveStaticFile(c *gin.Context, root string, defaultFile string) {
+	requestPath := strings.TrimPrefix(c.Request.URL.Path, "/")
+	filePath := path.Clean(requestPath)
+	if filePath == "." || filePath == root {
+		filePath = path.Join(root, defaultFile)
+	}
+	if !strings.HasPrefix(filePath, root+"/") {
+		c.String(http.StatusForbidden, "Forbidden")
+		return
+	}
+
+	info, err := fs.Stat(h.distFS, filePath)
+	if err != nil {
+		c.String(http.StatusNotFound, "404 page not found")
+		return
+	}
+	if info.IsDir() {
+		filePath = path.Join(filePath, defaultFile)
+	}
+
+	content, err := fs.ReadFile(h.distFS, filePath)
+	if err != nil {
+		c.String(http.StatusNotFound, "404 page not found")
+		return
+	}
+
+	c.Data(http.StatusOK, contentTypeForStaticFile(filePath, content), content)
+}
+
+func contentTypeForStaticFile(filePath string, content []byte) string {
+	if strings.HasSuffix(filePath, ".md") {
+		return "text/markdown; charset=utf-8"
+	}
+	if contentType := mime.TypeByExtension(path.Ext(filePath)); contentType != "" {
+		return contentType
+	}
+	return http.DetectContentType(content)
 }
