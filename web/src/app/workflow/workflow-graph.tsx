@@ -95,6 +95,30 @@ function WorkflowGraph() {
     markDirty();
   }, [markDirty]);
 
+  const duplicateTaskNode = React.useCallback((sourceId: string) => {
+    const id = uuidv7();
+    let created = false;
+    setTaskNodes((prev) => {
+      const source = prev[sourceId];
+      if (!source) return prev;
+      created = true;
+      return {
+        ...prev,
+        [id]: {
+          ...source,
+          id,
+          name: `${source.name} copy`,
+          config: structuredClone(source.config),
+          position: { x: source.position.x + 40, y: source.position.y + 40 },
+        },
+      };
+    });
+    if (created) {
+      setSelectedTaskId(id);
+      markDirty();
+    }
+  }, [markDirty]);
+
   const updateTaskNode = React.useCallback((id: string, data: Partial<Omit<TaskNode, "id">>) => {
     setTaskNodes((prev) => {
       const existing = prev[id];
@@ -564,6 +588,7 @@ function WorkflowGraph() {
           onUpdateWorkflowData={updateWorkflowData}
           taskNodes={taskNodes}
           onUpdateTaskNode={updateTaskNode}
+          onDuplicateTaskNode={duplicateTaskNode}
         />
       </Card>
 
