@@ -415,11 +415,12 @@ func (w *Worker) runTaskAttempt(ctx context.Context, task dto.AssignedTask, onOu
 	}
 
 	execTask, err := executor.NewTask(executor.TaskEntity{
-		RunID:  task.RunID,
-		ID:     task.TaskID,
-		Type:   string(task.Type),
-		Config: string(task.Config),
-		Env:    task.Env,
+		RunID:     task.RunID,
+		TaskRunID: task.TaskRunID,
+		ID:        task.TaskID,
+		Type:      string(task.Type),
+		Config:    string(task.Config),
+		Env:       task.Env,
 	})
 	if err != nil {
 		return executor.TaskResult{ExitCode: -1}, "", err

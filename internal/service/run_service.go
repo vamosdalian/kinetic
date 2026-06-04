@@ -642,11 +642,12 @@ func (s *RunService) executeTaskAttempt(ctx context.Context, runID string, task 
 	}
 
 	execTask, err := executor.NewTask(executor.TaskEntity{
-		RunID:  runID,
-		ID:     task.TaskID,
-		Type:   task.TaskType,
-		Config: renderedConfig,
-		Env:    effectiveEnv,
+		RunID:     runID,
+		TaskRunID: task.TaskRunID,
+		ID:        task.TaskID,
+		Type:      task.TaskType,
+		Config:    renderedConfig,
+		Env:       effectiveEnv,
 	})
 	if err != nil {
 		if onOutput != nil {

@@ -18,18 +18,20 @@ import (
 )
 
 type TaskEntity struct {
-	RunID  string
-	ID     string
-	Type   string
-	Config string
-	Env    map[string]string
+	RunID     string
+	TaskRunID string
+	ID        string
+	Type      string
+	Config    string
+	Env       map[string]string
 }
 
 type shellTask struct {
-	runID  string
-	id     string
-	script string
-	env    map[string]string
+	runID     string
+	taskRunID string
+	id        string
+	script    string
+	env       map[string]string
 }
 
 type httpTask struct {
@@ -91,7 +93,7 @@ func NewTask(task TaskEntity) (Task, error) {
 		if cfg.Script == "" {
 			return nil, fmt.Errorf("shell task requires script")
 		}
-		return &shellTask{runID: task.RunID, id: task.ID, script: cfg.Script, env: resolveTaskEnv(cfg.TaskPolicy.Env, task.Env)}, nil
+		return &shellTask{runID: task.RunID, taskRunID: task.TaskRunID, id: task.ID, script: cfg.Script, env: resolveTaskEnv(cfg.TaskPolicy.Env, task.Env)}, nil
 	case "http":
 		var cfg workflowcfg.HTTPConfig
 		if err := json.Unmarshal([]byte(task.Config), &cfg); err != nil {
@@ -127,7 +129,7 @@ func (t *shellTask) Type() string {
 }
 
 func (t *shellTask) Execute(ctx context.Context, onOutput OutputFunc) (TaskResult, error) {
-	resultPath, err := prepareTaskResultPath(t.runID, t.id)
+	resultPath, err := prepareTaskResultPath(t.runID, t.taskRunID)
 	if err != nil {
 		return TaskResult{ExitCode: -1}, err
 	}
@@ -301,18 +303,18 @@ func cloneEnvMap(values map[string]string) map[string]string {
 	return cloned
 }
 
-func prepareTaskResultPath(runID string, taskID string) (string, error) {
+func prepareTaskResultPath(runID string, taskRunID string) (string, error) {
 	if strings.TrimSpace(runID) == "" {
-		return "", fmt.Errorf("task run id is required for result path")
+		return "", fmt.Errorf("workflow run id is required for result path")
 	}
-	if strings.TrimSpace(taskID) == "" {
-		return "", fmt.Errorf("task id is required for result path")
+	if strings.TrimSpace(taskRunID) == "" {
+		return "", fmt.Errorf("task run id is required for result path")
 	}
 	homeDir, err := os.UserHomeDir()
 	if err != nil {
 		return "", fmt.Errorf("resolve home directory: %w", err)
 	}
-	return filepath.Join(homeDir, ".kinetic", "results", runID, taskID+"_result.json"), nil
+	return filepath.Join(homeDir, ".kinetic", "results", runID, taskRunID+"_result.json"), nil
 }
 
 func readTaskResult(resultPath string) (string, error) {

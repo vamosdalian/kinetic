@@ -15,10 +15,11 @@ func TestShellTaskSuccess(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 
 	task, err := NewTask(TaskEntity{
-		RunID:  "run-1",
-		ID:     "task-1",
-		Type:   "shell",
-		Config: `{"script":"printf 'hello'"}`,
+		RunID:     "run-1",
+		TaskRunID: "task-run-1",
+		ID:        "task-1",
+		Type:      "shell",
+		Config:    `{"script":"printf 'hello'"}`,
 	})
 	assert.NoError(t, err)
 
@@ -32,10 +33,11 @@ func TestShellTaskFailure(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 
 	task, err := NewTask(TaskEntity{
-		RunID:  "run-1",
-		ID:     "task-1",
-		Type:   "shell",
-		Config: `{"script":"exit 3"}`,
+		RunID:     "run-1",
+		TaskRunID: "task-run-1",
+		ID:        "task-1",
+		Type:      "shell",
+		Config:    `{"script":"exit 3"}`,
 	})
 	assert.NoError(t, err)
 
@@ -48,10 +50,11 @@ func TestShellTaskTimeout(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 
 	task, err := NewTask(TaskEntity{
-		RunID:  "run-1",
-		ID:     "task-1",
-		Type:   "shell",
-		Config: `{"script":"sleep 2"}`,
+		RunID:     "run-1",
+		TaskRunID: "task-run-1",
+		ID:        "task-1",
+		Type:      "shell",
+		Config:    `{"script":"sleep 2"}`,
 	})
 	assert.NoError(t, err)
 
@@ -67,10 +70,11 @@ func TestShellTaskUsesConfigEnv(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 
 	task, err := NewTask(TaskEntity{
-		RunID:  "run-1",
-		ID:     "task-1",
-		Type:   "shell",
-		Config: `{"script":"printf '%s' \"$GREETING\"","env":{"GREETING":"hello"}}`,
+		RunID:     "run-1",
+		TaskRunID: "task-run-1",
+		ID:        "task-1",
+		Type:      "shell",
+		Config:    `{"script":"printf '%s' \"$GREETING\"","env":{"GREETING":"hello"}}`,
 	})
 	assert.NoError(t, err)
 
@@ -83,10 +87,11 @@ func TestShellTaskExplicitEnvOverridesConfigEnv(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 
 	task, err := NewTask(TaskEntity{
-		RunID:  "run-1",
-		ID:     "task-1",
-		Type:   "shell",
-		Config: `{"script":"printf '%s' \"$GREETING\"","env":{"GREETING":"hello"}}`,
+		RunID:     "run-1",
+		TaskRunID: "task-run-1",
+		ID:        "task-1",
+		Type:      "shell",
+		Config:    `{"script":"printf '%s' \"$GREETING\"","env":{"GREETING":"hello"}}`,
 		Env: map[string]string{
 			"GREETING": "override",
 		},
@@ -103,10 +108,11 @@ func TestShellTaskCapturesJSONResult(t *testing.T) {
 	t.Setenv("HOME", homeDir)
 
 	task, err := NewTask(TaskEntity{
-		RunID:  "run-1",
-		ID:     "task-1",
-		Type:   "shell",
-		Config: `{"script":"printf 'log'; printf '{\"ok\":true}' > \"$KINETIC_RESULT_PATH\""}`,
+		RunID:     "run-1",
+		TaskRunID: "task-run-1",
+		ID:        "task-1",
+		Type:      "shell",
+		Config:    `{"script":"printf 'log'; printf '{\"ok\":true}' > \"$KINETIC_RESULT_PATH\""}`,
 	})
 	assert.NoError(t, err)
 
@@ -114,17 +120,50 @@ func TestShellTaskCapturesJSONResult(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, "log", result.Output)
 	assert.JSONEq(t, `{"ok":true}`, result.Result)
-	assert.FileExists(t, filepath.Join(homeDir, ".kinetic", "results", "run-1", "task-1_result.json"))
+	assert.FileExists(t, filepath.Join(homeDir, ".kinetic", "results", "run-1", "task-run-1_result.json"))
+}
+
+func TestShellTaskResultPathUsesTaskRunID(t *testing.T) {
+	homeDir := t.TempDir()
+	t.Setenv("HOME", homeDir)
+
+	first, err := NewTask(TaskEntity{
+		RunID:     "run-1",
+		TaskRunID: "task-run-1",
+		ID:        "task-1",
+		Type:      "shell",
+		Config:    `{"script":"printf '{\"value\":1}' > \"$KINETIC_RESULT_PATH\""}`,
+	})
+	assert.NoError(t, err)
+	second, err := NewTask(TaskEntity{
+		RunID:     "run-1",
+		TaskRunID: "task-run-2",
+		ID:        "task-1",
+		Type:      "shell",
+		Config:    `{"script":"printf '{\"value\":2}' > \"$KINETIC_RESULT_PATH\""}`,
+	})
+	assert.NoError(t, err)
+
+	firstResult, err := first.Execute(context.Background(), nil)
+	assert.NoError(t, err)
+	secondResult, err := second.Execute(context.Background(), nil)
+	assert.NoError(t, err)
+
+	assert.JSONEq(t, `{"value":1}`, firstResult.Result)
+	assert.JSONEq(t, `{"value":2}`, secondResult.Result)
+	assert.FileExists(t, filepath.Join(homeDir, ".kinetic", "results", "run-1", "task-run-1_result.json"))
+	assert.FileExists(t, filepath.Join(homeDir, ".kinetic", "results", "run-1", "task-run-2_result.json"))
 }
 
 func TestShellTaskStoresInvalidResultContent(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 
 	task, err := NewTask(TaskEntity{
-		RunID:  "run-1",
-		ID:     "task-1",
-		Type:   "shell",
-		Config: `{"script":"printf '{invalid' > \"$KINETIC_RESULT_PATH\""}`,
+		RunID:     "run-1",
+		TaskRunID: "task-run-1",
+		ID:        "task-1",
+		Type:      "shell",
+		Config:    `{"script":"printf '{invalid' > \"$KINETIC_RESULT_PATH\""}`,
 	})
 	assert.NoError(t, err)
 
