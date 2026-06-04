@@ -1,16 +1,38 @@
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
 import { formatDashboardDateTime } from "@/lib/dashboard";
 import type { TaskNodeRun } from "./types";
 import { getStatusBadgeClassName } from "./status";
 
+interface LoopOption {
+  index: number;
+  value: number;
+}
+
 interface RecordRightProps {
   task: TaskNodeRun;
   workflowTag?: string;
+  loopOptions?: LoopOption[];
+  selectedLoopIndex?: number;
+  onLoopIndexChange?: (index: number) => void;
 }
 
-export function RecordRight({ task, workflowTag }: RecordRightProps) {
+export function RecordRight({
+  task,
+  workflowTag,
+  loopOptions = [],
+  selectedLoopIndex,
+  onLoopIndexChange,
+}: RecordRightProps) {
   const exitCode =
     task.status === "success" ||
     task.status === "failed" ||
@@ -47,6 +69,28 @@ export function RecordRight({ task, workflowTag }: RecordRightProps) {
 
         <div className="grid gap-3">
           <h2 className="text-sm font-medium">Runtime</h2>
+          {task.type === "for" && loopOptions.length > 0 ? (
+            <div className="grid gap-2 text-sm">
+              <div className="text-muted-foreground">Loop Iteration</div>
+              <Select
+                value={String(selectedLoopIndex ?? loopOptions[loopOptions.length - 1]?.index ?? 0)}
+                onValueChange={(value) => onLoopIndexChange?.(Number(value))}
+              >
+                <SelectTrigger className="w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectGroup>
+                    {loopOptions.map((option) => (
+                      <SelectItem key={option.index} value={String(option.index)}>
+                        #{option.index}: {option.value}
+                      </SelectItem>
+                    ))}
+                  </SelectGroup>
+                </SelectContent>
+              </Select>
+            </div>
+          ) : null}
           <div className="grid grid-cols-2 gap-3 text-sm">
             <div className="rounded-lg border bg-muted/30 p-3">
               <div className="text-muted-foreground">Type</div>

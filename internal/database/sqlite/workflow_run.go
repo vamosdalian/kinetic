@@ -5,6 +5,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/sirupsen/logrus"
 	"github.com/vamosdalian/kinetic/internal/model/entity"
 )
@@ -46,11 +47,11 @@ func (s *SqliteDB) CreateWorkflowRun(workflowID string, runID string) error {
 	for _, task := range tasks {
 		_, err = tx.Exec(`
 			INSERT INTO task_runs (
-				run_id, task_id, workflow_id, task_name, task_description, 
+				task_run_id, run_id, task_id, workflow_id, task_name, task_description, 
 				task_type, task_config, task_tag, task_position, task_node_type, effective_tag, assigned_node_id, assigned_at,
-				status, created_at, started_at, finished_at, exit_code, output, result
-			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '', '', NULL, 'pending', ?, NULL, NULL, 0, '', '')
-		`, runID, task.ID, workflow.ID, task.Name, task.Description,
+				status, created_at, started_at, finished_at, exit_code, output, result, loop_id, loop_index, loop_value
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '', '', NULL, 'pending', ?, NULL, NULL, 0, '', '', '', -1, 0)
+		`, uuid.NewString(), runID, task.ID, workflow.ID, task.Name, task.Description,
 			task.Type, task.Config, task.Tag, task.Position, task.NodeType, now)
 		if err != nil {
 			return err
@@ -60,10 +61,10 @@ func (s *SqliteDB) CreateWorkflowRun(workflowID string, runID string) error {
 	for _, edge := range edges {
 		_, err = tx.Exec(`
 			INSERT INTO edge_runs (
-				run_id, edge_id, workflow_id, edge_source, edge_target, 
-				edge_source_handle, edge_target_handle, created_at
-			) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-		`, runID, edge.ID, workflow.ID, edge.Source, edge.Target,
+				edge_run_id, run_id, edge_id, workflow_id, edge_source, edge_target, 
+				edge_source_handle, edge_target_handle, created_at, loop_id, loop_index, loop_value
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, '', -1, 0)
+		`, uuid.NewString(), runID, edge.ID, workflow.ID, edge.Source, edge.Target,
 			edge.SourceHandle, edge.TargetHandle, now)
 		if err != nil {
 			return err
@@ -115,11 +116,11 @@ func (s *SqliteDB) GetWorkflowRun(runID string) (entity.WorkflowRunEntity, error
 
 func (s *SqliteDB) GetTaskRuns(runID string) ([]entity.TaskRunEntity, error) {
 	rows, err := s.db.Query(`
-		SELECT run_id, task_id, workflow_id, task_name, task_description, 
+		SELECT task_run_id, run_id, task_id, workflow_id, task_name, task_description, 
 		task_type, task_config, task_tag, task_position, task_node_type, effective_tag, assigned_node_id, assigned_at,
-		status, created_at, started_at, finished_at, exit_code, output, result
+		status, created_at, started_at, finished_at, exit_code, output, result, loop_id, loop_index, loop_value
 		FROM task_runs WHERE run_id = ?
-		ORDER BY task_id ASC
+		ORDER BY task_id ASC, loop_index ASC, created_at ASC, task_run_id ASC
 	`, runID)
 	if err != nil {
 		return nil, err
@@ -132,10 +133,10 @@ func (s *SqliteDB) GetTaskRuns(runID string) ([]entity.TaskRunEntity, error) {
 		var createdAtStr string
 		var assignedAtStr, startedAtStr, finishedAtStr sql.NullString
 		err := rows.Scan(
-			&task.RunID, &task.TaskID, &task.WorkflowID, &task.TaskName, &task.TaskDescription,
+			&task.TaskRunID, &task.RunID, &task.TaskID, &task.WorkflowID, &task.TaskName, &task.TaskDescription,
 			&task.TaskType, &task.TaskConfig, &task.TaskTag, &task.TaskPosition, &task.TaskNodeType, &task.EffectiveTag, &task.AssignedNodeID, &assignedAtStr,
 			&task.Status, &createdAtStr, &startedAtStr, &finishedAtStr,
-			&task.ExitCode, &task.Output, &task.Result,
+			&task.ExitCode, &task.Output, &task.Result, &task.LoopID, &task.LoopIndex, &task.LoopValue,
 		)
 		if err != nil {
 			return nil, err
@@ -154,15 +155,17 @@ func (s *SqliteDB) GetTaskRun(runID string, taskID string) (entity.TaskRunEntity
 	var createdAtStr string
 	var assignedAtStr, startedAtStr, finishedAtStr sql.NullString
 	err := s.db.QueryRow(`
-		SELECT run_id, task_id, workflow_id, task_name, task_description,
+		SELECT task_run_id, run_id, task_id, workflow_id, task_name, task_description,
 		task_type, task_config, task_tag, task_position, task_node_type, effective_tag, assigned_node_id, assigned_at,
-		status, created_at, started_at, finished_at, exit_code, output, result
+		status, created_at, started_at, finished_at, exit_code, output, result, loop_id, loop_index, loop_value
 		FROM task_runs WHERE run_id = ? AND task_id = ?
+		ORDER BY loop_index DESC, created_at DESC, task_run_id DESC
+		LIMIT 1
 	`, runID, taskID).Scan(
-		&task.RunID, &task.TaskID, &task.WorkflowID, &task.TaskName, &task.TaskDescription,
+		&task.TaskRunID, &task.RunID, &task.TaskID, &task.WorkflowID, &task.TaskName, &task.TaskDescription,
 		&task.TaskType, &task.TaskConfig, &task.TaskTag, &task.TaskPosition, &task.TaskNodeType, &task.EffectiveTag, &task.AssignedNodeID, &assignedAtStr,
 		&task.Status, &createdAtStr, &startedAtStr, &finishedAtStr,
-		&task.ExitCode, &task.Output, &task.Result,
+		&task.ExitCode, &task.Output, &task.Result, &task.LoopID, &task.LoopIndex, &task.LoopValue,
 	)
 	if err != nil {
 		return entity.TaskRunEntity{}, err
@@ -176,10 +179,10 @@ func (s *SqliteDB) GetTaskRun(runID string, taskID string) (entity.TaskRunEntity
 
 func (s *SqliteDB) GetEdgeRuns(runID string) ([]entity.EdgeRunEntity, error) {
 	rows, err := s.db.Query(`
-		SELECT run_id, edge_id, workflow_id, edge_source, edge_target, 
-		edge_source_handle, edge_target_handle, created_at 
+		SELECT edge_run_id, run_id, edge_id, workflow_id, edge_source, edge_target, 
+		edge_source_handle, edge_target_handle, created_at, loop_id, loop_index, loop_value 
 		FROM edge_runs WHERE run_id = ?
-		ORDER BY edge_id ASC
+		ORDER BY edge_id ASC, loop_index ASC, edge_run_id ASC
 	`, runID)
 	if err != nil {
 		return nil, err
@@ -191,8 +194,8 @@ func (s *SqliteDB) GetEdgeRuns(runID string) ([]entity.EdgeRunEntity, error) {
 		var edge entity.EdgeRunEntity
 		var createdAtStr string
 		err := rows.Scan(
-			&edge.RunID, &edge.EdgeID, &edge.WorkflowID, &edge.EdgeSource, &edge.EdgeTarget,
-			&edge.EdgeSourceHandle, &edge.EdgeTargetHandle, &createdAtStr,
+			&edge.EdgeRunID, &edge.RunID, &edge.EdgeID, &edge.WorkflowID, &edge.EdgeSource, &edge.EdgeTarget,
+			&edge.EdgeSourceHandle, &edge.EdgeTargetHandle, &createdAtStr, &edge.LoopID, &edge.LoopIndex, &edge.LoopValue,
 		)
 		if err != nil {
 			return nil, err
@@ -304,7 +307,7 @@ func (s *SqliteDB) QueueTaskRun(runID string, taskID string, effectiveTag string
 	_, err := s.db.Exec(`
 		UPDATE task_runs
 		SET status = 'queued', effective_tag = ?, assigned_node_id = '', assigned_at = NULL
-		WHERE run_id = ? AND task_id = ?
+		WHERE task_run_id = (SELECT task_run_id FROM task_runs WHERE run_id = ? AND task_id = ? ORDER BY loop_index DESC, created_at DESC, task_run_id DESC LIMIT 1)
 	`, effectiveTag, runID, taskID)
 	return err
 }
@@ -313,7 +316,7 @@ func (s *SqliteDB) AssignTaskRun(runID string, taskID string, nodeID string) err
 	_, err := s.db.Exec(`
 		UPDATE task_runs
 		SET status = 'assigned', assigned_node_id = ?, assigned_at = DATETIME('now')
-		WHERE run_id = ? AND task_id = ?
+		WHERE task_run_id = (SELECT task_run_id FROM task_runs WHERE run_id = ? AND task_id = ? ORDER BY loop_index DESC, created_at DESC, task_run_id DESC LIMIT 1)
 	`, nodeID, runID, taskID)
 	return err
 }
@@ -322,12 +325,12 @@ func (s *SqliteDB) ResetAssignedTaskRun(runID string, taskID string) error {
 	_, err := s.db.Exec(`
 		UPDATE task_runs
 		SET status = 'queued', assigned_node_id = '', assigned_at = NULL
-		WHERE run_id = ? AND task_id = ?
+		WHERE task_run_id = (SELECT task_run_id FROM task_runs WHERE run_id = ? AND task_id = ? ORDER BY loop_index DESC, created_at DESC, task_run_id DESC LIMIT 1)
 	`, runID, taskID)
 	return err
 }
 
-func (s *SqliteDB) ResetTaskRunsForLoop(runID string, taskIDs []string) error {
+func (s *SqliteDB) PrepareTaskRunsForLoop(runID string, taskIDs []string, loopID string, loopIndex int, loopValue int, createNew bool) error {
 	if len(taskIDs) == 0 {
 		return nil
 	}
@@ -339,11 +342,32 @@ func (s *SqliteDB) ResetTaskRunsForLoop(runID string, taskIDs []string) error {
 	defer tx.Rollback()
 
 	for _, taskID := range taskIDs {
+		if createNew {
+			if _, err := tx.Exec(`
+				INSERT INTO task_runs (
+					task_run_id, run_id, task_id, workflow_id, task_name, task_description,
+					task_type, task_config, task_tag, task_position, task_node_type, effective_tag, assigned_node_id, assigned_at,
+					status, created_at, started_at, finished_at, exit_code, output, result, loop_id, loop_index, loop_value
+				)
+				SELECT
+					?, run_id, task_id, workflow_id, task_name, task_description,
+					task_type, task_config, task_tag, task_position, task_node_type, '', '', NULL,
+					'pending', DATETIME('now'), NULL, NULL, 0, '', '', ?, ?, ?
+				FROM task_runs
+				WHERE run_id = ? AND task_id = ?
+				ORDER BY loop_index DESC, created_at DESC, task_run_id DESC
+				LIMIT 1
+			`, uuid.NewString(), loopID, loopIndex, loopValue, runID, taskID); err != nil {
+				return err
+			}
+			continue
+		}
+
 		if _, err := tx.Exec(`
 			UPDATE task_runs
-			SET status = 'pending', assigned_node_id = '', assigned_at = NULL, started_at = NULL, finished_at = NULL, exit_code = 0, result = ''
-			WHERE run_id = ? AND task_id = ?
-		`, runID, taskID); err != nil {
+			SET loop_id = ?, loop_index = ?, loop_value = ?
+			WHERE task_run_id = (SELECT task_run_id FROM task_runs WHERE run_id = ? AND task_id = ? ORDER BY loop_index DESC, created_at DESC, task_run_id DESC LIMIT 1)
+		`, loopID, loopIndex, loopValue, runID, taskID); err != nil {
 			return err
 		}
 	}
@@ -355,7 +379,7 @@ func (s *SqliteDB) MarkTaskRunRunning(runID string, taskID string) error {
 	_, err := s.db.Exec(`
 		UPDATE task_runs
 		SET status = 'running', started_at = DATETIME('now'), finished_at = NULL
-		WHERE run_id = ? AND task_id = ?
+		WHERE task_run_id = (SELECT task_run_id FROM task_runs WHERE run_id = ? AND task_id = ? ORDER BY loop_index DESC, created_at DESC, task_run_id DESC LIMIT 1)
 	`, runID, taskID)
 	return err
 }
@@ -364,7 +388,7 @@ func (s *SqliteDB) MarkTaskRunUnknown(runID string, taskID string, output string
 	_, err := s.db.Exec(`
 		UPDATE task_runs
 		SET status = 'unknown', output = CASE WHEN ? = '' THEN output ELSE COALESCE(output, '') || ? END
-		WHERE run_id = ? AND task_id = ?
+		WHERE task_run_id = (SELECT task_run_id FROM task_runs WHERE run_id = ? AND task_id = ? ORDER BY loop_index DESC, created_at DESC, task_run_id DESC LIMIT 1)
 	`, output, output, runID, taskID)
 	return err
 }
@@ -373,7 +397,7 @@ func (s *SqliteDB) FinishTaskRun(runID string, taskID string, status string, exi
 	_, err := s.db.Exec(`
 		UPDATE task_runs
 		SET status = ?, finished_at = DATETIME('now'), exit_code = ?, output = ?, result = ?
-		WHERE run_id = ? AND task_id = ?
+		WHERE task_run_id = (SELECT task_run_id FROM task_runs WHERE run_id = ? AND task_id = ? ORDER BY loop_index DESC, created_at DESC, task_run_id DESC LIMIT 1)
 	`, status, exitCode, output, normalizeJSONText(result), runID, taskID)
 	return err
 }
@@ -400,16 +424,16 @@ func (s *SqliteDB) AppendTaskRunOutput(runID string, taskID string, chunk string
 	_, err := s.db.Exec(`
 		UPDATE task_runs
 		SET output = COALESCE(output, '') || ?
-		WHERE run_id = ? AND task_id = ?
+		WHERE task_run_id = (SELECT task_run_id FROM task_runs WHERE run_id = ? AND task_id = ? ORDER BY loop_index DESC, created_at DESC, task_run_id DESC LIMIT 1)
 	`, chunk, runID, taskID)
 	return err
 }
 
 func (s *SqliteDB) ListQueuedTaskRuns(limit int) ([]entity.TaskRunEntity, error) {
 	rows, err := s.db.Query(`
-		SELECT run_id, task_id, workflow_id, task_name, task_description,
+		SELECT task_run_id, run_id, task_id, workflow_id, task_name, task_description,
 		       task_type, task_config, task_tag, task_position, task_node_type, effective_tag, assigned_node_id, assigned_at,
-		       status, created_at, started_at, finished_at, exit_code, output, result
+		       status, created_at, started_at, finished_at, exit_code, output, result, loop_id, loop_index, loop_value
 		FROM task_runs
 		WHERE status = 'queued'
 		ORDER BY created_at ASC, task_id ASC
@@ -426,9 +450,9 @@ func (s *SqliteDB) ListQueuedTaskRuns(limit int) ([]entity.TaskRunEntity, error)
 		var createdAtStr string
 		var assignedAtStr, startedAtStr, finishedAtStr sql.NullString
 		if err := rows.Scan(
-			&task.RunID, &task.TaskID, &task.WorkflowID, &task.TaskName, &task.TaskDescription,
+			&task.TaskRunID, &task.RunID, &task.TaskID, &task.WorkflowID, &task.TaskName, &task.TaskDescription,
 			&task.TaskType, &task.TaskConfig, &task.TaskTag, &task.TaskPosition, &task.TaskNodeType, &task.EffectiveTag, &task.AssignedNodeID, &assignedAtStr,
-			&task.Status, &createdAtStr, &startedAtStr, &finishedAtStr, &task.ExitCode, &task.Output, &task.Result,
+			&task.Status, &createdAtStr, &startedAtStr, &finishedAtStr, &task.ExitCode, &task.Output, &task.Result, &task.LoopID, &task.LoopIndex, &task.LoopValue,
 		); err != nil {
 			return nil, err
 		}
@@ -443,9 +467,9 @@ func (s *SqliteDB) ListQueuedTaskRuns(limit int) ([]entity.TaskRunEntity, error)
 
 func (s *SqliteDB) ListUnknownTaskRuns() ([]entity.TaskRunEntity, error) {
 	rows, err := s.db.Query(`
-		SELECT run_id, task_id, workflow_id, task_name, task_description,
+		SELECT task_run_id, run_id, task_id, workflow_id, task_name, task_description,
 		       task_type, task_config, task_tag, task_position, task_node_type, effective_tag, assigned_node_id, assigned_at,
-		       status, created_at, started_at, finished_at, exit_code, output, result
+		       status, created_at, started_at, finished_at, exit_code, output, result, loop_id, loop_index, loop_value
 		FROM task_runs
 		WHERE status = 'unknown'
 		ORDER BY created_at ASC, task_id ASC
@@ -461,9 +485,9 @@ func (s *SqliteDB) ListUnknownTaskRuns() ([]entity.TaskRunEntity, error) {
 		var createdAtStr string
 		var assignedAtStr, startedAtStr, finishedAtStr sql.NullString
 		if err := rows.Scan(
-			&task.RunID, &task.TaskID, &task.WorkflowID, &task.TaskName, &task.TaskDescription,
+			&task.TaskRunID, &task.RunID, &task.TaskID, &task.WorkflowID, &task.TaskName, &task.TaskDescription,
 			&task.TaskType, &task.TaskConfig, &task.TaskTag, &task.TaskPosition, &task.TaskNodeType, &task.EffectiveTag, &task.AssignedNodeID, &assignedAtStr,
-			&task.Status, &createdAtStr, &startedAtStr, &finishedAtStr, &task.ExitCode, &task.Output, &task.Result,
+			&task.Status, &createdAtStr, &startedAtStr, &finishedAtStr, &task.ExitCode, &task.Output, &task.Result, &task.LoopID, &task.LoopIndex, &task.LoopValue,
 		); err != nil {
 			return nil, err
 		}
@@ -478,9 +502,9 @@ func (s *SqliteDB) ListUnknownTaskRuns() ([]entity.TaskRunEntity, error) {
 
 func (s *SqliteDB) ListAssignedTaskRunsBefore(cutoff time.Time) ([]entity.TaskRunEntity, error) {
 	rows, err := s.db.Query(`
-		SELECT t.run_id, t.task_id, t.workflow_id, t.task_name, t.task_description,
+		SELECT t.task_run_id, t.run_id, t.task_id, t.workflow_id, t.task_name, t.task_description,
 		       t.task_type, t.task_config, t.task_tag, t.task_position, t.task_node_type, t.effective_tag, t.assigned_node_id, t.assigned_at,
-		       t.status, t.created_at, t.started_at, t.finished_at, t.exit_code, t.output, t.result
+		       t.status, t.created_at, t.started_at, t.finished_at, t.exit_code, t.output, t.result, t.loop_id, t.loop_index, t.loop_value
 		FROM task_runs t
 		JOIN workflow_runs r ON r.run_id = t.run_id
 		WHERE t.status = 'assigned'
@@ -500,9 +524,9 @@ func (s *SqliteDB) ListAssignedTaskRunsBefore(cutoff time.Time) ([]entity.TaskRu
 		var createdAtStr string
 		var assignedAtStr, startedAtStr, finishedAtStr sql.NullString
 		if err := rows.Scan(
-			&task.RunID, &task.TaskID, &task.WorkflowID, &task.TaskName, &task.TaskDescription,
+			&task.TaskRunID, &task.RunID, &task.TaskID, &task.WorkflowID, &task.TaskName, &task.TaskDescription,
 			&task.TaskType, &task.TaskConfig, &task.TaskTag, &task.TaskPosition, &task.TaskNodeType, &task.EffectiveTag, &task.AssignedNodeID, &assignedAtStr,
-			&task.Status, &createdAtStr, &startedAtStr, &finishedAtStr, &task.ExitCode, &task.Output, &task.Result,
+			&task.Status, &createdAtStr, &startedAtStr, &finishedAtStr, &task.ExitCode, &task.Output, &task.Result, &task.LoopID, &task.LoopIndex, &task.LoopValue,
 		); err != nil {
 			return nil, err
 		}
@@ -517,9 +541,9 @@ func (s *SqliteDB) ListAssignedTaskRunsBefore(cutoff time.Time) ([]entity.TaskRu
 
 func (s *SqliteDB) ListNodeActiveTaskRuns(nodeID string) ([]entity.TaskRunEntity, error) {
 	rows, err := s.db.Query(`
-		SELECT run_id, task_id, workflow_id, task_name, task_description,
+		SELECT task_run_id, run_id, task_id, workflow_id, task_name, task_description,
 		       task_type, task_config, task_tag, task_position, task_node_type, effective_tag, assigned_node_id, assigned_at,
-		       status, created_at, started_at, finished_at, exit_code, output, result
+		       status, created_at, started_at, finished_at, exit_code, output, result, loop_id, loop_index, loop_value
 		FROM task_runs
 		WHERE assigned_node_id = ? AND status IN ('assigned', 'running', 'unknown')
 		ORDER BY created_at ASC, task_id ASC
@@ -535,9 +559,9 @@ func (s *SqliteDB) ListNodeActiveTaskRuns(nodeID string) ([]entity.TaskRunEntity
 		var createdAtStr string
 		var assignedAtStr, startedAtStr, finishedAtStr sql.NullString
 		if err := rows.Scan(
-			&task.RunID, &task.TaskID, &task.WorkflowID, &task.TaskName, &task.TaskDescription,
+			&task.TaskRunID, &task.RunID, &task.TaskID, &task.WorkflowID, &task.TaskName, &task.TaskDescription,
 			&task.TaskType, &task.TaskConfig, &task.TaskTag, &task.TaskPosition, &task.TaskNodeType, &task.EffectiveTag, &task.AssignedNodeID, &assignedAtStr,
-			&task.Status, &createdAtStr, &startedAtStr, &finishedAtStr, &task.ExitCode, &task.Output, &task.Result,
+			&task.Status, &createdAtStr, &startedAtStr, &finishedAtStr, &task.ExitCode, &task.Output, &task.Result, &task.LoopID, &task.LoopIndex, &task.LoopValue,
 		); err != nil {
 			return nil, err
 		}

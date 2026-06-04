@@ -170,6 +170,82 @@ ALTER TABLE workflows ADD COLUMN last_run_at TEXT;
 CREATE INDEX IF NOT EXISTS idx_workflows_trigger_enable_next_run_at
 	ON workflows(trigger_type, enable, next_run_at ASC);
 `,
+	10: `
+ALTER TABLE task_runs RENAME TO task_runs_v10_old;
+CREATE TABLE task_runs (
+	task_run_id TEXT PRIMARY KEY,
+	run_id TEXT,
+	task_id TEXT,
+	workflow_id TEXT,
+	task_name TEXT,
+	task_description TEXT,
+	task_type TEXT,
+	task_config TEXT,
+	task_tag TEXT DEFAULT '',
+	task_position TEXT,
+	task_node_type TEXT,
+	effective_tag TEXT DEFAULT '',
+	assigned_node_id TEXT DEFAULT '',
+	assigned_at TEXT,
+	status TEXT,
+	created_at TEXT,
+	started_at TEXT,
+	finished_at TEXT,
+	exit_code INTEGER,
+	output TEXT,
+	result TEXT DEFAULT '',
+	loop_id TEXT DEFAULT '',
+	loop_index INTEGER DEFAULT -1,
+	loop_value INTEGER DEFAULT 0
+);
+INSERT INTO task_runs (
+	task_run_id, run_id, task_id, workflow_id, task_name, task_description,
+	task_type, task_config, task_tag, task_position, task_node_type, effective_tag, assigned_node_id, assigned_at,
+	status, created_at, started_at, finished_at, exit_code, output, result, loop_id, loop_index, loop_value
+)
+SELECT
+	lower(hex(randomblob(16))), run_id, task_id, workflow_id, task_name, task_description,
+	task_type, task_config, COALESCE(task_tag, ''), task_position, task_node_type, COALESCE(effective_tag, ''), COALESCE(assigned_node_id, ''), assigned_at,
+	status, created_at, started_at, finished_at, exit_code, output, COALESCE(result, ''), '', -1, 0
+FROM task_runs_v10_old;
+DROP TABLE task_runs_v10_old;
+
+ALTER TABLE edge_runs RENAME TO edge_runs_v10_old;
+CREATE TABLE edge_runs (
+	edge_run_id TEXT PRIMARY KEY,
+	run_id TEXT,
+	edge_id TEXT,
+	workflow_id TEXT,
+	edge_source TEXT,
+	edge_target TEXT,
+	edge_source_handle TEXT,
+	edge_target_handle TEXT,
+	created_at TEXT,
+	loop_id TEXT DEFAULT '',
+	loop_index INTEGER DEFAULT -1,
+	loop_value INTEGER DEFAULT 0
+);
+INSERT INTO edge_runs (
+	edge_run_id, run_id, edge_id, workflow_id, edge_source, edge_target,
+	edge_source_handle, edge_target_handle, created_at, loop_id, loop_index, loop_value
+)
+SELECT
+	lower(hex(randomblob(16))), run_id, edge_id, workflow_id, edge_source, edge_target,
+	edge_source_handle, edge_target_handle, created_at, '', -1, 0
+FROM edge_runs_v10_old;
+DROP TABLE edge_runs_v10_old;
+
+CREATE INDEX IF NOT EXISTS idx_task_runs_status_created_at_task_id
+	ON task_runs(status, created_at ASC, task_id ASC);
+CREATE INDEX IF NOT EXISTS idx_task_runs_assigned_node_status_created_at
+	ON task_runs(assigned_node_id, status, created_at ASC, task_id ASC);
+CREATE INDEX IF NOT EXISTS idx_task_runs_run_id_task_id
+	ON task_runs(run_id, task_id, loop_index ASC, created_at ASC);
+CREATE INDEX IF NOT EXISTS idx_task_runs_run_id_loop
+	ON task_runs(run_id, loop_id, loop_index ASC, task_id ASC);
+CREATE INDEX IF NOT EXISTS idx_edge_runs_run_id_edge_id
+	ON edge_runs(run_id, edge_id, loop_index ASC);
+`,
 }
 
 func (s *SqliteDB) Migrate() error {

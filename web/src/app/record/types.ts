@@ -12,6 +12,7 @@ export interface WorkflowRunListItem {
 export interface WorkflowRunEvent {
   type: "snapshot" | "run_status" | "task_status" | "task_output" | "keepalive";
   run_id?: string;
+  task_run_id?: string;
   task_id?: string;
   status?: string;
   assigned_node_id?: string;
@@ -25,6 +26,7 @@ export interface WorkflowRunEvent {
 }
 
 export interface TaskNodeRun {
+  task_run_id: string;
   run_id: string;
   task_id: string;
   name: string;
@@ -47,15 +49,22 @@ export interface TaskNodeRun {
   exit_code?: number;
   output?: string;
   result?: unknown;
+  loop_id?: string;
+  loop_index?: number;
+  loop_value?: number;
 }
 
 export interface EdgeRun {
+  edge_run_id: string;
   run_id: string;
   edge_id: string;
   source: string;
   target: string;
   sourceHandle?: string;
   targetHandle?: string;
+  loop_id?: string;
+  loop_index?: number;
+  loop_value?: number;
 }
 
 export interface WorkflowRunDetail extends WorkflowRunListItem {

@@ -488,10 +488,11 @@ func (s *RunService) executeTask(ctx context.Context, runID string, task entity.
 			logrus.Errorf("failed to append task output for %s/%s: %v", runID, task.TaskID, err)
 		}
 		s.publishEvent(dto.WorkflowRunEvent{
-			Type:   "task_output",
-			RunID:  runID,
-			TaskID: task.TaskID,
-			Output: chunk,
+			Type:      "task_output",
+			RunID:     runID,
+			TaskRunID: task.TaskRunID,
+			TaskID:    task.TaskID,
+			Output:    chunk,
 		})
 	}
 
@@ -680,8 +681,20 @@ func buildTaskEnvironment(run entity.WorkflowRunEntity, taskName string, workflo
 }
 
 func buildRunGraph(tasks []entity.TaskRunEntity, edges []entity.EdgeRunEntity) (runGraph, error) {
-	taskEntities := make([]entity.TaskEntity, 0, len(tasks))
+	graph := runGraph{
+		nodes: make(map[string]*runtimeNode, len(tasks)),
+	}
 	for _, task := range tasks {
+		graph.nodes[task.TaskID] = &runtimeNode{
+			task:     task,
+			inbound:  nil,
+			outbound: nil,
+		}
+	}
+
+	taskEntities := make([]entity.TaskEntity, 0, len(graph.nodes))
+	for _, node := range graph.nodes {
+		task := node.task
 		taskEntities = append(taskEntities, entity.TaskEntity{
 			ID:          task.TaskID,
 			WorkflowID:  task.WorkflowID,
@@ -710,16 +723,6 @@ func buildRunGraph(tasks []entity.TaskRunEntity, edges []entity.EdgeRunEntity) (
 		return runGraph{}, err
 	}
 
-	graph := runGraph{
-		nodes: make(map[string]*runtimeNode, len(tasks)),
-	}
-	for _, task := range tasks {
-		graph.nodes[task.TaskID] = &runtimeNode{
-			task:     task,
-			inbound:  nil,
-			outbound: nil,
-		}
-	}
 	for _, edge := range edges {
 		runtimeEdge := &runtimeEdge{
 			edge:  edge,
@@ -923,6 +926,7 @@ func (s *RunService) publishTaskStatus(runID string, taskID string) {
 	s.publishEvent(dto.WorkflowRunEvent{
 		Type:           "task_status",
 		RunID:          runID,
+		TaskRunID:      task.TaskRunID,
 		TaskID:         taskID,
 		Status:         task.Status,
 		AssignedNodeID: task.AssignedNodeID,
@@ -961,12 +965,13 @@ func (s *RunService) PrepareAssignedTask(runID string, taskID string) (*dto.Assi
 	}
 
 	assigned := &dto.AssignedTask{
-		RunID:  runID,
-		TaskID: taskID,
-		Name:   task.TaskName,
-		Type:   dto.TaskType(task.TaskType),
-		Config: json.RawMessage(renderedConfig),
-		Env:    effectiveEnv,
+		TaskRunID: task.TaskRunID,
+		RunID:     runID,
+		TaskID:    taskID,
+		Name:      task.TaskName,
+		Type:      dto.TaskType(task.TaskType),
+		Config:    json.RawMessage(renderedConfig),
+		Env:       effectiveEnv,
 	}
 
 	if task.TaskType == "condition" && conditionInput != nil {
@@ -1020,10 +1025,11 @@ func (s *RunService) HandleWorkerTaskEvent(nodeID string, event dto.WorkerTaskEv
 		}
 		s.recordWorkerOutputEvent(event.RunID, event.TaskID, event.Sequence)
 		s.publishEvent(dto.WorkflowRunEvent{
-			Type:   "task_output",
-			RunID:  event.RunID,
-			TaskID: event.TaskID,
-			Output: event.Output,
+			Type:      "task_output",
+			RunID:     event.RunID,
+			TaskRunID: task.TaskRunID,
+			TaskID:    event.TaskID,
+			Output:    event.Output,
 		})
 		return nil
 	case "finished", "failed", "cancelled":
@@ -1422,13 +1428,11 @@ func (s *RunService) advanceForLoopTask(runID string, task entity.TaskRunEntity,
 	if state.SelectedBranch == "done" {
 		return true, nil
 	}
-	if !initial {
-		if err := s.db.ResetTaskRunsForLoop(runID, descriptor.bodyIDs); err != nil {
-			return false, err
-		}
-		for _, taskID := range descriptor.bodyIDs {
-			s.publishTaskStatus(runID, taskID)
-		}
+	if err := s.db.PrepareTaskRunsForLoop(runID, descriptor.bodyIDs, state.ID, state.Index, state.Value, !initial); err != nil {
+		return false, err
+	}
+	for _, taskID := range descriptor.bodyIDs {
+		s.publishTaskStatus(runID, taskID)
 	}
 	bodyTask := taskByID[descriptor.bodyRootID]
 	effectiveTag := bodyTask.TaskTag

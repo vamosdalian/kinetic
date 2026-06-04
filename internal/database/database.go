@@ -73,7 +73,7 @@ type Database interface {
 	QueueTaskRun(runID string, taskID string, effectiveTag string) error
 	AssignTaskRun(runID string, taskID string, nodeID string) error
 	ResetAssignedTaskRun(runID string, taskID string) error
-	ResetTaskRunsForLoop(runID string, taskIDs []string) error
+	PrepareTaskRunsForLoop(runID string, taskIDs []string, loopID string, loopIndex int, loopValue int, createNew bool) error
 	MarkTaskRunUnknown(runID string, taskID string, output string) error
 	FinishTaskRun(runID string, taskID string, status string, exitCode int, output string, result string) error
 	SkipPendingTaskRuns(runID string, output string) error

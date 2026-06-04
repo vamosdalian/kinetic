@@ -3,6 +3,7 @@ package dto
 type WorkflowRunEvent struct {
 	Type           string `json:"type"`
 	RunID          string `json:"run_id,omitempty"`
+	TaskRunID      string `json:"task_run_id,omitempty"`
 	TaskID         string `json:"task_id,omitempty"`
 	Status         string `json:"status,omitempty"`
 	AssignedNodeID string `json:"assigned_node_id,omitempty"`

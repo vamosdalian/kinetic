@@ -320,18 +320,20 @@ func (w *Worker) executeAssignedTask(ctx context.Context, task dto.AssignedTask)
 
 		outputSequence++
 		reportEvent(dto.WorkerTaskEvent{
-			Type:     "output",
-			RunID:    task.RunID,
-			TaskID:   task.TaskID,
-			Sequence: outputSequence,
-			Output:   chunk,
+			Type:      "output",
+			RunID:     task.RunID,
+			TaskRunID: task.TaskRunID,
+			TaskID:    task.TaskID,
+			Sequence:  outputSequence,
+			Output:    chunk,
 		})
 	}
 
 	if !reportEvent(dto.WorkerTaskEvent{
-		Type:   "started",
-		RunID:  task.RunID,
-		TaskID: task.TaskID,
+		Type:      "started",
+		RunID:     task.RunID,
+		TaskRunID: task.TaskRunID,
+		TaskID:    task.TaskID,
 	}) {
 		return
 	}
@@ -341,10 +343,11 @@ func (w *Worker) executeAssignedTask(ctx context.Context, task dto.AssignedTask)
 		exitCode := -1
 		reportOutput(fmt.Sprintf("Invalid task policy: %v", err))
 		reportEvent(dto.WorkerTaskEvent{
-			Type:     "failed",
-			RunID:    task.RunID,
-			TaskID:   task.TaskID,
-			ExitCode: &exitCode,
+			Type:      "failed",
+			RunID:     task.RunID,
+			TaskRunID: task.TaskRunID,
+			TaskID:    task.TaskID,
+			ExitCode:  &exitCode,
 		})
 		return
 	}
@@ -364,6 +367,7 @@ func (w *Worker) executeAssignedTask(ctx context.Context, task dto.AssignedTask)
 		reportEvent(dto.WorkerTaskEvent{
 			Type:           "finished",
 			RunID:          task.RunID,
+			TaskRunID:      task.TaskRunID,
 			TaskID:         task.TaskID,
 			SelectedBranch: selectedBranch,
 			Result:         result.Result,
@@ -375,11 +379,12 @@ func (w *Worker) executeAssignedTask(ctx context.Context, task dto.AssignedTask)
 	if ctx.Err() != nil {
 		exitCode := result.ExitCode
 		reportEvent(dto.WorkerTaskEvent{
-			Type:     "cancelled",
-			RunID:    task.RunID,
-			TaskID:   task.TaskID,
-			Result:   result.Result,
-			ExitCode: &exitCode,
+			Type:      "cancelled",
+			RunID:     task.RunID,
+			TaskRunID: task.TaskRunID,
+			TaskID:    task.TaskID,
+			Result:    result.Result,
+			ExitCode:  &exitCode,
 		})
 		return
 	}

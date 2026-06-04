@@ -38,9 +38,9 @@ func (s *SqliteDB) ListTaskRunsByRunIDs(runIDs []string) ([]entity.TaskRunEntity
 	}
 
 	query := `
-		SELECT run_id, task_id, workflow_id, task_name, task_description,
+		SELECT task_run_id, run_id, task_id, workflow_id, task_name, task_description,
 		       task_type, task_config, task_tag, task_position, task_node_type, effective_tag, assigned_node_id, assigned_at,
-		       status, created_at, started_at, finished_at, exit_code, output
+		       status, created_at, started_at, finished_at, exit_code, output, result, loop_id, loop_index, loop_value
 		FROM task_runs
 		WHERE run_id IN (` + placeholders(len(runIDs)) + `)
 		ORDER BY run_id ASC, task_id ASC
@@ -70,9 +70,9 @@ func (s *SqliteDB) ListTaskRunsByRunIDs(runIDs []string) ([]entity.TaskRunEntity
 
 func (s *SqliteDB) ListTaskRunsByAssignedAt(start time.Time, end time.Time) ([]entity.TaskRunEntity, error) {
 	rows, err := s.db.Query(`
-		SELECT run_id, task_id, workflow_id, task_name, task_description,
+		SELECT task_run_id, run_id, task_id, workflow_id, task_name, task_description,
 		       task_type, task_config, task_tag, task_position, task_node_type, effective_tag, assigned_node_id, assigned_at,
-		       status, created_at, started_at, finished_at, exit_code, output
+		       status, created_at, started_at, finished_at, exit_code, output, result, loop_id, loop_index, loop_value
 		FROM task_runs
 		WHERE assigned_at IS NOT NULL AND assigned_at >= ? AND assigned_at < ?
 		ORDER BY assigned_at DESC, task_id ASC
@@ -129,6 +129,7 @@ func scanTaskRun(scanner interface{ Scan(dest ...any) error }) (entity.TaskRunEn
 	var finishedAt sql.NullString
 
 	err := scanner.Scan(
+		&task.TaskRunID,
 		&task.RunID,
 		&task.TaskID,
 		&task.WorkflowID,
@@ -148,6 +149,10 @@ func scanTaskRun(scanner interface{ Scan(dest ...any) error }) (entity.TaskRunEn
 		&finishedAt,
 		&task.ExitCode,
 		&task.Output,
+		&task.Result,
+		&task.LoopID,
+		&task.LoopIndex,
+		&task.LoopValue,
 	)
 	if err != nil {
 		return entity.TaskRunEntity{}, err

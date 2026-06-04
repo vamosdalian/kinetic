@@ -503,6 +503,20 @@ func TestRunService_DistributedForLoopRequeuesBodyWithLoopContext(t *testing.T) 
 	forRun, err := db.GetTaskRun(runID, forID)
 	require.NoError(t, err)
 	assert.JSONEq(t, `{"selected_branch":"done","loop":{"id":"`+forID+`","name":"for-loop","index":1,"value":2,"var":"N"}}`, forRun.Result)
+
+	tasks, err := db.GetTaskRuns(runID)
+	require.NoError(t, err)
+	bodyRuns := make([]entity.TaskRunEntity, 0, 2)
+	for _, task := range tasks {
+		if task.TaskID == bodyID {
+			bodyRuns = append(bodyRuns, task)
+		}
+	}
+	require.Len(t, bodyRuns, 2)
+	assert.NotEqual(t, bodyRuns[0].TaskRunID, bodyRuns[1].TaskRunID)
+	assert.Equal(t, forID, bodyRuns[0].LoopID)
+	assert.Equal(t, forID, bodyRuns[1].LoopID)
+	assert.ElementsMatch(t, []int{0, 1}, []int{bodyRuns[0].LoopIndex, bodyRuns[1].LoopIndex})
 }
 
 func TestRunService_DistributedForLoopWithoutDoneCompletes(t *testing.T) {
