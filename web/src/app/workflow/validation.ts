@@ -1,6 +1,7 @@
 import { type Edge } from "@xyflow/react";
 import {
   type ConditionConfig,
+  type ForConfig,
   type HttpConfig,
   type ShellConfig,
   type TaskConfig,
@@ -31,6 +32,10 @@ function validatePolicy(config: TaskConfig, task: TaskNode, errors: string[]) {
       errors.push(`${getTaskLabel(task)} has an invalid ${field} value.`);
     }
   }
+}
+
+function isValidEnvName(value: string) {
+  return /^[A-Za-z_][A-Za-z0-9_]*$/.test(value) && !value.startsWith("KINETIC_");
 }
 
 export function validateWorkflowDefinition(
@@ -72,6 +77,17 @@ export function validateWorkflowDefinition(
           errors.push(`${getTaskLabel(task)} requires a condition expression.`);
         }
         break;
+      case "for": {
+        const forConfig = config as ForConfig;
+        if (!Number.isFinite(Number(forConfig.start)) || !Number.isFinite(Number(forConfig.end))) {
+          errors.push(`${getTaskLabel(task)} requires numeric start and end values.`);
+        }
+        const variable = (forConfig.var || "").trim();
+        if (variable && !isValidEnvName(variable)) {
+          errors.push(`${getTaskLabel(task)} has an invalid loop variable name.`);
+        }
+        break;
+      }
       default:
         errors.push(`${getTaskLabel(task)} has an unsupported task type.`);
         break;
@@ -93,22 +109,42 @@ export function validateWorkflowDefinition(
   }
 
   for (const task of tasks) {
-    if (task.type !== "condition") {
+    if (task.type === "condition") {
+      const inEdges = inbound.get(task.id) ?? [];
+      const outEdges = outbound.get(task.id) ?? [];
+      const handles = new Set(outEdges.map((edge) => edge.sourceHandle).filter(Boolean));
+
+      if (inEdges.length !== 1) {
+        errors.push(`${getTaskLabel(task)} must have exactly one inbound edge.`);
+      }
+      if (outEdges.length !== 2) {
+        errors.push(`${getTaskLabel(task)} must have exactly two outbound edges.`);
+      }
+      if (!handles.has("true") || !handles.has("false") || handles.size !== 2) {
+        errors.push(`${getTaskLabel(task)} must connect both true and false branches.`);
+      }
       continue;
     }
 
-    const inEdges = inbound.get(task.id) ?? [];
-    const outEdges = outbound.get(task.id) ?? [];
-    const handles = new Set(outEdges.map((edge) => edge.sourceHandle).filter(Boolean));
+    if (task.type !== "for") {
+      continue;
+    }
 
-    if (inEdges.length !== 1) {
-      errors.push(`${getTaskLabel(task)} must have exactly one inbound edge.`);
+    const outEdges = outbound.get(task.id) ?? [];
+    const bodyEdges = outEdges.filter((edge) => edge.sourceHandle === "body");
+    const doneEdges = outEdges.filter((edge) => edge.sourceHandle === "done");
+    const unsupportedEdges = outEdges.filter(
+      (edge) => edge.sourceHandle !== "body" && edge.sourceHandle !== "done"
+    );
+
+    if (bodyEdges.length !== 1) {
+      errors.push(`${getTaskLabel(task)} must connect exactly one body branch.`);
     }
-    if (outEdges.length !== 2) {
-      errors.push(`${getTaskLabel(task)} must have exactly two outbound edges.`);
+    if (doneEdges.length > 1) {
+      errors.push(`${getTaskLabel(task)} can connect at most one done branch.`);
     }
-    if (!handles.has("true") || !handles.has("false") || handles.size !== 2) {
-      errors.push(`${getTaskLabel(task)} must connect both true and false branches.`);
+    if (unsupportedEdges.length > 0) {
+      errors.push(`${getTaskLabel(task)} only supports body and done branches.`);
     }
   }
 

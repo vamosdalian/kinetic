@@ -33,6 +33,7 @@ const (
 	TaskTypeShell     TaskType = "shell"
 	TaskTypeHTTP      TaskType = "http"
 	TaskTypeCondition TaskType = "condition"
+	TaskTypeFor       TaskType = "for"
 )
 
 type TaskNode struct {

@@ -5,6 +5,7 @@ import {
   SquareTerminal,
   Globe,
   GitBranch,
+  Repeat2,
   HelpCircle,
 } from "lucide-react";
 import { Handle, Position, type NodeProps, useReactFlow } from "@xyflow/react";
@@ -44,30 +45,43 @@ function TypeIcon({ type }: { type: string }) {
       return <Globe className="w-3 h-3 flex-shrink-0" />;
     case "condition":
       return <GitBranch className="w-3 h-3 flex-shrink-0" />;
+    case "for":
+      return <Repeat2 className="w-3 h-3 flex-shrink-0" />;
     default:
       return <HelpCircle className="w-3 h-3 flex-shrink-0" />;
   }
 }
 
 function SourceHandles({ type }: { type: string }) {
-  if (type === "condition") {
+  if (type === "condition" || type === "for") {
+    const leftHandle = type === "for" ? "body" : "true";
+    const rightHandle = type === "for" ? "done" : "false";
+    const leftLabel = type === "for" ? "Loop" : "True";
+    const rightLabel = type === "for" ? "Done" : "False";
+
     return (
       <>
-        <div className="pointer-events-none absolute -bottom-5 left-[34%] text-[9px] font-medium text-muted-foreground">
-          T
+        <div
+          className="pointer-events-none absolute -bottom-5 -translate-x-1/2 whitespace-nowrap text-[9px] font-medium text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100"
+          style={{ left: "38%" }}
+        >
+          {leftLabel}
         </div>
-        <div className="pointer-events-none absolute -bottom-5 left-[62%] text-[9px] font-medium text-muted-foreground">
-          F
+        <div
+          className="pointer-events-none absolute -bottom-5 -translate-x-1/2 whitespace-nowrap text-[9px] font-medium text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100"
+          style={{ left: "66%" }}
+        >
+          {rightLabel}
         </div>
         <Handle
           type="source"
-          id="true"
+          id={leftHandle}
           position={Position.Bottom}
           style={{ ...handleStyle, left: "38%" }}
         />
         <Handle
           type="source"
-          id="false"
+          id={rightHandle}
           position={Position.Bottom}
           style={{ ...handleStyle, left: "66%" }}
         />
@@ -94,7 +108,7 @@ export const ActionBarNodeDemo = memo((props: NodeProps) => {
   return (
     <BaseNode
       className={cn(
-        "relative rounded-xs w-48 h-8 transition-all",
+        "group relative rounded-xs w-48 h-8 transition-all",
         selected ? "ring ring-blue-500" : ""
       )}
     >

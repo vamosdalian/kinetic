@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -82,6 +83,22 @@ type runtimeTaskResult struct {
 	result         executor.TaskResult
 	selectedBranch string
 	err            error
+}
+
+type forLoopState struct {
+	ID             string `json:"id"`
+	Name           string `json:"name"`
+	Index          int    `json:"index"`
+	Value          int    `json:"value"`
+	Var            string `json:"var,omitempty"`
+	SelectedBranch string `json:"selected_branch"`
+}
+
+type forLoopDescriptor struct {
+	forTaskID  string
+	bodyRootID string
+	doneTaskID string
+	bodyIDs    []string
 }
 
 func NewRunService(db database.Database, maxConcurrency int) *RunService {
@@ -221,7 +238,7 @@ func (s *RunService) CancelWorkflowRun(runID string) error {
 				if err := s.db.FinishTaskRun(runID, task.TaskID, "cancelled", task.ExitCode, output, task.Result); err != nil {
 					return err
 				}
-				s.clearWorkerOutputSequence(runID, task.TaskID)
+				s.clearWorkerOutputSequence(runID, task.TaskID, task.TaskRunID)
 				if task.AssignedNodeID != "" {
 					_ = s.db.DecrementNodeRunningCount(task.AssignedNodeID)
 					if s.commandHub != nil && (task.Status == "assigned" || task.Status == "running") {
@@ -435,7 +452,20 @@ func (s *RunService) executeTask(ctx context.Context, runID string, task entity.
 	}
 	s.publishTaskStatus(runID, task.TaskID)
 
-	renderedConfig, policy, effectiveEnv, err := s.prepareTaskExecution(runID, task, conditionInput)
+	loopContext, err := s.loopContextForTask(runID, task.TaskID)
+	if err != nil {
+		output := fmt.Sprintf("Invalid loop execution context: %v", err)
+		_ = s.db.FinishTaskRun(runID, task.TaskID, "failed", -1, output, "")
+		s.publishTaskStatus(runID, task.TaskID)
+		return runtimeTaskResult{
+			taskID: task.TaskID,
+			status: "failed",
+			result: executor.TaskResult{ExitCode: -1, Output: output},
+			err:    err,
+		}
+	}
+
+	renderedConfig, policy, effectiveEnv, err := s.prepareTaskExecution(runID, task, conditionInput, loopContext)
 	if err != nil {
 		output := fmt.Sprintf("Invalid task execution context: %v", err)
 		_ = s.db.FinishTaskRun(runID, task.TaskID, "failed", -1, output, "")
@@ -458,10 +488,11 @@ func (s *RunService) executeTask(ctx context.Context, runID string, task entity.
 			logrus.Errorf("failed to append task output for %s/%s: %v", runID, task.TaskID, err)
 		}
 		s.publishEvent(dto.WorkflowRunEvent{
-			Type:   "task_output",
-			RunID:  runID,
-			TaskID: task.TaskID,
-			Output: chunk,
+			Type:      "task_output",
+			RunID:     runID,
+			TaskRunID: task.TaskRunID,
+			TaskID:    task.TaskID,
+			Output:    chunk,
 		})
 	}
 
@@ -557,28 +588,35 @@ func (s *RunService) executeTask(ctx context.Context, runID string, task entity.
 	}
 }
 
+func evaluateConditionTask(task entity.TaskRunEntity, renderedConfig string, conditionInput *workflowcfg.ConditionInput) (string, string, error) {
+	var cfg workflowcfg.ConditionConfig
+	if err := json.Unmarshal([]byte(renderedConfig), &cfg); err != nil {
+		return "", "", fmt.Errorf("invalid condition config: %w", err)
+	}
+	if conditionInput == nil {
+		return "", "", fmt.Errorf("condition task %s is missing upstream input", task.TaskName)
+	}
+	expr, err := workflowcfg.ParseConditionExpression(cfg.Expression)
+	if err != nil {
+		return "", "", err
+	}
+	matched, err := expr.Evaluate(*conditionInput)
+	if err != nil {
+		return "", "", err
+	}
+	selectedBranch := "false"
+	if matched {
+		selectedBranch = "true"
+	}
+	return selectedBranch, fmt.Sprintf("Condition %q evaluated to %t", cfg.Expression, matched), nil
+}
+
 func (s *RunService) executeTaskAttempt(ctx context.Context, runID string, task entity.TaskRunEntity, renderedConfig string, conditionInput *workflowcfg.ConditionInput, effectiveEnv map[string]string, onOutput executor.OutputFunc) (executor.TaskResult, string, error) {
 	if task.TaskType == "condition" {
-		var cfg workflowcfg.ConditionConfig
-		if err := json.Unmarshal([]byte(renderedConfig), &cfg); err != nil {
-			return executor.TaskResult{ExitCode: -1}, "", fmt.Errorf("invalid condition config: %w", err)
-		}
-		if conditionInput == nil {
-			return executor.TaskResult{ExitCode: -1}, "", fmt.Errorf("condition task %s is missing upstream input", task.TaskName)
-		}
-		expr, err := workflowcfg.ParseConditionExpression(cfg.Expression)
+		selectedBranch, message, err := evaluateConditionTask(task, renderedConfig, conditionInput)
 		if err != nil {
 			return executor.TaskResult{ExitCode: -1}, "", err
 		}
-		matched, err := expr.Evaluate(*conditionInput)
-		if err != nil {
-			return executor.TaskResult{ExitCode: -1}, "", err
-		}
-		selectedBranch := "false"
-		if matched {
-			selectedBranch = "true"
-		}
-		message := fmt.Sprintf("Condition %q evaluated to %t", cfg.Expression, matched)
 		if onOutput != nil {
 			onOutput(message)
 		}
@@ -586,6 +624,21 @@ func (s *RunService) executeTaskAttempt(ctx context.Context, runID string, task 
 			Output:   message,
 			ExitCode: 0,
 		}, selectedBranch, nil
+	}
+	if task.TaskType == "for" {
+		state, err := nextForLoopState(task, true)
+		if err != nil {
+			return executor.TaskResult{ExitCode: -1}, "", err
+		}
+		message := fmt.Sprintf("For loop %s iteration %d value %d", task.TaskName, state.Index+1, state.Value)
+		if onOutput != nil {
+			onOutput(message)
+		}
+		return executor.TaskResult{
+			Output:   message,
+			ExitCode: 0,
+			Result:   resultWithForLoopState(state),
+		}, state.SelectedBranch, nil
 	}
 
 	execTask, err := executor.NewTask(executor.TaskEntity{
@@ -606,10 +659,21 @@ func (s *RunService) executeTaskAttempt(ctx context.Context, runID string, task 
 	return result, "", err
 }
 
-func buildTaskEnvironment(run entity.WorkflowRunEntity, taskName string, workflowEnv map[string]string, policy workflowcfg.TaskPolicy) map[string]string {
+func buildTaskEnvironment(run entity.WorkflowRunEntity, taskName string, workflowEnv map[string]string, policy workflowcfg.TaskPolicy, loopContext *workflowcfg.LoopContext) map[string]string {
 	env := map[string]string{
 		workflowcfg.ReservedEnvPrefix + "WORKFLOW_NAME": run.WorkflowName,
 		workflowcfg.ReservedEnvPrefix + "TASK_NAME":     taskName,
+	}
+	if loopContext != nil {
+		loopIndex := strconv.Itoa(loopContext.Index)
+		loopValue := strconv.Itoa(loopContext.Value)
+		env[workflowcfg.ReservedEnvPrefix+"LOOP_ID"] = loopContext.ID
+		env[workflowcfg.ReservedEnvPrefix+"LOOP_NAME"] = loopContext.Name
+		env[workflowcfg.ReservedEnvPrefix+"LOOP_INDEX"] = loopIndex
+		env[workflowcfg.ReservedEnvPrefix+"LOOP_VALUE"] = loopValue
+		if loopContext.Var != "" {
+			env[loopContext.Var] = loopValue
+		}
 	}
 	for key, value := range workflowEnv {
 		env[key] = value
@@ -617,12 +681,27 @@ func buildTaskEnvironment(run entity.WorkflowRunEntity, taskName string, workflo
 	for key, value := range policy.Env {
 		env[key] = value
 	}
+	if loopContext != nil && loopContext.Var != "" {
+		env[loopContext.Var] = strconv.Itoa(loopContext.Value)
+	}
 	return env
 }
 
 func buildRunGraph(tasks []entity.TaskRunEntity, edges []entity.EdgeRunEntity) (runGraph, error) {
-	taskEntities := make([]entity.TaskEntity, 0, len(tasks))
+	graph := runGraph{
+		nodes: make(map[string]*runtimeNode, len(tasks)),
+	}
 	for _, task := range tasks {
+		graph.nodes[task.TaskID] = &runtimeNode{
+			task:     task,
+			inbound:  nil,
+			outbound: nil,
+		}
+	}
+
+	taskEntities := make([]entity.TaskEntity, 0, len(graph.nodes))
+	for _, node := range graph.nodes {
+		task := node.task
 		taskEntities = append(taskEntities, entity.TaskEntity{
 			ID:          task.TaskID,
 			WorkflowID:  task.WorkflowID,
@@ -651,16 +730,6 @@ func buildRunGraph(tasks []entity.TaskRunEntity, edges []entity.EdgeRunEntity) (
 		return runGraph{}, err
 	}
 
-	graph := runGraph{
-		nodes: make(map[string]*runtimeNode, len(tasks)),
-	}
-	for _, task := range tasks {
-		graph.nodes[task.TaskID] = &runtimeNode{
-			task:     task,
-			inbound:  nil,
-			outbound: nil,
-		}
-	}
 	for _, edge := range edges {
 		runtimeEdge := &runtimeEdge{
 			edge:  edge,
@@ -685,6 +754,19 @@ func (g runGraph) activateOutbound(taskID string, selectedBranch string) {
 				edge.state = edgeStateActive
 			} else {
 				edge.state = edgeStateInactive
+			}
+			continue
+		}
+		if node.task.TaskType == "for" {
+			switch {
+			case selectedBranch == "body" && edge.edge.EdgeSourceHandle == "body":
+				edge.state = edgeStateActive
+			case selectedBranch == "done" && edge.edge.EdgeSourceHandle == "done":
+				edge.state = edgeStateActive
+			case selectedBranch == "done":
+				edge.state = edgeStateInactive
+			default:
+				edge.state = edgeStateUnknown
 			}
 			continue
 		}
@@ -728,6 +810,73 @@ func (n *runtimeNode) buildConditionInput(completed map[string]completedTaskStat
 	}
 
 	return nil, nil
+}
+
+func (g runGraph) forLoopDescriptor(taskID string) (forLoopDescriptor, bool) {
+	node := g.nodes[taskID]
+	if node == nil || node.task.TaskType != "for" {
+		return forLoopDescriptor{}, false
+	}
+
+	descriptor := forLoopDescriptor{forTaskID: taskID}
+	for _, edge := range node.outbound {
+		switch edge.edge.EdgeSourceHandle {
+		case "body":
+			descriptor.bodyRootID = edge.edge.EdgeTarget
+		case "done":
+			descriptor.doneTaskID = edge.edge.EdgeTarget
+		}
+	}
+	if descriptor.bodyRootID == "" {
+		return forLoopDescriptor{}, false
+	}
+
+	visited := map[string]bool{}
+	var walk func(string)
+	walk = func(id string) {
+		if id == "" || id == descriptor.doneTaskID || visited[id] {
+			return
+		}
+		visited[id] = true
+		descriptor.bodyIDs = append(descriptor.bodyIDs, id)
+		next := g.nodes[id]
+		if next == nil {
+			return
+		}
+		for _, edge := range next.outbound {
+			walk(edge.edge.EdgeTarget)
+		}
+	}
+	walk(descriptor.bodyRootID)
+
+	return descriptor, true
+}
+
+func (d forLoopDescriptor) containsTask(taskID string) bool {
+	for _, bodyID := range d.bodyIDs {
+		if bodyID == taskID {
+			return true
+		}
+	}
+	return false
+}
+
+func (d forLoopDescriptor) bodyCompleted(taskByID map[string]entity.TaskRunEntity) bool {
+	if len(d.bodyIDs) == 0 {
+		return true
+	}
+	for _, taskID := range d.bodyIDs {
+		task, ok := taskByID[taskID]
+		if !ok || (task.Status != "success" && task.Status != "skipped") {
+			return false
+		}
+	}
+	return true
+}
+
+func (d forLoopDescriptor) bodyRootCompleted(taskByID map[string]entity.TaskRunEntity) bool {
+	task, ok := taskByID[d.bodyRootID]
+	return ok && (task.Status == "success" || task.Status == "skipped")
 }
 
 func (s *RunService) finalizeCancelledBeforeStart(ctx context.Context, runID string) error {
@@ -780,11 +929,16 @@ func (s *RunService) publishTaskStatus(runID string, taskID string) {
 	if err != nil {
 		return
 	}
+	s.publishTaskRunStatus(task)
+}
+
+func (s *RunService) publishTaskRunStatus(task entity.TaskRunEntity) {
 	exitCode := task.ExitCode
 	s.publishEvent(dto.WorkflowRunEvent{
 		Type:           "task_status",
-		RunID:          runID,
-		TaskID:         taskID,
+		RunID:          task.RunID,
+		TaskRunID:      task.TaskRunID,
+		TaskID:         task.TaskID,
 		Status:         task.Status,
 		AssignedNodeID: task.AssignedNodeID,
 		EffectiveTag:   task.EffectiveTag,
@@ -808,22 +962,30 @@ func (s *RunService) PrepareAssignedTask(runID string, taskID string) (*dto.Assi
 	if err != nil {
 		return nil, err
 	}
+	if task.TaskType == "condition" || task.TaskType == "for" {
+		return nil, fmt.Errorf("task type %s is controller-only", task.TaskType)
+	}
 	conditionInput, err := s.conditionInputForTask(runID, taskID)
 	if err != nil {
 		return nil, err
 	}
-	renderedConfig, _, effectiveEnv, err := s.prepareTaskExecution(runID, task, conditionInput)
+	loopContext, err := s.loopContextForTask(runID, taskID)
+	if err != nil {
+		return nil, err
+	}
+	renderedConfig, _, effectiveEnv, err := s.prepareTaskExecution(runID, task, conditionInput, loopContext)
 	if err != nil {
 		return nil, err
 	}
 
 	assigned := &dto.AssignedTask{
-		RunID:  runID,
-		TaskID: taskID,
-		Name:   task.TaskName,
-		Type:   dto.TaskType(task.TaskType),
-		Config: json.RawMessage(renderedConfig),
-		Env:    effectiveEnv,
+		TaskRunID: task.TaskRunID,
+		RunID:     runID,
+		TaskID:    taskID,
+		Name:      task.TaskName,
+		Type:      dto.TaskType(task.TaskType),
+		Config:    json.RawMessage(renderedConfig),
+		Env:       effectiveEnv,
 	}
 
 	if task.TaskType == "condition" && conditionInput != nil {
@@ -842,9 +1004,12 @@ func (s *RunService) HandleWorkerTaskEvent(nodeID string, event dto.WorkerTaskEv
 	s.stateMu.Lock()
 	defer s.stateMu.Unlock()
 
-	task, err := s.db.GetTaskRun(event.RunID, event.TaskID)
+	task, err := s.taskRunForWorkerEvent(event)
 	if err != nil {
 		return err
+	}
+	if task.TaskType == "condition" || task.TaskType == "for" {
+		return fmt.Errorf("task type %s is controller-only", task.TaskType)
 	}
 	if task.AssignedNodeID != "" && task.AssignedNodeID != nodeID {
 		return nil
@@ -859,28 +1024,41 @@ func (s *RunService) HandleWorkerTaskEvent(nodeID string, event dto.WorkerTaskEv
 
 	switch event.Type {
 	case "started":
-		if err := s.db.MarkTaskRunRunning(event.RunID, event.TaskID); err != nil {
+		if event.TaskRunID != "" {
+			if err := s.db.MarkTaskRunRunningByID(task.TaskRunID); err != nil {
+				return err
+			}
+		} else if err := s.db.MarkTaskRunRunning(event.RunID, event.TaskID); err != nil {
 			return err
 		}
 		s.recordAttempt(event.RunID, event.TaskID)
-		s.publishTaskStatus(event.RunID, event.TaskID)
+		updatedTask, err := s.taskRunForWorkerEvent(event)
+		if err != nil {
+			return err
+		}
+		s.publishTaskRunStatus(updatedTask)
 		return nil
 	case "output":
 		if event.Output == "" {
 			return nil
 		}
-		if s.seenWorkerOutputEvent(event.RunID, event.TaskID, event.Sequence) {
+		if s.seenWorkerOutputEvent(event.RunID, event.TaskID, task.TaskRunID, event.Sequence) {
 			return nil
 		}
-		if err := s.db.AppendTaskRunOutput(event.RunID, event.TaskID, event.Output); err != nil {
+		if event.TaskRunID != "" {
+			if err := s.db.AppendTaskRunOutputByID(task.TaskRunID, event.Output); err != nil {
+				return err
+			}
+		} else if err := s.db.AppendTaskRunOutput(event.RunID, event.TaskID, event.Output); err != nil {
 			return err
 		}
-		s.recordWorkerOutputEvent(event.RunID, event.TaskID, event.Sequence)
+		s.recordWorkerOutputEvent(event.RunID, event.TaskID, task.TaskRunID, event.Sequence)
 		s.publishEvent(dto.WorkflowRunEvent{
-			Type:   "task_output",
-			RunID:  event.RunID,
-			TaskID: event.TaskID,
-			Output: event.Output,
+			Type:      "task_output",
+			RunID:     event.RunID,
+			TaskRunID: task.TaskRunID,
+			TaskID:    event.TaskID,
+			Output:    event.Output,
 		})
 		return nil
 	case "finished", "failed", "cancelled":
@@ -892,12 +1070,16 @@ func (s *RunService) HandleWorkerTaskEvent(nodeID string, event dto.WorkerTaskEv
 			return nil
 		}
 		if event.Output != "" {
-			if err := s.db.AppendTaskRunOutput(event.RunID, event.TaskID, event.Output); err != nil {
+			if event.TaskRunID != "" {
+				if err := s.db.AppendTaskRunOutputByID(task.TaskRunID, event.Output); err != nil {
+					return err
+				}
+			} else if err := s.db.AppendTaskRunOutput(event.RunID, event.TaskID, event.Output); err != nil {
 				return err
 			}
 		}
 
-		updatedTask, err := s.db.GetTaskRun(event.RunID, event.TaskID)
+		updatedTask, err := s.taskRunForWorkerEvent(event)
 		if err != nil {
 			return err
 		}
@@ -910,20 +1092,39 @@ func (s *RunService) HandleWorkerTaskEvent(nodeID string, event dto.WorkerTaskEv
 		if err != nil {
 			return err
 		}
-		if err := s.db.FinishTaskRun(event.RunID, event.TaskID, finalStatus, exitCode, updatedTask.Output, result); err != nil {
+		if event.TaskRunID != "" {
+			if err := s.db.FinishTaskRunByID(updatedTask.TaskRunID, finalStatus, exitCode, updatedTask.Output, result); err != nil {
+				return err
+			}
+		} else if err := s.db.FinishTaskRun(event.RunID, event.TaskID, finalStatus, exitCode, updatedTask.Output, result); err != nil {
 			return err
 		}
 		if updatedTask.AssignedNodeID != "" {
 			_ = s.db.DecrementNodeRunningCount(updatedTask.AssignedNodeID)
 		}
-		s.publishTaskStatus(event.RunID, event.TaskID)
 
 		updatedTask.Status = finalStatus
 		updatedTask.Result = result
+		updatedTask.ExitCode = exitCode
+		s.publishTaskRunStatus(updatedTask)
 		return s.advanceTerminalTaskProgress(updatedTask)
 	}
 
 	return nil
+}
+
+func (s *RunService) taskRunForWorkerEvent(event dto.WorkerTaskEvent) (entity.TaskRunEntity, error) {
+	if event.TaskRunID == "" {
+		return s.db.GetTaskRun(event.RunID, event.TaskID)
+	}
+	task, err := s.db.GetTaskRunByID(event.TaskRunID)
+	if err != nil {
+		return entity.TaskRunEntity{}, err
+	}
+	if task.RunID != event.RunID || task.TaskID != event.TaskID {
+		return entity.TaskRunEntity{}, fmt.Errorf("task run %s does not match event task %s/%s", event.TaskRunID, event.RunID, event.TaskID)
+	}
+	return task, nil
 }
 
 func (s *RunService) HandleNodeOffline(nodeID string) error {
@@ -979,19 +1180,19 @@ func (s *RunService) advanceTerminalTaskProgress(task entity.TaskRunEntity) erro
 
 	switch task.Status {
 	case "success":
-		s.clearWorkerOutputSequence(task.RunID, task.TaskID)
+		s.clearWorkerOutputSequence(task.RunID, task.TaskID, task.TaskRunID)
 		s.clearRetryState(task.RunID, task.TaskID)
 		return s.queueReadyTasks(task.RunID)
 	case "failed":
 		if s.shouldRetryTask(task) {
 			policy, _ := workflowcfg.ParseTaskPolicy(task.TaskConfig)
-			return s.requeueForRetry(task.RunID, task.TaskID, task.EffectiveTag, policy.RetryBackoffSeconds)
+			return s.requeueForRetry(task, policy.RetryBackoffSeconds)
 		}
-		s.clearWorkerOutputSequence(task.RunID, task.TaskID)
+		s.clearWorkerOutputSequence(task.RunID, task.TaskID, task.TaskRunID)
 		s.clearRetryState(task.RunID, task.TaskID)
 		return s.failWorkflowRunFromTask(task.RunID)
 	case "cancelled":
-		s.clearWorkerOutputSequence(task.RunID, task.TaskID)
+		s.clearWorkerOutputSequence(task.RunID, task.TaskID, task.TaskRunID)
 		s.clearRetryState(task.RunID, task.TaskID)
 		return s.queueReadyTasks(task.RunID)
 	default:
@@ -1001,13 +1202,13 @@ func (s *RunService) advanceTerminalTaskProgress(task entity.TaskRunEntity) erro
 
 // requeueForRetry puts a task back on the queue after a backoff delay so it can
 // be redispatched (possibly to a different node).
-func (s *RunService) requeueForRetry(runID string, taskID string, effectiveTag string, backoffSeconds int) error {
-	s.clearWorkerOutputSequence(runID, taskID)
-	s.setRetryBackoff(runID, taskID, backoffSeconds)
-	if err := s.db.QueueTaskRun(runID, taskID, effectiveTag); err != nil {
+func (s *RunService) requeueForRetry(task entity.TaskRunEntity, backoffSeconds int) error {
+	s.clearWorkerOutputSequence(task.RunID, task.TaskID, task.TaskRunID)
+	s.setRetryBackoff(task.RunID, task.TaskID, backoffSeconds)
+	if err := s.db.QueueTaskRun(task.RunID, task.TaskID, task.EffectiveTag); err != nil {
 		return err
 	}
-	s.publishTaskStatus(runID, taskID)
+	s.publishTaskStatus(task.RunID, task.TaskID)
 	return nil
 }
 
@@ -1050,7 +1251,7 @@ func (s *RunService) RequeueStaleUnknownTasks(timeout time.Duration) error {
 
 		if s.shouldRetryTask(task) {
 			policy, _ := workflowcfg.ParseTaskPolicy(task.TaskConfig)
-			if err := s.requeueForRetry(task.RunID, task.TaskID, task.EffectiveTag, policy.RetryBackoffSeconds); err != nil {
+			if err := s.requeueForRetry(task, policy.RetryBackoffSeconds); err != nil {
 				logrus.Errorf("failed to requeue stale unknown task %s/%s: %v", task.RunID, task.TaskID, err)
 			}
 			continue
@@ -1148,8 +1349,29 @@ func (s *RunService) queueReadyTasks(runID string) error {
 			if err != nil {
 				return err
 			}
+		} else if task.TaskType == "for" {
+			state, ok, err := forLoopStateFromResult(task.Result)
+			if err != nil {
+				return err
+			}
+			if ok {
+				selectedBranch = state.SelectedBranch
+			}
 		}
 		graph.activateOutbound(task.TaskID, selectedBranch)
+	}
+
+	for _, task := range taskRuns {
+		if task.TaskType != "for" || task.Status != "success" {
+			continue
+		}
+		progressed, err := s.advanceForLoopTask(runID, task, graph, taskByID, false)
+		if err != nil {
+			return err
+		}
+		if progressed {
+			return s.queueReadyTasks(runID)
+		}
 	}
 
 	skippedAny := false
@@ -1172,6 +1394,26 @@ func (s *RunService) queueReadyTasks(runID string) error {
 		}
 
 		if len(node.inbound) == 0 || (unknownCount == 0 && activeCount > 0) {
+			if task.TaskType == "condition" {
+				progressed, err := s.advanceConditionTask(runID, task, node, completed)
+				if err != nil {
+					return err
+				}
+				if progressed {
+					return s.queueReadyTasks(runID)
+				}
+				continue
+			}
+			if task.TaskType == "for" {
+				progressed, err := s.advanceForLoopTask(runID, task, graph, taskByID, true)
+				if err != nil {
+					return err
+				}
+				if progressed {
+					return s.queueReadyTasks(runID)
+				}
+				continue
+			}
 			effectiveTag := task.TaskTag
 			if effectiveTag == "" {
 				effectiveTag = run.WorkflowTag
@@ -1214,6 +1456,138 @@ func (s *RunService) queueReadyTasks(runID string) error {
 	return nil
 }
 
+func (s *RunService) advanceConditionTask(runID string, task entity.TaskRunEntity, node *runtimeNode, completed map[string]completedTaskState) (bool, error) {
+	conditionInput, err := node.buildConditionInput(completed)
+	if err != nil {
+		return false, err
+	}
+	loopContext, err := s.loopContextForTask(runID, task.TaskID)
+	if err != nil {
+		return false, err
+	}
+	renderedConfig, _, _, err := s.prepareTaskExecution(runID, task, conditionInput, loopContext)
+	if err != nil {
+		return false, err
+	}
+	selectedBranch, output, err := evaluateConditionTask(task, renderedConfig, conditionInput)
+	if err != nil {
+		return false, err
+	}
+	if err := s.db.FinishTaskRun(runID, task.TaskID, "success", 0, output, resultWithSelectedBranch("", selectedBranch)); err != nil {
+		return false, err
+	}
+	s.publishTaskStatus(runID, task.TaskID)
+	return true, nil
+}
+
+func (s *RunService) advanceForLoopTask(runID string, task entity.TaskRunEntity, graph runGraph, taskByID map[string]entity.TaskRunEntity, initial bool) (bool, error) {
+	descriptor, ok := graph.forLoopDescriptor(task.TaskID)
+	if !ok {
+		return false, fmt.Errorf("for task %s requires body and done branches", task.TaskName)
+	}
+	if !initial {
+		state, ok, err := forLoopStateFromResult(task.Result)
+		if err != nil {
+			return false, err
+		}
+		if !ok || state.SelectedBranch != "body" {
+			return false, nil
+		}
+	}
+	if !initial && !descriptor.bodyCompleted(taskByID) {
+		return false, nil
+	}
+
+	state, err := nextForLoopState(task, initial)
+	if err != nil {
+		return false, err
+	}
+	output := fmt.Sprintf("For loop %s selected %s", task.TaskName, state.SelectedBranch)
+	if state.SelectedBranch == "body" {
+		output = fmt.Sprintf("For loop %s iteration %d value %d", task.TaskName, state.Index+1, state.Value)
+	}
+	if err := s.db.FinishTaskRun(runID, task.TaskID, "success", 0, output, resultWithForLoopState(state)); err != nil {
+		return false, err
+	}
+	s.publishTaskStatus(runID, task.TaskID)
+
+	if state.SelectedBranch == "done" {
+		return true, nil
+	}
+	if err := s.db.PrepareTaskRunsForLoop(runID, descriptor.bodyIDs, state.ID, state.Index, state.Value, !initial); err != nil {
+		return false, err
+	}
+	for _, taskID := range descriptor.bodyIDs {
+		s.publishTaskStatus(runID, taskID)
+	}
+	bodyTask := taskByID[descriptor.bodyRootID]
+	effectiveTag := bodyTask.TaskTag
+	if effectiveTag == "" {
+		run, err := s.db.GetWorkflowRun(runID)
+		if err != nil {
+			return false, err
+		}
+		effectiveTag = run.WorkflowTag
+	}
+	if err := s.db.QueueTaskRun(runID, descriptor.bodyRootID, effectiveTag); err != nil {
+		return false, err
+	}
+	s.publishTaskStatus(runID, descriptor.bodyRootID)
+	return true, nil
+}
+
+func nextForLoopState(task entity.TaskRunEntity, initial bool) (forLoopState, error) {
+	var cfg workflowcfg.ForConfig
+	if err := json.Unmarshal([]byte(task.TaskConfig), &cfg); err != nil {
+		return forLoopState{}, fmt.Errorf("invalid for config: %w", err)
+	}
+	step := 1
+	if cfg.End < cfg.Start {
+		step = -1
+	}
+	variable := strings.TrimSpace(cfg.Var)
+
+	if initial {
+		return forLoopState{
+			ID:             task.TaskID,
+			Name:           task.TaskName,
+			Index:          0,
+			Value:          cfg.Start,
+			Var:            variable,
+			SelectedBranch: "body",
+		}, nil
+	}
+
+	previous, ok, err := forLoopStateFromResult(task.Result)
+	if err != nil {
+		return forLoopState{}, err
+	}
+	if !ok {
+		return forLoopState{}, fmt.Errorf("for task %s is missing loop state", task.TaskName)
+	}
+	nextValue := previous.Value + step
+	nextIndex := previous.Index + 1
+	if (step > 0 && nextValue <= cfg.End) || (step < 0 && nextValue >= cfg.End) {
+		return forLoopState{
+			ID:             task.TaskID,
+			Name:           task.TaskName,
+			Index:          nextIndex,
+			Value:          nextValue,
+			Var:            variable,
+			SelectedBranch: "body",
+		}, nil
+	}
+
+	return forLoopState{
+		ID:             task.TaskID,
+		Name:           task.TaskName,
+		Index:          previous.Index,
+		Value:          previous.Value,
+		Var:            variable,
+		SelectedBranch: "done",
+	}, nil
+}
+
 func (s *RunService) conditionInputForTask(runID string, taskID string) (*workflowcfg.ConditionInput, error) {
 	taskRuns, err := s.db.GetTaskRuns(runID)
 	if err != nil {
@@ -1249,6 +1623,14 @@ func (s *RunService) conditionInputForTask(runID string, taskID string) (*workfl
 			if err != nil {
 				return nil, err
 			}
+		} else if task.TaskType == "for" {
+			state, ok, err := forLoopStateFromResult(task.Result)
+			if err != nil {
+				return nil, err
+			}
+			if ok {
+				selectedBranch = state.SelectedBranch
+			}
 		}
 		graph.activateOutbound(task.TaskID, selectedBranch)
 	}
@@ -1259,7 +1641,54 @@ func (s *RunService) conditionInputForTask(runID string, taskID string) (*workfl
 	return node.buildConditionInput(completed)
 }
 
-func (s *RunService) prepareTaskExecution(runID string, task entity.TaskRunEntity, conditionInput *workflowcfg.ConditionInput) (string, workflowcfg.TaskPolicy, map[string]string, error) {
+func (s *RunService) loopContextForTask(runID string, taskID string) (*workflowcfg.LoopContext, error) {
+	taskRuns, err := s.db.GetTaskRuns(runID)
+	if err != nil {
+		return nil, err
+	}
+	edgeRuns, err := s.db.GetEdgeRuns(runID)
+	if err != nil {
+		return nil, err
+	}
+	graph, err := buildRunGraph(taskRuns, edgeRuns)
+	if err != nil {
+		return nil, err
+	}
+
+	var selected *workflowcfg.LoopContext
+	selectedBodySize := 0
+	for _, task := range taskRuns {
+		if task.TaskType != "for" || task.Status != "success" {
+			continue
+		}
+		state, ok, err := forLoopStateFromResult(task.Result)
+		if err != nil {
+			return nil, err
+		}
+		if !ok || state.SelectedBranch != "body" {
+			continue
+		}
+		descriptor, ok := graph.forLoopDescriptor(task.TaskID)
+		if !ok || !descriptor.containsTask(taskID) {
+			continue
+		}
+		if selected != nil && len(descriptor.bodyIDs) >= selectedBodySize {
+			continue
+		}
+		selectedBodySize = len(descriptor.bodyIDs)
+		selected = &workflowcfg.LoopContext{
+			ID:    state.ID,
+			Name:  state.Name,
+			Index: state.Index,
+			Value: state.Value,
+			Var:   state.Var,
+		}
+	}
+
+	return selected, nil
+}
+
+func (s *RunService) prepareTaskExecution(runID string, task entity.TaskRunEntity, conditionInput *workflowcfg.ConditionInput, loopContext *workflowcfg.LoopContext) (string, workflowcfg.TaskPolicy, map[string]string, error) {
 	run, err := s.db.GetWorkflowRun(runID)
 	if err != nil {
 		return "", workflowcfg.TaskPolicy{}, nil, err
@@ -1280,19 +1709,19 @@ func (s *RunService) prepareTaskExecution(runID string, task entity.TaskRunEntit
 	}
 	rawTaskEnv := extractTemplateEnv(rawTaskConfigValue)
 
-	baseContext := buildTaskTemplateContext(run, workflowConfigValue, workflowConfig.Env, task, rawTaskEnv, conditionInput)
+	baseContext := buildTaskTemplateContext(run, workflowConfigValue, workflowConfig.Env, task, rawTaskEnv, conditionInput, loopContext)
 	renderedWorkflowEnv, err := workflowcfg.RenderStringMapValues(workflowConfig.Env, baseContext)
 	if err != nil {
 		return "", workflowcfg.TaskPolicy{}, nil, fmt.Errorf("render workflow env: %w", err)
 	}
 
 	setTemplateEnv(workflowConfigValue, renderedWorkflowEnv)
-	renderedTaskEnv, err := workflowcfg.RenderStringMapValues(rawTaskEnv, buildTaskTemplateContext(run, workflowConfigValue, renderedWorkflowEnv, task, rawTaskEnv, conditionInput))
+	renderedTaskEnv, err := workflowcfg.RenderStringMapValues(rawTaskEnv, buildTaskTemplateContext(run, workflowConfigValue, renderedWorkflowEnv, task, rawTaskEnv, conditionInput, loopContext))
 	if err != nil {
 		return "", workflowcfg.TaskPolicy{}, nil, fmt.Errorf("render task env: %w", err)
 	}
 
-	renderContext := buildTaskTemplateContext(run, workflowConfigValue, renderedWorkflowEnv, task, renderedTaskEnv, conditionInput)
+	renderContext := buildTaskTemplateContext(run, workflowConfigValue, renderedWorkflowEnv, task, renderedTaskEnv, conditionInput, loopContext)
 	renderedConfig, err := workflowcfg.RenderJSONStrings(task.TaskConfig, renderContext)
 	if err != nil {
 		return "", workflowcfg.TaskPolicy{}, nil, fmt.Errorf("render task config: %w", err)
@@ -1303,10 +1732,10 @@ func (s *RunService) prepareTaskExecution(runID string, task entity.TaskRunEntit
 		return "", workflowcfg.TaskPolicy{}, nil, fmt.Errorf("parse rendered task policy: %w", err)
 	}
 
-	return renderedConfig, renderedPolicy, buildTaskEnvironment(run, task.TaskName, renderedWorkflowEnv, renderedPolicy), nil
+	return renderedConfig, renderedPolicy, buildTaskEnvironment(run, task.TaskName, renderedWorkflowEnv, renderedPolicy, loopContext), nil
 }
 
-func buildTaskTemplateContext(run entity.WorkflowRunEntity, workflowConfigValue any, workflowEnv map[string]string, task entity.TaskRunEntity, taskEnv map[string]string, conditionInput *workflowcfg.ConditionInput) map[string]any {
+func buildTaskTemplateContext(run entity.WorkflowRunEntity, workflowConfigValue any, workflowEnv map[string]string, task entity.TaskRunEntity, taskEnv map[string]string, conditionInput *workflowcfg.ConditionInput, loopContext *workflowcfg.LoopContext) map[string]any {
 	runtimeEnv := map[string]string{
 		"workflowName": run.WorkflowName,
 		"taskName":     task.TaskName,
@@ -1344,6 +1773,15 @@ func buildTaskTemplateContext(run entity.WorkflowRunEntity, workflowConfigValue 
 	if upstream != nil {
 		context["upstream"] = upstream
 		context["previous"] = upstream
+	}
+	if loopContext != nil {
+		context["loop"] = map[string]any{
+			"id":    loopContext.ID,
+			"name":  loopContext.Name,
+			"index": loopContext.Index,
+			"value": loopContext.Value,
+			"var":   loopContext.Var,
+		}
 	}
 
 	return context
@@ -1468,6 +1906,80 @@ func resultWithSelectedBranch(raw string, selectedBranch string) string {
 	return string(encoded)
 }
 
+func resultWithForLoopState(state forLoopState) string {
+	result := map[string]any{
+		"selected_branch": state.SelectedBranch,
+		"loop": map[string]any{
+			"id":    state.ID,
+			"name":  state.Name,
+			"index": state.Index,
+			"value": state.Value,
+			"var":   state.Var,
+		},
+	}
+	encoded, err := json.Marshal(result)
+	if err != nil {
+		return ""
+	}
+	return string(encoded)
+}
+
+func forLoopStateFromResult(raw string) (forLoopState, bool, error) {
+	if strings.TrimSpace(raw) == "" {
+		return forLoopState{}, false, nil
+	}
+
+	var result map[string]any
+	if err := json.Unmarshal([]byte(raw), &result); err != nil {
+		return forLoopState{}, false, err
+	}
+	rawBranch, ok := result["selected_branch"].(string)
+	if !ok || strings.TrimSpace(rawBranch) == "" {
+		return forLoopState{}, false, nil
+	}
+	selectedBranch, err := normalizeForBranch(rawBranch)
+	if err != nil {
+		return forLoopState{}, true, err
+	}
+
+	state := forLoopState{SelectedBranch: selectedBranch}
+	loopValue, ok := result["loop"].(map[string]any)
+	if !ok {
+		return state, true, nil
+	}
+	if id, ok := loopValue["id"].(string); ok {
+		state.ID = id
+	}
+	if name, ok := loopValue["name"].(string); ok {
+		state.Name = name
+	}
+	if variable, ok := loopValue["var"].(string); ok {
+		state.Var = variable
+	}
+	state.Index = intFromJSONNumber(loopValue["index"])
+	state.Value = intFromJSONNumber(loopValue["value"])
+	return state, true, nil
+}
+
+func intFromJSONNumber(value any) int {
+	switch typed := value.(type) {
+	case float64:
+		return int(typed)
+	case int:
+		return typed
+	default:
+		return 0
+	}
+}
+
+func normalizeForBranch(selectedBranch string) (string, error) {
+	selectedBranch = strings.TrimSpace(selectedBranch)
+	if selectedBranch == "body" || selectedBranch == "done" {
+		return selectedBranch, nil
+	}
+	return "", fmt.Errorf("invalid for branch %q", selectedBranch)
+}
+
 func selectedBranchForConditionTask(task entity.TaskRunEntity, input *workflowcfg.ConditionInput) (string, error) {
 	if selectedBranch, ok, err := selectedBranchFromResult(task.Result); ok || err != nil {
 		return selectedBranch, err
@@ -1569,22 +2081,32 @@ func taskRetryKey(runID string, taskID string) string {
 	return runID + ":" + taskID
 }
 
-func (s *RunService) seenWorkerOutputEvent(runID string, taskID string, sequence int64) bool {
+func taskOutputKey(runID string, taskID string, taskRunID string) string {
+	if taskRunID != "" {
+		return runID + ":" + taskRunID
+	}
+	return taskRetryKey(runID, taskID)
+}
+
+func (s *RunService) seenWorkerOutputEvent(runID string, taskID string, taskRunID string, sequence int64) bool {
 	if sequence <= 0 {
 		return false
 	}
-	return sequence <= s.outputSequences[taskRetryKey(runID, taskID)]
+	return sequence <= s.outputSequences[taskOutputKey(runID, taskID, taskRunID)]
 }
 
-func (s *RunService) recordWorkerOutputEvent(runID string, taskID string, sequence int64) {
+func (s *RunService) recordWorkerOutputEvent(runID string, taskID string, taskRunID string, sequence int64) {
 	if sequence <= 0 {
 		return
 	}
-	s.outputSequences[taskRetryKey(runID, taskID)] = sequence
+	s.outputSequences[taskOutputKey(runID, taskID, taskRunID)] = sequence
 }
 
-func (s *RunService) clearWorkerOutputSequence(runID string, taskID string) {
-	delete(s.outputSequences, taskRetryKey(runID, taskID))
+func (s *RunService) clearWorkerOutputSequence(runID string, taskID string, taskRunID string) {
+	delete(s.outputSequences, taskOutputKey(runID, taskID, taskRunID))
+	if taskRunID != "" {
+		delete(s.outputSequences, taskRetryKey(runID, taskID))
+	}
 }
 
 func (s *RunService) retryEntry(key string) *taskRetryState {

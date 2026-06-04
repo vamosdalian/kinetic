@@ -60,6 +60,7 @@ type Database interface {
 	CreateWorkflowRun(workflowID string, runID string) error
 	GetWorkflowRun(runID string) (entity.WorkflowRunEntity, error)
 	GetTaskRun(runID string, taskID string) (entity.TaskRunEntity, error)
+	GetTaskRunByID(taskRunID string) (entity.TaskRunEntity, error)
 	GetTaskRuns(runID string) ([]entity.TaskRunEntity, error)
 	GetEdgeRuns(runID string) ([]entity.EdgeRunEntity, error)
 	ListWorkflowRuns(offset int, limit int) ([]entity.WorkflowRunEntity, error)
@@ -70,14 +71,18 @@ type Database interface {
 	FinishWorkflowRun(runID string, status string) error
 	UpdateWorkflowRunStatus(runID string, status string) error
 	MarkTaskRunRunning(runID string, taskID string) error
+	MarkTaskRunRunningByID(taskRunID string) error
 	QueueTaskRun(runID string, taskID string, effectiveTag string) error
 	AssignTaskRun(runID string, taskID string, nodeID string) error
 	ResetAssignedTaskRun(runID string, taskID string) error
+	PrepareTaskRunsForLoop(runID string, taskIDs []string, loopID string, loopIndex int, loopValue int, createNew bool) error
 	MarkTaskRunUnknown(runID string, taskID string, output string) error
 	FinishTaskRun(runID string, taskID string, status string, exitCode int, output string, result string) error
+	FinishTaskRunByID(taskRunID string, status string, exitCode int, output string, result string) error
 	SkipPendingTaskRuns(runID string, output string) error
 	CancelPendingTaskRuns(runID string, output string) error
 	AppendTaskRunOutput(runID string, taskID string, chunk string) error
+	AppendTaskRunOutputByID(taskRunID string, chunk string) error
 	ListQueuedTaskRuns(limit int) ([]entity.TaskRunEntity, error)
 	ListNodeActiveTaskRuns(nodeID string) ([]entity.TaskRunEntity, error)
 	ListAssignedTaskRunsBefore(cutoff time.Time) ([]entity.TaskRunEntity, error)

@@ -3,6 +3,8 @@ package workflow
 import (
 	"testing"
 	"time"
+
+	"github.com/vamosdalian/kinetic/internal/model/entity"
 )
 
 func TestParseWorkflowConfigRejectsReservedPrefix(t *testing.T) {
@@ -93,5 +95,54 @@ func TestNormalizeWorkflowTriggerRejectsInvalidCron(t *testing.T) {
 		Expr: "invalid cron",
 	}, true, time.Now().UTC()); err == nil {
 		t.Fatal("expected invalid cron expr to fail")
+	}
+}
+
+func TestValidateDefinitionAllowsForLoopBranches(t *testing.T) {
+	forID := "for-1"
+	bodyID := "body-1"
+	doneID := "done-1"
+	rootID := "root-1"
+
+	err := ValidateDefinition([]entity.TaskEntity{
+		{ID: rootID, Name: "root", Type: "shell", Config: `{"script":"printf root"}`},
+		{ID: forID, Name: "for", Type: "for", Config: `{"start":1,"end":3,"var":"N"}`},
+		{ID: bodyID, Name: "body", Type: "shell", Config: `{"script":"printf body"}`},
+		{ID: doneID, Name: "done", Type: "shell", Config: `{"script":"printf done"}`},
+	}, []entity.EdgeEntity{
+		{ID: "edge-root-for", Source: rootID, Target: forID},
+		{ID: "edge-for-body", Source: forID, Target: bodyID, SourceHandle: "body"},
+		{ID: "edge-for-done", Source: forID, Target: doneID, SourceHandle: "done"},
+	})
+	if err != nil {
+		t.Fatalf("expected for workflow to validate: %v", err)
+	}
+}
+
+func TestValidateDefinitionAllowsForLoopWithoutInboundOrDone(t *testing.T) {
+	err := ValidateDefinition([]entity.TaskEntity{
+		{ID: "for", Name: "for", Type: "for", Config: `{"start":1,"end":3,"var":"N"}`},
+		{ID: "body", Name: "body", Type: "shell", Config: `{"script":"printf body"}`},
+	}, []entity.EdgeEntity{
+		{ID: "edge-for-body", Source: "for", Target: "body", SourceHandle: "body"},
+	})
+	if err != nil {
+		t.Fatalf("expected for workflow without inbound or done to validate: %v", err)
+	}
+}
+
+func TestValidateDefinitionRejectsInvalidForVariable(t *testing.T) {
+	err := ValidateDefinition([]entity.TaskEntity{
+		{ID: "root", Name: "root", Type: "shell", Config: `{"script":"printf root"}`},
+		{ID: "for", Name: "for", Type: "for", Config: `{"start":1,"end":3,"var":"KINETIC_LOOP_VALUE"}`},
+		{ID: "body", Name: "body", Type: "shell", Config: `{"script":"printf body"}`},
+		{ID: "done", Name: "done", Type: "shell", Config: `{"script":"printf done"}`},
+	}, []entity.EdgeEntity{
+		{ID: "edge-root-for", Source: "root", Target: "for"},
+		{ID: "edge-for-body", Source: "for", Target: "body", SourceHandle: "body"},
+		{ID: "edge-for-done", Source: "for", Target: "done", SourceHandle: "done"},
+	})
+	if err == nil {
+		t.Fatal("expected reserved loop variable to fail validation")
 	}
 }

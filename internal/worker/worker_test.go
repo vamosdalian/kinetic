@@ -191,15 +191,15 @@ func TestWorker_ExecuteAssignedTaskRetriesOutputAndTerminalEvents(t *testing.T) 
 	assert.Equal(t, 2, finishedAttempts)
 }
 
-func TestWorker_ExecuteAssignedConditionReportsSelectedBranch(t *testing.T) {
-	finished := make(chan dto.WorkerTaskEvent, 1)
+func TestWorker_ExecuteAssignedConditionFailsAsControllerOnly(t *testing.T) {
+	failed := make(chan dto.WorkerTaskEvent, 1)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/api/internal/nodes/worker-test/task-events" {
 			defer r.Body.Close()
 			var event dto.WorkerTaskEvent
 			require.NoError(t, json.NewDecoder(r.Body).Decode(&event))
-			if event.Type == "finished" {
-				finished <- event
+			if event.Type == "failed" {
+				failed <- event
 			}
 		}
 		w.Header().Set("Content-Type", "application/json")
@@ -221,10 +221,11 @@ func TestWorker_ExecuteAssignedConditionReportsSelectedBranch(t *testing.T) {
 	})
 
 	select {
-	case event := <-finished:
-		assert.Equal(t, "true", event.SelectedBranch)
+	case event := <-failed:
+		assert.Empty(t, event.SelectedBranch)
+		assert.Equal(t, -1, *event.ExitCode)
 	case <-time.After(2 * time.Second):
-		t.Fatal("expected finished condition event")
+		t.Fatal("expected failed condition event")
 	}
 }
 

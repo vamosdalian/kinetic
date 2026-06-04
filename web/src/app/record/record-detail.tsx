@@ -22,6 +22,8 @@ import { formatDashboardDateTime } from "@/lib/dashboard";
 import { buildEventSourceURL } from "@/lib/auth";
 import { cn } from "@/lib/utils";
 import {
+  type EdgeRun,
+  type TaskNodeRun,
   type WorkflowRunDetail,
   type WorkflowRunEvent,
 } from "./types";
@@ -43,6 +45,61 @@ const nodeTypes = {
   runNode: RunNode,
 };
 
+function getTaskSortValue(task: TaskNodeRun) {
+  return `${task.created_at || ""}:${task.task_run_id || ""}`;
+}
+
+function pickLatestTask(tasks: TaskNodeRun[]) {
+  return [...tasks].sort((a, b) => {
+    const loopCompare = (b.loop_index ?? -1) - (a.loop_index ?? -1);
+    if (loopCompare !== 0) {
+      return loopCompare;
+    }
+    return getTaskSortValue(b).localeCompare(getTaskSortValue(a));
+  })[0];
+}
+
+function getLoopOptions(tasks: TaskNodeRun[], forTaskID: string) {
+  const optionMap = new Map<number, number>();
+  for (const task of tasks) {
+    if (task.loop_id !== forTaskID || task.loop_index === undefined || task.loop_index < 0) {
+      continue;
+    }
+    optionMap.set(task.loop_index, task.loop_value ?? task.loop_index);
+  }
+  return [...optionMap.entries()]
+    .sort(([a], [b]) => a - b)
+    .map(([index, value]) => ({ index, value }));
+}
+
+function getForBodyTaskIDs(forTaskID: string, edges: EdgeRun[]) {
+  const outgoing = new Map<string, EdgeRun[]>();
+  for (const edge of edges) {
+    const list = outgoing.get(edge.source) ?? [];
+    list.push(edge);
+    outgoing.set(edge.source, list);
+  }
+
+  const bodyTaskIDs = new Set<string>();
+  const queue = edges
+    .filter((edge) => edge.source === forTaskID && edge.sourceHandle === "body")
+    .map((edge) => edge.target);
+
+  while (queue.length > 0) {
+    const taskID = queue.shift();
+    if (!taskID || bodyTaskIDs.has(taskID)) {
+      continue;
+    }
+    bodyTaskIDs.add(taskID);
+
+    for (const edge of outgoing.get(taskID) ?? []) {
+      queue.push(edge.target);
+    }
+  }
+
+  return bodyTaskIDs;
+}
+
 function parseEventData<T>(event: MessageEvent<string>) {
   try {
     return JSON.parse(event.data) as T;
@@ -59,9 +116,15 @@ export function RecordDetail() {
   const [colorMode, setColorMode] = React.useState<ColorMode>("light");
   const [runData, setRunData] = React.useState<WorkflowRunDetail | null>(null);
   const [selectedTaskId, setSelectedTaskId] = React.useState("");
+  const [selectedLoopByForTaskID, setSelectedLoopByForTaskID] = React.useState<Record<string, number>>({});
   const [rerunning, setRerunning] = React.useState(false);
   const [cancelling, setCancelling] = React.useState(false);
+  const runDataRef = React.useRef<WorkflowRunDetail | null>(null);
   const runStatus = runData?.status;
+
+  React.useEffect(() => {
+    runDataRef.current = runData;
+  }, [runData]);
 
   const fetchRunDetail = React.useCallback(
     async (showLoader: boolean) => {
@@ -98,6 +161,7 @@ export function RecordDetail() {
   const applyTaskUpdate = React.useCallback(
     (
       taskID: string,
+      taskRunID: string | undefined,
       updater: (task: WorkflowRunDetail["taskNodes"][number]) => WorkflowRunDetail["taskNodes"][number]
     ) => {
       setRunData((prev) => {
@@ -107,7 +171,7 @@ export function RecordDetail() {
         return {
           ...prev,
           taskNodes: prev.taskNodes.map((task) =>
-            task.task_id === taskID ? updater(task) : task
+            (taskRunID ? task.task_run_id === taskRunID : task.task_id === taskID) ? updater(task) : task
           ),
         };
       });
@@ -166,7 +230,14 @@ export function RecordDetail() {
       if (!payload?.task_id) {
         return;
       }
-      applyTaskUpdate(payload.task_id, (task) => ({
+      const hasTarget = runDataRef.current?.taskNodes.some((task) =>
+        payload.task_run_id ? task.task_run_id === payload.task_run_id : task.task_id === payload.task_id
+      );
+      if (!hasTarget) {
+        void fetchRunDetail(false);
+        return;
+      }
+      applyTaskUpdate(payload.task_id, payload.task_run_id, (task) => ({
         ...task,
         status: payload.status ?? task.status,
         assigned_node_id: payload.assigned_node_id ?? task.assigned_node_id,
@@ -186,7 +257,14 @@ export function RecordDetail() {
       if (!payload?.task_id || payload.output === undefined) {
         return;
       }
-      applyTaskUpdate(payload.task_id, (task) => ({
+      const hasTarget = runDataRef.current?.taskNodes.some((task) =>
+        payload.task_run_id ? task.task_run_id === payload.task_run_id : task.task_id === payload.task_id
+      );
+      if (!hasTarget) {
+        void fetchRunDetail(false);
+        return;
+      }
+      applyTaskUpdate(payload.task_id, payload.task_run_id, (task) => ({
         ...task,
         output: `${task.output || ""}${payload.output || ""}`,
       }));
@@ -203,16 +281,70 @@ export function RecordDetail() {
     };
   }, [applyTaskUpdate, fetchRunDetail, runId, runStatus]);
 
+  const visibleTasks = React.useMemo(() => {
+    if (!runData) {
+      return [];
+    }
+
+    const tasksByID = new Map<string, TaskNodeRun[]>();
+    for (const task of runData.taskNodes) {
+      const list = tasksByID.get(task.task_id) ?? [];
+      list.push(task);
+      tasksByID.set(task.task_id, list);
+    }
+
+    const selectedLoopScopes = runData.taskNodes
+      .filter((task) => task.type === "for")
+      .map((task) => {
+        const options = getLoopOptions(runData.taskNodes, task.task_id);
+        return {
+          taskID: task.task_id,
+          bodyTaskIDs: getForBodyTaskIDs(task.task_id, runData.edges),
+          loopIndex: selectedLoopByForTaskID[task.task_id] ?? options[options.length - 1]?.index,
+        };
+      })
+      .filter((scope) => scope.loopIndex !== undefined);
+
+    const visible: TaskNodeRun[] = [];
+    for (const [taskID, tasks] of tasksByID.entries()) {
+      const scope = selectedLoopScopes.find((item) => item.bodyTaskIDs.has(taskID));
+      if (scope) {
+        const scopedTask = pickLatestTask(
+          tasks.filter((task) => task.loop_id === scope.taskID && task.loop_index === scope.loopIndex)
+        );
+        if (scopedTask) {
+          visible.push(scopedTask);
+          continue;
+        }
+      }
+
+      const baseTask = pickLatestTask(tasks.filter((task) => (task.loop_index ?? -1) < 0));
+      const fallbackTask = baseTask ?? pickLatestTask(tasks);
+      if (fallbackTask) {
+        visible.push(fallbackTask);
+      }
+    }
+
+    return visible;
+  }, [runData, selectedLoopByForTaskID]);
+
   const selectedTask = React.useMemo(() => {
-    return runData?.taskNodes.find((task) => task.task_id === selectedTaskId) ?? null;
-  }, [runData, selectedTaskId]);
+    return visibleTasks.find((task) => task.task_id === selectedTaskId) ?? null;
+  }, [selectedTaskId, visibleTasks]);
+
+  const selectedLoopOptions = React.useMemo(() => {
+    if (!runData || selectedTask?.type !== "for") {
+      return [];
+    }
+    return getLoopOptions(runData.taskNodes, selectedTask.task_id);
+  }, [runData, selectedTask]);
 
   const nodes = React.useMemo<Node[]>(() => {
     if (!runData) {
       return [];
     }
 
-    return runData.taskNodes.map((task) => ({
+    return visibleTasks.map((task) => ({
       id: task.task_id,
       type: "runNode",
       position: task.position || { x: 0, y: 0 },
@@ -228,7 +360,7 @@ export function RecordDetail() {
       selectable: true,
       selected: task.task_id === selectedTaskId,
     }));
-  }, [runData, selectedTaskId]);
+  }, [runData, selectedTaskId, visibleTasks]);
 
   const edges = React.useMemo<Edge[]>(() => {
     if (!runData) {
@@ -429,7 +561,25 @@ export function RecordDetail() {
           )}
         >
           {selectedTask ? (
-            <RecordRight task={selectedTask} workflowTag={runData.tag} />
+            <RecordRight
+              task={selectedTask}
+              workflowTag={runData.tag}
+              loopOptions={selectedLoopOptions}
+              selectedLoopIndex={
+                selectedTask.type === "for"
+                  ? selectedLoopByForTaskID[selectedTask.task_id] ?? selectedLoopOptions[selectedLoopOptions.length - 1]?.index
+                  : undefined
+              }
+              onLoopIndexChange={(loopIndex) => {
+                if (selectedTask.type !== "for") {
+                  return;
+                }
+                setSelectedLoopByForTaskID((prev) => ({
+                  ...prev,
+                  [selectedTask.task_id]: loopIndex,
+                }));
+              }}
+            />
           ) : (
             <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
               Select a task to inspect its runtime details.

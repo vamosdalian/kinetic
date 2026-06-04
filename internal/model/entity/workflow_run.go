@@ -17,6 +17,7 @@ type WorkflowRunEntity struct {
 }
 
 type TaskRunEntity struct {
+	TaskRunID       string
 	RunID           string
 	TaskID          string
 	WorkflowID      string
@@ -37,9 +38,13 @@ type TaskRunEntity struct {
 	ExitCode        int
 	Output          string
 	Result          string
+	LoopID          string
+	LoopIndex       int
+	LoopValue       int
 }
 
 type EdgeRunEntity struct {
+	EdgeRunID        string
 	RunID            string
 	EdgeID           string
 	WorkflowID       string
@@ -48,4 +53,7 @@ type EdgeRunEntity struct {
 	EdgeSourceHandle string
 	EdgeTargetHandle string
 	CreatedAt        time.Time
+	LoopID           string
+	LoopIndex        int
+	LoopValue        int
 }

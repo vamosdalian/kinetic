@@ -247,6 +247,7 @@ func (h *WorkflowHandler) buildRunDTO(runID string) (dto.WorkflowRun, error) {
 		}
 
 		runDto.TaskNodes[i] = dto.TaskNodeRun{
+			TaskRunID:      t.TaskRunID,
 			RunID:          t.RunID,
 			TaskID:         t.TaskID,
 			Name:           t.TaskName,
@@ -266,17 +267,24 @@ func (h *WorkflowHandler) buildRunDTO(runID string) (dto.WorkflowRun, error) {
 			ExitCode:       t.ExitCode,
 			Output:         t.Output,
 			Result:         t.Result,
+			LoopID:         t.LoopID,
+			LoopIndex:      t.LoopIndex,
+			LoopValue:      t.LoopValue,
 		}
 	}
 
 	for i, e := range edgeRuns {
 		runDto.Edges[i] = dto.EdgeRun{
+			EdgeRunID:    e.EdgeRunID,
 			RunID:        e.RunID,
 			EdgeID:       e.EdgeID,
 			Source:       e.EdgeSource,
 			Target:       e.EdgeTarget,
 			SourceHandle: e.EdgeSourceHandle,
 			TargetHandle: e.EdgeTargetHandle,
+			LoopID:       e.LoopID,
+			LoopIndex:    e.LoopIndex,
+			LoopValue:    e.LoopValue,
 		}
 	}
 

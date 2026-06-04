@@ -13,6 +13,7 @@ type WorkflowRun struct {
 }
 
 type TaskNodeRun struct {
+	TaskRunID      string          `json:"task_run_id"`
 	RunID          string          `json:"run_id"`
 	TaskID         string          `json:"task_id"`
 	Name           string          `json:"name"`
@@ -32,15 +33,22 @@ type TaskNodeRun struct {
 	ExitCode       int             `json:"exit_code"`
 	Output         string          `json:"output"`
 	Result         string          `json:"result,omitempty"`
+	LoopID         string          `json:"loop_id,omitempty"`
+	LoopIndex      int             `json:"loop_index"`
+	LoopValue      int             `json:"loop_value"`
 }
 
 type EdgeRun struct {
+	EdgeRunID    string `json:"edge_run_id"`
 	RunID        string `json:"run_id"`
 	EdgeID       string `json:"edge_id"`
 	Source       string `json:"source"`
 	Target       string `json:"target"`
 	SourceHandle string `json:"sourceHandle,omitempty"`
 	TargetHandle string `json:"targetHandle,omitempty"`
+	LoopID       string `json:"loop_id,omitempty"`
+	LoopIndex    int    `json:"loop_index"`
+	LoopValue    int    `json:"loop_value"`
 }
 
 type WorkflowRunListItem struct {

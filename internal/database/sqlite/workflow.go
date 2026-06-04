@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/sirupsen/logrus"
 	"github.com/vamosdalian/kinetic/internal/model/entity"
 	workflowcfg "github.com/vamosdalian/kinetic/internal/workflow"
@@ -415,11 +416,11 @@ func (s *SqliteDB) CreateScheduledWorkflowRun(workflowID string, runID string, s
 	for _, task := range tasks {
 		if _, err := tx.Exec(`
 			INSERT INTO task_runs (
-				run_id, task_id, workflow_id, task_name, task_description, 
+				task_run_id, run_id, task_id, workflow_id, task_name, task_description, 
 				task_type, task_config, task_tag, task_position, task_node_type, effective_tag, assigned_node_id, assigned_at,
-				status, created_at, started_at, finished_at, exit_code, output, result
-			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '', '', NULL, 'pending', ?, NULL, NULL, 0, '', '')
-		`, runID, task.ID, workflow.ID, task.Name, task.Description,
+				status, created_at, started_at, finished_at, exit_code, output, result, loop_id, loop_index, loop_value
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '', '', NULL, 'pending', ?, NULL, NULL, 0, '', '', '', -1, 0)
+		`, uuid.NewString(), runID, task.ID, workflow.ID, task.Name, task.Description,
 			task.Type, task.Config, task.Tag, task.Position, task.NodeType, now); err != nil {
 			return false, err
 		}
@@ -427,10 +428,10 @@ func (s *SqliteDB) CreateScheduledWorkflowRun(workflowID string, runID string, s
 	for _, edge := range edges {
 		if _, err := tx.Exec(`
 			INSERT INTO edge_runs (
-				run_id, edge_id, workflow_id, edge_source, edge_target, 
-				edge_source_handle, edge_target_handle, created_at
-			) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-		`, runID, edge.ID, workflow.ID, edge.Source, edge.Target,
+				edge_run_id, run_id, edge_id, workflow_id, edge_source, edge_target, 
+				edge_source_handle, edge_target_handle, created_at, loop_id, loop_index, loop_value
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, '', -1, 0)
+		`, uuid.NewString(), runID, edge.ID, workflow.ID, edge.Source, edge.Target,
 			edge.SourceHandle, edge.TargetHandle, now); err != nil {
 			return false, err
 		}

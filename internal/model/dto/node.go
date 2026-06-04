@@ -37,6 +37,7 @@ type AddNodeTagRequest struct {
 type WorkerTaskEvent struct {
 	Type           string `json:"type"`
 	RunID          string `json:"run_id"`
+	TaskRunID      string `json:"task_run_id,omitempty"`
 	TaskID         string `json:"task_id"`
 	Sequence       int64  `json:"sequence,omitempty"`
 	SelectedBranch string `json:"selected_branch,omitempty"`
@@ -54,6 +55,7 @@ type NodeCommand struct {
 }
 
 type AssignedTask struct {
+	TaskRunID      string            `json:"task_run_id,omitempty"`
 	RunID          string            `json:"run_id"`
 	TaskID         string            `json:"task_id"`
 	Name           string            `json:"name"`
