@@ -177,6 +177,31 @@ func (s *SqliteDB) GetTaskRun(runID string, taskID string) (entity.TaskRunEntity
 	return task, nil
 }
 
+func (s *SqliteDB) GetTaskRunByID(taskRunID string) (entity.TaskRunEntity, error) {
+	var task entity.TaskRunEntity
+	var createdAtStr string
+	var assignedAtStr, startedAtStr, finishedAtStr sql.NullString
+	err := s.db.QueryRow(`
+		SELECT task_run_id, run_id, task_id, workflow_id, task_name, task_description,
+		task_type, task_config, task_tag, task_position, task_node_type, effective_tag, assigned_node_id, assigned_at,
+		status, created_at, started_at, finished_at, exit_code, output, result, loop_id, loop_index, loop_value
+		FROM task_runs WHERE task_run_id = ?
+	`, taskRunID).Scan(
+		&task.TaskRunID, &task.RunID, &task.TaskID, &task.WorkflowID, &task.TaskName, &task.TaskDescription,
+		&task.TaskType, &task.TaskConfig, &task.TaskTag, &task.TaskPosition, &task.TaskNodeType, &task.EffectiveTag, &task.AssignedNodeID, &assignedAtStr,
+		&task.Status, &createdAtStr, &startedAtStr, &finishedAtStr,
+		&task.ExitCode, &task.Output, &task.Result, &task.LoopID, &task.LoopIndex, &task.LoopValue,
+	)
+	if err != nil {
+		return entity.TaskRunEntity{}, err
+	}
+	task.CreatedAt, _ = parseTime(createdAtStr)
+	task.AssignedAt = parseNullableTime(assignedAtStr)
+	task.StartedAt = parseNullableTime(startedAtStr)
+	task.FinishedAt = parseNullableTime(finishedAtStr)
+	return task, nil
+}
+
 func (s *SqliteDB) GetEdgeRuns(runID string) ([]entity.EdgeRunEntity, error) {
 	rows, err := s.db.Query(`
 		SELECT edge_run_id, run_id, edge_id, workflow_id, edge_source, edge_target, 
@@ -372,6 +397,25 @@ func (s *SqliteDB) PrepareTaskRunsForLoop(runID string, taskIDs []string, loopID
 		}
 	}
 
+	for _, targetID := range taskIDs {
+		if _, err := tx.Exec(`
+			UPDATE edge_runs
+			SET loop_id = ?, loop_index = ?, loop_value = ?
+			WHERE run_id = ? AND edge_source = ? AND edge_target = ?
+		`, loopID, loopIndex, loopValue, runID, loopID, targetID); err != nil {
+			return err
+		}
+		for _, sourceID := range taskIDs {
+			if _, err := tx.Exec(`
+				UPDATE edge_runs
+				SET loop_id = ?, loop_index = ?, loop_value = ?
+				WHERE run_id = ? AND edge_source = ? AND edge_target = ?
+			`, loopID, loopIndex, loopValue, runID, sourceID, targetID); err != nil {
+				return err
+			}
+		}
+	}
+
 	return tx.Commit()
 }
 
@@ -381,6 +425,15 @@ func (s *SqliteDB) MarkTaskRunRunning(runID string, taskID string) error {
 		SET status = 'running', started_at = DATETIME('now'), finished_at = NULL
 		WHERE task_run_id = (SELECT task_run_id FROM task_runs WHERE run_id = ? AND task_id = ? ORDER BY loop_index DESC, created_at DESC, task_run_id DESC LIMIT 1)
 	`, runID, taskID)
+	return err
+}
+
+func (s *SqliteDB) MarkTaskRunRunningByID(taskRunID string) error {
+	_, err := s.db.Exec(`
+		UPDATE task_runs
+		SET status = 'running', started_at = DATETIME('now'), finished_at = NULL
+		WHERE task_run_id = ?
+	`, taskRunID)
 	return err
 }
 
@@ -399,6 +452,15 @@ func (s *SqliteDB) FinishTaskRun(runID string, taskID string, status string, exi
 		SET status = ?, finished_at = DATETIME('now'), exit_code = ?, output = ?, result = ?
 		WHERE task_run_id = (SELECT task_run_id FROM task_runs WHERE run_id = ? AND task_id = ? ORDER BY loop_index DESC, created_at DESC, task_run_id DESC LIMIT 1)
 	`, status, exitCode, output, normalizeJSONText(result), runID, taskID)
+	return err
+}
+
+func (s *SqliteDB) FinishTaskRunByID(taskRunID string, status string, exitCode int, output string, result string) error {
+	_, err := s.db.Exec(`
+		UPDATE task_runs
+		SET status = ?, finished_at = DATETIME('now'), exit_code = ?, output = ?, result = ?
+		WHERE task_run_id = ?
+	`, status, exitCode, output, normalizeJSONText(result), taskRunID)
 	return err
 }
 
@@ -426,6 +488,15 @@ func (s *SqliteDB) AppendTaskRunOutput(runID string, taskID string, chunk string
 		SET output = COALESCE(output, '') || ?
 		WHERE task_run_id = (SELECT task_run_id FROM task_runs WHERE run_id = ? AND task_id = ? ORDER BY loop_index DESC, created_at DESC, task_run_id DESC LIMIT 1)
 	`, chunk, runID, taskID)
+	return err
+}
+
+func (s *SqliteDB) AppendTaskRunOutputByID(taskRunID string, chunk string) error {
+	_, err := s.db.Exec(`
+		UPDATE task_runs
+		SET output = COALESCE(output, '') || ?
+		WHERE task_run_id = ?
+	`, chunk, taskRunID)
 	return err
 }
 

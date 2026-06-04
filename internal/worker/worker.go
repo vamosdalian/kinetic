@@ -400,11 +400,12 @@ func (w *Worker) executeAssignedTask(ctx context.Context, task dto.AssignedTask)
 		exitCode = -1
 	}
 	reportEvent(dto.WorkerTaskEvent{
-		Type:     "failed",
-		RunID:    task.RunID,
-		TaskID:   task.TaskID,
-		Result:   result.Result,
-		ExitCode: &exitCode,
+		Type:      "failed",
+		RunID:     task.RunID,
+		TaskRunID: task.TaskRunID,
+		TaskID:    task.TaskID,
+		Result:    result.Result,
+		ExitCode:  &exitCode,
 	})
 }
 

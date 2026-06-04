@@ -517,6 +517,90 @@ func TestRunService_DistributedForLoopRequeuesBodyWithLoopContext(t *testing.T) 
 	assert.Equal(t, forID, bodyRuns[0].LoopID)
 	assert.Equal(t, forID, bodyRuns[1].LoopID)
 	assert.ElementsMatch(t, []int{0, 1}, []int{bodyRuns[0].LoopIndex, bodyRuns[1].LoopIndex})
+
+	edgeRuns, err := db.GetEdgeRuns(runID)
+	require.NoError(t, err)
+	bodyEntryEdge := findEdgeRun(t, edgeRuns, forID, bodyID)
+	assert.Equal(t, forID, bodyEntryEdge.LoopID)
+	assert.Equal(t, 1, bodyEntryEdge.LoopIndex)
+	assert.Equal(t, 2, bodyEntryEdge.LoopValue)
+	bodyInternalEdge := findEdgeRun(t, edgeRuns, bodyID, bodyNextID)
+	assert.Equal(t, forID, bodyInternalEdge.LoopID)
+	assert.Equal(t, 1, bodyInternalEdge.LoopIndex)
+	assert.Equal(t, 2, bodyInternalEdge.LoopValue)
+	doneEdge := findEdgeRun(t, edgeRuns, forID, doneID)
+	assert.Empty(t, doneEdge.LoopID)
+	assert.Equal(t, -1, doneEdge.LoopIndex)
+}
+
+func TestRunService_DistributedForLoopReplayedOldTaskRunEventDoesNotMutateNextIteration(t *testing.T) {
+	db := setupRunServiceDB(t)
+	service := NewRunService(db, 1)
+	service.EnableDistributed(NewWorkerStreamHub())
+
+	forID := uuid.New().String()
+	bodyID := uuid.New().String()
+	workflowID := seedWorkflow(t, db, []entity.TaskEntity{
+		{
+			ID:       forID,
+			Name:     "for-loop",
+			Type:     "for",
+			Config:   `{"start":1,"end":2,"var":"N"}`,
+			Position: `{"x":0,"y":0}`,
+			NodeType: "baseNodeFull",
+		},
+		{
+			ID:       bodyID,
+			Name:     "body",
+			Type:     "shell",
+			Config:   `{"script":"printf '$N'"}`,
+			Position: `{"x":1,"y":0}`,
+			NodeType: "baseNodeFull",
+		},
+	}, []entity.EdgeEntity{
+		{ID: uuid.New().String(), Source: forID, Target: bodyID, SourceHandle: "body"},
+	})
+
+	runID, err := service.StartWorkflowRun(workflowID)
+	require.NoError(t, err)
+
+	firstBody, err := db.GetTaskRun(runID, bodyID)
+	require.NoError(t, err)
+	require.Equal(t, 0, firstBody.LoopIndex)
+	require.NoError(t, db.AssignTaskRun(runID, bodyID, "node-1"))
+	require.NoError(t, service.HandleWorkerTaskEvent("node-1", dto.WorkerTaskEvent{
+		Type:      "started",
+		RunID:     runID,
+		TaskRunID: firstBody.TaskRunID,
+		TaskID:    bodyID,
+	}))
+	exitCode := 0
+	require.NoError(t, service.HandleWorkerTaskEvent("node-1", dto.WorkerTaskEvent{
+		Type:      "finished",
+		RunID:     runID,
+		TaskRunID: firstBody.TaskRunID,
+		TaskID:    bodyID,
+		ExitCode:  &exitCode,
+	}))
+
+	secondBody, err := db.GetTaskRun(runID, bodyID)
+	require.NoError(t, err)
+	require.NotEqual(t, firstBody.TaskRunID, secondBody.TaskRunID)
+	require.Equal(t, 1, secondBody.LoopIndex)
+	require.Equal(t, "queued", secondBody.Status)
+
+	require.NoError(t, service.HandleWorkerTaskEvent("node-1", dto.WorkerTaskEvent{
+		Type:      "finished",
+		RunID:     runID,
+		TaskRunID: firstBody.TaskRunID,
+		TaskID:    bodyID,
+		ExitCode:  &exitCode,
+	}))
+
+	secondBody, err = db.GetTaskRun(runID, bodyID)
+	require.NoError(t, err)
+	assert.Equal(t, "queued", secondBody.Status)
+	assert.Empty(t, secondBody.Output)
 }
 
 func TestRunService_DistributedForLoopWithoutDoneCompletes(t *testing.T) {
@@ -568,6 +652,17 @@ func finishAssignedTask(t *testing.T, db database.Database, service *RunService,
 	require.NoError(t, service.HandleWorkerTaskEvent("node-1", dto.WorkerTaskEvent{Type: "started", RunID: runID, TaskID: taskID}))
 	exitCode := 0
 	require.NoError(t, service.HandleWorkerTaskEvent("node-1", dto.WorkerTaskEvent{Type: "finished", RunID: runID, TaskID: taskID, ExitCode: &exitCode}))
+}
+
+func findEdgeRun(t *testing.T, edges []entity.EdgeRunEntity, source string, target string) entity.EdgeRunEntity {
+	t.Helper()
+	for _, edge := range edges {
+		if edge.EdgeSource == source && edge.EdgeTarget == target {
+			return edge
+		}
+	}
+	t.Fatalf("edge %s -> %s not found", source, target)
+	return entity.EdgeRunEntity{}
 }
 
 func TestRunService_BranchedWorkflowSuccess(t *testing.T) {

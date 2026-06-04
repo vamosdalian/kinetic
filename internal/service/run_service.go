@@ -238,7 +238,7 @@ func (s *RunService) CancelWorkflowRun(runID string) error {
 				if err := s.db.FinishTaskRun(runID, task.TaskID, "cancelled", task.ExitCode, output, task.Result); err != nil {
 					return err
 				}
-				s.clearWorkerOutputSequence(runID, task.TaskID)
+				s.clearWorkerOutputSequence(runID, task.TaskID, task.TaskRunID)
 				if task.AssignedNodeID != "" {
 					_ = s.db.DecrementNodeRunningCount(task.AssignedNodeID)
 					if s.commandHub != nil && (task.Status == "assigned" || task.Status == "running") {
@@ -922,12 +922,16 @@ func (s *RunService) publishTaskStatus(runID string, taskID string) {
 	if err != nil {
 		return
 	}
+	s.publishTaskRunStatus(task)
+}
+
+func (s *RunService) publishTaskRunStatus(task entity.TaskRunEntity) {
 	exitCode := task.ExitCode
 	s.publishEvent(dto.WorkflowRunEvent{
 		Type:           "task_status",
-		RunID:          runID,
+		RunID:          task.RunID,
 		TaskRunID:      task.TaskRunID,
-		TaskID:         taskID,
+		TaskID:         task.TaskID,
 		Status:         task.Status,
 		AssignedNodeID: task.AssignedNodeID,
 		EffectiveTag:   task.EffectiveTag,
@@ -990,7 +994,7 @@ func (s *RunService) HandleWorkerTaskEvent(nodeID string, event dto.WorkerTaskEv
 	s.stateMu.Lock()
 	defer s.stateMu.Unlock()
 
-	task, err := s.db.GetTaskRun(event.RunID, event.TaskID)
+	task, err := s.taskRunForWorkerEvent(event)
 	if err != nil {
 		return err
 	}
@@ -1007,23 +1011,35 @@ func (s *RunService) HandleWorkerTaskEvent(nodeID string, event dto.WorkerTaskEv
 
 	switch event.Type {
 	case "started":
-		if err := s.db.MarkTaskRunRunning(event.RunID, event.TaskID); err != nil {
+		if event.TaskRunID != "" {
+			if err := s.db.MarkTaskRunRunningByID(task.TaskRunID); err != nil {
+				return err
+			}
+		} else if err := s.db.MarkTaskRunRunning(event.RunID, event.TaskID); err != nil {
 			return err
 		}
 		s.recordAttempt(event.RunID, event.TaskID)
-		s.publishTaskStatus(event.RunID, event.TaskID)
+		updatedTask, err := s.taskRunForWorkerEvent(event)
+		if err != nil {
+			return err
+		}
+		s.publishTaskRunStatus(updatedTask)
 		return nil
 	case "output":
 		if event.Output == "" {
 			return nil
 		}
-		if s.seenWorkerOutputEvent(event.RunID, event.TaskID, event.Sequence) {
+		if s.seenWorkerOutputEvent(event.RunID, event.TaskID, task.TaskRunID, event.Sequence) {
 			return nil
 		}
-		if err := s.db.AppendTaskRunOutput(event.RunID, event.TaskID, event.Output); err != nil {
+		if event.TaskRunID != "" {
+			if err := s.db.AppendTaskRunOutputByID(task.TaskRunID, event.Output); err != nil {
+				return err
+			}
+		} else if err := s.db.AppendTaskRunOutput(event.RunID, event.TaskID, event.Output); err != nil {
 			return err
 		}
-		s.recordWorkerOutputEvent(event.RunID, event.TaskID, event.Sequence)
+		s.recordWorkerOutputEvent(event.RunID, event.TaskID, task.TaskRunID, event.Sequence)
 		s.publishEvent(dto.WorkflowRunEvent{
 			Type:      "task_output",
 			RunID:     event.RunID,
@@ -1041,12 +1057,16 @@ func (s *RunService) HandleWorkerTaskEvent(nodeID string, event dto.WorkerTaskEv
 			return nil
 		}
 		if event.Output != "" {
-			if err := s.db.AppendTaskRunOutput(event.RunID, event.TaskID, event.Output); err != nil {
+			if event.TaskRunID != "" {
+				if err := s.db.AppendTaskRunOutputByID(task.TaskRunID, event.Output); err != nil {
+					return err
+				}
+			} else if err := s.db.AppendTaskRunOutput(event.RunID, event.TaskID, event.Output); err != nil {
 				return err
 			}
 		}
 
-		updatedTask, err := s.db.GetTaskRun(event.RunID, event.TaskID)
+		updatedTask, err := s.taskRunForWorkerEvent(event)
 		if err != nil {
 			return err
 		}
@@ -1059,20 +1079,39 @@ func (s *RunService) HandleWorkerTaskEvent(nodeID string, event dto.WorkerTaskEv
 		if err != nil {
 			return err
 		}
-		if err := s.db.FinishTaskRun(event.RunID, event.TaskID, finalStatus, exitCode, updatedTask.Output, result); err != nil {
+		if event.TaskRunID != "" {
+			if err := s.db.FinishTaskRunByID(updatedTask.TaskRunID, finalStatus, exitCode, updatedTask.Output, result); err != nil {
+				return err
+			}
+		} else if err := s.db.FinishTaskRun(event.RunID, event.TaskID, finalStatus, exitCode, updatedTask.Output, result); err != nil {
 			return err
 		}
 		if updatedTask.AssignedNodeID != "" {
 			_ = s.db.DecrementNodeRunningCount(updatedTask.AssignedNodeID)
 		}
-		s.publishTaskStatus(event.RunID, event.TaskID)
 
 		updatedTask.Status = finalStatus
 		updatedTask.Result = result
+		updatedTask.ExitCode = exitCode
+		s.publishTaskRunStatus(updatedTask)
 		return s.advanceTerminalTaskProgress(updatedTask)
 	}
 
 	return nil
+}
+
+func (s *RunService) taskRunForWorkerEvent(event dto.WorkerTaskEvent) (entity.TaskRunEntity, error) {
+	if event.TaskRunID == "" {
+		return s.db.GetTaskRun(event.RunID, event.TaskID)
+	}
+	task, err := s.db.GetTaskRunByID(event.TaskRunID)
+	if err != nil {
+		return entity.TaskRunEntity{}, err
+	}
+	if task.RunID != event.RunID || task.TaskID != event.TaskID {
+		return entity.TaskRunEntity{}, fmt.Errorf("task run %s does not match event task %s/%s", event.TaskRunID, event.RunID, event.TaskID)
+	}
+	return task, nil
 }
 
 func (s *RunService) HandleNodeOffline(nodeID string) error {
@@ -1128,19 +1167,19 @@ func (s *RunService) advanceTerminalTaskProgress(task entity.TaskRunEntity) erro
 
 	switch task.Status {
 	case "success":
-		s.clearWorkerOutputSequence(task.RunID, task.TaskID)
+		s.clearWorkerOutputSequence(task.RunID, task.TaskID, task.TaskRunID)
 		s.clearRetryState(task.RunID, task.TaskID)
 		return s.queueReadyTasks(task.RunID)
 	case "failed":
 		if s.shouldRetryTask(task) {
 			policy, _ := workflowcfg.ParseTaskPolicy(task.TaskConfig)
-			return s.requeueForRetry(task.RunID, task.TaskID, task.EffectiveTag, policy.RetryBackoffSeconds)
+			return s.requeueForRetry(task, policy.RetryBackoffSeconds)
 		}
-		s.clearWorkerOutputSequence(task.RunID, task.TaskID)
+		s.clearWorkerOutputSequence(task.RunID, task.TaskID, task.TaskRunID)
 		s.clearRetryState(task.RunID, task.TaskID)
 		return s.failWorkflowRunFromTask(task.RunID)
 	case "cancelled":
-		s.clearWorkerOutputSequence(task.RunID, task.TaskID)
+		s.clearWorkerOutputSequence(task.RunID, task.TaskID, task.TaskRunID)
 		s.clearRetryState(task.RunID, task.TaskID)
 		return s.queueReadyTasks(task.RunID)
 	default:
@@ -1150,13 +1189,13 @@ func (s *RunService) advanceTerminalTaskProgress(task entity.TaskRunEntity) erro
 
 // requeueForRetry puts a task back on the queue after a backoff delay so it can
 // be redispatched (possibly to a different node).
-func (s *RunService) requeueForRetry(runID string, taskID string, effectiveTag string, backoffSeconds int) error {
-	s.clearWorkerOutputSequence(runID, taskID)
-	s.setRetryBackoff(runID, taskID, backoffSeconds)
-	if err := s.db.QueueTaskRun(runID, taskID, effectiveTag); err != nil {
+func (s *RunService) requeueForRetry(task entity.TaskRunEntity, backoffSeconds int) error {
+	s.clearWorkerOutputSequence(task.RunID, task.TaskID, task.TaskRunID)
+	s.setRetryBackoff(task.RunID, task.TaskID, backoffSeconds)
+	if err := s.db.QueueTaskRun(task.RunID, task.TaskID, task.EffectiveTag); err != nil {
 		return err
 	}
-	s.publishTaskStatus(runID, taskID)
+	s.publishTaskStatus(task.RunID, task.TaskID)
 	return nil
 }
 
@@ -1199,7 +1238,7 @@ func (s *RunService) RequeueStaleUnknownTasks(timeout time.Duration) error {
 
 		if s.shouldRetryTask(task) {
 			policy, _ := workflowcfg.ParseTaskPolicy(task.TaskConfig)
-			if err := s.requeueForRetry(task.RunID, task.TaskID, task.EffectiveTag, policy.RetryBackoffSeconds); err != nil {
+			if err := s.requeueForRetry(task, policy.RetryBackoffSeconds); err != nil {
 				logrus.Errorf("failed to requeue stale unknown task %s/%s: %v", task.RunID, task.TaskID, err)
 			}
 			continue
@@ -1995,22 +2034,32 @@ func taskRetryKey(runID string, taskID string) string {
 	return runID + ":" + taskID
 }
 
-func (s *RunService) seenWorkerOutputEvent(runID string, taskID string, sequence int64) bool {
+func taskOutputKey(runID string, taskID string, taskRunID string) string {
+	if taskRunID != "" {
+		return runID + ":" + taskRunID
+	}
+	return taskRetryKey(runID, taskID)
+}
+
+func (s *RunService) seenWorkerOutputEvent(runID string, taskID string, taskRunID string, sequence int64) bool {
 	if sequence <= 0 {
 		return false
 	}
-	return sequence <= s.outputSequences[taskRetryKey(runID, taskID)]
+	return sequence <= s.outputSequences[taskOutputKey(runID, taskID, taskRunID)]
 }
 
-func (s *RunService) recordWorkerOutputEvent(runID string, taskID string, sequence int64) {
+func (s *RunService) recordWorkerOutputEvent(runID string, taskID string, taskRunID string, sequence int64) {
 	if sequence <= 0 {
 		return
 	}
-	s.outputSequences[taskRetryKey(runID, taskID)] = sequence
+	s.outputSequences[taskOutputKey(runID, taskID, taskRunID)] = sequence
 }
 
-func (s *RunService) clearWorkerOutputSequence(runID string, taskID string) {
-	delete(s.outputSequences, taskRetryKey(runID, taskID))
+func (s *RunService) clearWorkerOutputSequence(runID string, taskID string, taskRunID string) {
+	delete(s.outputSequences, taskOutputKey(runID, taskID, taskRunID))
+	if taskRunID != "" {
+		delete(s.outputSequences, taskRetryKey(runID, taskID))
+	}
 }
 
 func (s *RunService) retryEntry(key string) *taskRetryState {
