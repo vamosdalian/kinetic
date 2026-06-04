@@ -131,9 +131,17 @@ At runtime, task environment values are assembled from multiple sources.
 
 Current reserved variables include:
 
+- `KINETIC_WORKFLOW_ID`
 - `KINETIC_WORKFLOW_NAME`
+- `KINETIC_WORKFLOW_RUN_ID`
+- `KINETIC_TASK_ID`
+- `KINETIC_TASK_REF`
 - `KINETIC_TASK_NAME`
-- `KINETIC_RESULT_PATH`
+- `KINETIC_TASK_RUN_ID`
+- `KINETIC_LOOP_NAME` inside loop body tasks
+- `KINETIC_LOOP_INDEX` inside loop body tasks
+- `KINETIC_LOOP_VALUE` inside loop body tasks
+- `KINETIC_RESULT_PATH` for shell tasks
 
 Keys starting with `KINETIC_` are reserved and cannot be defined by users.
 

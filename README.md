@@ -200,9 +200,17 @@ Environment variable precedence is:
 
 Current system-provided variables:
 
+- `KINETIC_WORKFLOW_ID`
 - `KINETIC_WORKFLOW_NAME`
+- `KINETIC_WORKFLOW_RUN_ID`
+- `KINETIC_TASK_ID`
+- `KINETIC_TASK_REF`
 - `KINETIC_TASK_NAME`
-- `KINETIC_RESULT_PATH`
+- `KINETIC_TASK_RUN_ID`
+- `KINETIC_LOOP_NAME` inside loop body tasks
+- `KINETIC_LOOP_INDEX` inside loop body tasks
+- `KINETIC_LOOP_VALUE` inside loop body tasks
+- `KINETIC_RESULT_PATH` for shell tasks
 
 Keys starting with `KINETIC_` are reserved for the system and cannot be defined by users in workflow or task config.
 

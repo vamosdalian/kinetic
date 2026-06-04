@@ -660,15 +660,23 @@ func (s *RunService) executeTaskAttempt(ctx context.Context, runID string, task 
 	return result, "", err
 }
 
-func buildTaskEnvironment(run entity.WorkflowRunEntity, taskName string, workflowEnv map[string]string, policy workflowcfg.TaskPolicy, loopContext *workflowcfg.LoopContext) map[string]string {
+func buildTaskEnvironment(run entity.WorkflowRunEntity, task entity.TaskRunEntity, workflowEnv map[string]string, policy workflowcfg.TaskPolicy, loopContext *workflowcfg.LoopContext) map[string]string {
+	taskRef := strings.TrimSpace(task.TaskRef)
+	if taskRef == "" {
+		taskRef = entity.DefaultTaskRef(task.TaskID)
+	}
 	env := map[string]string{
-		workflowcfg.ReservedEnvPrefix + "WORKFLOW_NAME": run.WorkflowName,
-		workflowcfg.ReservedEnvPrefix + "TASK_NAME":     taskName,
+		workflowcfg.ReservedEnvPrefix + "WORKFLOW_ID":     run.WorkflowID,
+		workflowcfg.ReservedEnvPrefix + "WORKFLOW_NAME":   run.WorkflowName,
+		workflowcfg.ReservedEnvPrefix + "WORKFLOW_RUN_ID": run.RunID,
+		workflowcfg.ReservedEnvPrefix + "TASK_ID":         task.TaskID,
+		workflowcfg.ReservedEnvPrefix + "TASK_REF":        taskRef,
+		workflowcfg.ReservedEnvPrefix + "TASK_NAME":       task.TaskName,
+		workflowcfg.ReservedEnvPrefix + "TASK_RUN_ID":     task.TaskRunID,
 	}
 	if loopContext != nil {
 		loopIndex := strconv.Itoa(loopContext.Index)
 		loopValue := strconv.Itoa(loopContext.Value)
-		env[workflowcfg.ReservedEnvPrefix+"LOOP_ID"] = loopContext.ID
 		env[workflowcfg.ReservedEnvPrefix+"LOOP_NAME"] = loopContext.Name
 		env[workflowcfg.ReservedEnvPrefix+"LOOP_INDEX"] = loopIndex
 		env[workflowcfg.ReservedEnvPrefix+"LOOP_VALUE"] = loopValue
@@ -1739,7 +1747,7 @@ func (s *RunService) prepareTaskExecution(runID string, task entity.TaskRunEntit
 		return "", workflowcfg.TaskPolicy{}, nil, fmt.Errorf("parse rendered task policy: %w", err)
 	}
 
-	return renderedConfig, renderedPolicy, buildTaskEnvironment(run, task.TaskName, renderedWorkflowEnv, renderedPolicy, loopContext), nil
+	return renderedConfig, renderedPolicy, buildTaskEnvironment(run, task, renderedWorkflowEnv, renderedPolicy, loopContext), nil
 }
 
 func buildTaskTemplateContext(run entity.WorkflowRunEntity, workflowConfigValue any, workflowEnv map[string]string, task entity.TaskRunEntity, taskEnv map[string]string, conditionInput *workflowcfg.ConditionInput, loopContext *workflowcfg.LoopContext, upstreamContext map[string]any) map[string]any {
