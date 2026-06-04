@@ -38,6 +38,7 @@ const (
 
 type TaskNode struct {
 	ID          string          `json:"id"`
+	Ref         string          `json:"ref"`
 	Name        string          `json:"name"`
 	Description string          `json:"description,omitempty"`
 	Type        TaskType        `json:"type"`

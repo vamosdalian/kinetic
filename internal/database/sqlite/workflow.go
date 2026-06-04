@@ -469,7 +469,7 @@ func (s *SqliteDB) DeleteWorkflowDefinition(id string) (bool, error) {
 }
 
 func (s *SqliteDB) ListTasks(workflowID string) ([]entity.TaskEntity, error) {
-	rows, err := s.db.Query("SELECT id, workflow_id, name, type, description, config, tag, position, node_type FROM tasks WHERE workflow_id = ? ORDER BY id ASC", workflowID)
+	rows, err := s.db.Query("SELECT id, workflow_id, ref, name, type, description, config, tag, position, node_type FROM tasks WHERE workflow_id = ? ORDER BY id ASC", workflowID)
 	if err != nil {
 		return nil, err
 	}
@@ -478,7 +478,7 @@ func (s *SqliteDB) ListTasks(workflowID string) ([]entity.TaskEntity, error) {
 	var tasks []entity.TaskEntity
 	for rows.Next() {
 		var task entity.TaskEntity
-		err := rows.Scan(&task.ID, &task.WorkflowID, &task.Name, &task.Type, &task.Description, &task.Config, &task.Tag, &task.Position, &task.NodeType)
+		err := rows.Scan(&task.ID, &task.WorkflowID, &task.Ref, &task.Name, &task.Type, &task.Description, &task.Config, &task.Tag, &task.Position, &task.NodeType)
 		if err != nil {
 			return nil, err
 		}
@@ -493,10 +493,11 @@ func (s *SqliteDB) SaveTasks(req []entity.TaskEntity) ([]entity.TaskEntity, erro
 
 func saveTasksWithPreparer(preparer statementPreparer, req []entity.TaskEntity) ([]entity.TaskEntity, error) {
 	stmt, err := preparer.Prepare(`
-		INSERT INTO tasks (id, workflow_id, name, type, description, config, tag, position, node_type) 
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+		INSERT INTO tasks (id, workflow_id, ref, name, type, description, config, tag, position, node_type) 
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(id) DO UPDATE SET
 			workflow_id = excluded.workflow_id,
+			ref = excluded.ref,
 			name = excluded.name,
 			type = excluded.type,
 			description = excluded.description,
@@ -510,7 +511,7 @@ func saveTasksWithPreparer(preparer statementPreparer, req []entity.TaskEntity) 
 	}
 	defer stmt.Close()
 	for _, task := range req {
-		_, err = stmt.Exec(task.ID, task.WorkflowID, task.Name, task.Type, task.Description, task.Config, task.Tag, task.Position, task.NodeType)
+		_, err = stmt.Exec(task.ID, task.WorkflowID, task.RefOrDefault(), task.Name, task.Type, task.Description, task.Config, task.Tag, task.Position, task.NodeType)
 		if err != nil {
 			return nil, err
 		}

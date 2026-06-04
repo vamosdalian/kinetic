@@ -246,6 +246,16 @@ CREATE INDEX IF NOT EXISTS idx_task_runs_run_id_loop
 CREATE INDEX IF NOT EXISTS idx_edge_runs_run_id_edge_id
 	ON edge_runs(run_id, edge_id, loop_index ASC);
 `,
+	11: `
+ALTER TABLE tasks ADD COLUMN ref TEXT DEFAULT '';
+UPDATE tasks SET ref = 'task_' || replace(id, '-', '_') WHERE COALESCE(ref, '') = '';
+
+ALTER TABLE task_runs ADD COLUMN task_ref TEXT DEFAULT '';
+UPDATE task_runs SET task_ref = 'task_' || replace(task_id, '-', '_') WHERE COALESCE(task_ref, '') = '';
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_tasks_workflow_ref
+	ON tasks(workflow_id, ref);
+`,
 }
 
 func (s *SqliteDB) Migrate() error {

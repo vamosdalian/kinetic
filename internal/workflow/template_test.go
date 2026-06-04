@@ -26,10 +26,10 @@ func TestRenderStringFailsOnMissingValue(t *testing.T) {
 }
 
 func TestRenderJSONStringsRendersNestedValues(t *testing.T) {
-	rendered, err := RenderJSONStrings(`{"script":"printf '%s' '${{ .upstream.resultJSON.message }}'","headers":{"X-Run":"${{ .runtime.runID }}"}}`, map[string]any{
+	rendered, err := RenderJSONStrings(`{"script":"printf '%s' '${{ .upstream.build.result.message }}'","headers":{"X-Run":"${{ .runtime.runID }}"}}`, map[string]any{
 		"runtime": map[string]any{"runID": "run-1"},
 		"upstream": map[string]any{
-			"resultJSON": map[string]any{"message": "ok"},
+			"build": map[string]any{"result": map[string]any{"message": "ok"}},
 		},
 	})
 
@@ -52,9 +52,10 @@ func TestValidateDefinitionRejectsInvalidTemplateSyntax(t *testing.T) {
 func TestValidateDefinitionAllowsTemplatedConditionExpression(t *testing.T) {
 	err := ValidateDefinition([]entity.TaskEntity{{
 		ID:     "condition-1",
+		Ref:    "condition_1",
 		Name:   "condition-1",
 		Type:   "condition",
-		Config: `{"expression":"exit_code == ${{ .upstream.outputJSON.expected }}"}`,
+		Config: `{"expression":"exit_code == ${{ .upstream.source_1.result.expected }}"}`,
 	}}, []entity.EdgeEntity{{
 		ID:           "edge-in",
 		Source:       "source-1",

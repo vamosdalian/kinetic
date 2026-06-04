@@ -15,39 +15,54 @@ Think of scopes as the data sources you can read from while Kinetic prepares a t
 ### workflow
 
 - Workflow metadata and config snapshot for the current run
+- `.workflow.id`
 - `.workflow.name`
 - `.workflow.description`
-- `.workflow.config`
-- `.workflow.env.KEY`
+- `.workflow.version`
 
 ### task
 
 - The current task being prepared for execution
+- `.task.id`
+- `.task.ref`
 - `.task.name`
-- `.task.type`
 - `.task.description`
-- `.task.env.KEY`
+- `.task.type`
 
 ### runtime
 
 - Execution metadata created by the controller
-- `.runtime.runID`
-- `.runtime.createdAt`
-- `.runtime.startTime`
-- `.runtime.env.startTime`
+- `.runtime.workflow.runid`
+- `.runtime.workflow.createdAt`
+- `.runtime.workflow.startedAt`
+- `.runtime.task.runid`
+- `.runtime.task.createdAt`
+- `.runtime.task.startedAt`
+- `.runtime.loop.name`
+- `.runtime.loop.index`
+- `.runtime.loop.value`
+- `.runtime.loop.var`
 
 ### upstream
 
-Available when the task has one active upstream result.
+Upstream values are keyed by task `ref`. Task refs must be unique in a workflow and use identifier-safe names such as `build`, `deploy_prod`, or `check_1`.
 
-- `.upstream.status`
-- `.upstream.exitCode`
-- `.upstream.output`
-- `.upstream.outputJSON.field`
-- `.upstream.result`
-- `.upstream.resultJSON.field`
+- `.upstream.<ref>.exitCode`
+- `.upstream.<ref>.output`
+- `.upstream.<ref>.result`
+- `.upstream.<ref>.result.key` when the result is valid JSON
 
-`previous` is available as an alias of `upstream`.
+Example:
+
+```text
+${{ .upstream.build.result.version }}
+```
+
+When an upstream task has multiple successful runs, such as a task inside a loop consumed outside that loop, the ref value is a list. Use Go template's `index` function to choose one run, and refer to the official Go template syntax for more advanced access patterns:
+
+```text
+${{ index .upstream.build 0 }}
+```
 
 ## When To Use Templates
 
@@ -94,7 +109,7 @@ If a task depends on upstream output, make that visible in the task name or desc
 
 ### Use Result JSON For Structured Data
 
-If you need stable downstream access, write structured JSON to `KINETIC_RESULT_PATH` and use `resultJSON` instead of parsing plain text.
+If you need stable downstream access, write structured JSON to `KINETIC_RESULT_PATH` and read parsed fields from `.upstream.<ref>.result` instead of parsing plain text.
 
 ## Examples
 
@@ -107,13 +122,13 @@ printf '%s' '${{ .workflow.name }}'
 ### HTTP URL
 
 ```text
-${{ .workflow.env.API_HOST }}/jobs/${{ .runtime.runID }}
+https://api.example.com/jobs/${{ .runtime.workflow.runid }}
 ```
 
-### Workflow Env Value
+### Task Ref
 
 ```text
-service-${{ .task.name }}-${{ .runtime.runID }}
+service-${{ .task.ref }}-${{ .runtime.task.runid }}
 ```
 
 ### HTTP Body
@@ -121,22 +136,22 @@ service-${{ .task.name }}-${{ .runtime.runID }}
 ```json
 {
 	"workflow": "${{ .workflow.name }}",
-	"token": "${{ .upstream.outputJSON.token }}"
+	"token": "${{ .upstream.auth.result.token }}"
 }
 ```
 
 ### Condition Expression
 
 ```text
-json.ok == ${{ .upstream.outputJSON.expected }}
+json.ok == ${{ .upstream.check.result.expected }}
 ```
 
 ### Use Result JSON From A Shell Task
 
-If an upstream shell task writes JSON to `KINETIC_RESULT_PATH`, downstream tasks can read it through `resultJSON`:
+If an upstream shell task with ref `build` writes JSON to `KINETIC_RESULT_PATH`, downstream tasks can read parsed fields directly under `result`:
 
 ```text
-${{ .upstream.resultJSON.release.version }}
+${{ .upstream.build.result.release.version }}
 ```
 
 ## Template Behavior
@@ -155,7 +170,7 @@ This is intentional. It prevents a task from running with silently broken input.
 
 ### Upstream Availability
 
-`upstream` is intended for tasks that have one active parent result. If a task has no active upstream result, upstream references are unavailable.
+`upstream` is built from active direct upstream task runs. If a task has no active upstream result for the requested ref, that reference is unavailable.
 
 ## Common Mistakes
 
@@ -175,7 +190,7 @@ Templates only apply to string fields. They do not convert non-string config fie
 
 ### Expecting Upstream Data Without An Active Parent
 
-If there is no active upstream result for the current task, `upstream` is unavailable.
+If there is no active upstream result for the requested ref, that `upstream` entry is unavailable.
 
 ## Condition Expressions
 
@@ -202,14 +217,14 @@ Condition expressions still use Kinetic's own condition language after templates
 ### Example
 
 ```text
-json.retry_count >= ${{ .upstream.outputJSON.threshold }}
+json.retry_count >= ${{ .upstream.check.result.threshold }}
 ```
 
 ## Notes
 
 - Missing values fail execution.
 - Condition templates must render into a valid condition expression.
-- Upstream references are only available when Kinetic can determine a single active upstream result.
+- Upstream references use task refs, not task names.
 
 ## See Also
 

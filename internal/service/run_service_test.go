@@ -347,6 +347,7 @@ func TestRunService_DistributedConditionRunsOnController(t *testing.T) {
 	workflowID := seedWorkflow(t, db, []entity.TaskEntity{
 		{
 			ID:       rootID,
+			Ref:      "root",
 			Name:     "root",
 			Type:     "shell",
 			Config:   `{"script":"printf 'go'"}`,
@@ -355,9 +356,10 @@ func TestRunService_DistributedConditionRunsOnController(t *testing.T) {
 		},
 		{
 			ID:       conditionID,
+			Ref:      "condition",
 			Name:     "condition",
 			Type:     "condition",
-			Config:   `{"expression":"output == \"${{ .upstream.output }}\""}`,
+			Config:   `{"expression":"output == \"${{ .upstream.root.output }}\""}`,
 			Position: `{"x":1,"y":0}`,
 			NodeType: "baseNodeFull",
 		},
@@ -969,6 +971,7 @@ func TestRunService_RendersTemplatesAcrossWorkflowAndUpstreamContext(t *testing.
 	workflowID := seedWorkflowWithConfig(t, db, `{"env":{"GREETING":"hello-${{ .task.name }}"}}`, []entity.TaskEntity{
 		{
 			ID:       producerID,
+			Ref:      "producer",
 			Name:     "producer",
 			Type:     "shell",
 			Config:   `{"script":"printf 'producer'; printf '{\"message\":\"ok\"}' > \"$KINETIC_RESULT_PATH\""}`,
@@ -977,9 +980,10 @@ func TestRunService_RendersTemplatesAcrossWorkflowAndUpstreamContext(t *testing.
 		},
 		{
 			ID:       consumerID,
+			Ref:      "consumer",
 			Name:     "consumer",
 			Type:     "shell",
-			Config:   `{"script":"printf '%s|%s|%s' \"$GREETING\" \"${{ .upstream.resultJSON.message }}\" \"${{ .runtime.env.startTime }}\""}`,
+			Config:   `{"script":"printf '%s|%s|%s|%s|%s' \"$GREETING\" \"${{ .upstream.producer.result.message }}\" \"${{ .runtime.workflow.startedAt }}\" \"${{ .runtime.workflow.runid }}\" \"${{ .task.ref }}\""}`,
 			Position: `{"x":1,"y":0}`,
 			NodeType: "baseNodeFull",
 		},
@@ -1000,6 +1004,8 @@ func TestRunService_RendersTemplatesAcrossWorkflowAndUpstreamContext(t *testing.
 	if assert.NotNil(t, run.StartedAt) {
 		assert.Contains(t, taskRun.Output, run.StartedAt.UTC().Format(time.RFC3339))
 	}
+	assert.Contains(t, taskRun.Output, runID)
+	assert.Contains(t, taskRun.Output, "consumer")
 }
 
 func TestRunService_FailsOnMissingTemplateValue(t *testing.T) {
@@ -1039,17 +1045,19 @@ func TestRunService_ConditionExpressionSupportsTemplates(t *testing.T) {
 	workflowID := seedWorkflow(t, db, []entity.TaskEntity{
 		{
 			ID:       rootID,
+			Ref:      "root",
 			Name:     "root",
 			Type:     "shell",
-			Config:   `{"script":"printf '{\"expected\":true}'"}`,
+			Config:   `{"script":"printf '{\"expected\":true}'; printf '{\"expected\":true}' > \"$KINETIC_RESULT_PATH\""}`,
 			Position: `{"x":0,"y":0}`,
 			NodeType: "baseNodeFull",
 		},
 		{
 			ID:       conditionID,
+			Ref:      "condition",
 			Name:     "condition",
 			Type:     "condition",
-			Config:   `{"expression":"json.expected == ${{ .upstream.outputJSON.expected }}"}`,
+			Config:   `{"expression":"json.expected == ${{ .upstream.root.result.expected }}"}`,
 			Position: `{"x":1,"y":0}`,
 			NodeType: "baseNodeFull",
 		},

@@ -3,13 +3,17 @@ package workflow
 import (
 	"encoding/json"
 	"fmt"
+	"regexp"
 	"strings"
 
 	"github.com/vamosdalian/kinetic/internal/model/entity"
 )
 
+var taskRefPattern = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
+
 func ValidateDefinition(tasks []entity.TaskEntity, edges []entity.EdgeEntity) error {
 	taskMap := make(map[string]entity.TaskEntity, len(tasks))
+	taskRefMap := make(map[string]string, len(tasks))
 	inbound := make(map[string]int, len(tasks))
 	outbound := make(map[string][]entity.EdgeEntity, len(tasks))
 	indegree := make(map[string]int, len(tasks))
@@ -18,6 +22,14 @@ func ValidateDefinition(tasks []entity.TaskEntity, edges []entity.EdgeEntity) er
 		if task.ID == "" {
 			return fmt.Errorf("task id is required")
 		}
+		ref := task.RefOrDefault()
+		if !taskRefPattern.MatchString(ref) {
+			return fmt.Errorf("task %s has invalid ref %s", task.NameOrID(), ref)
+		}
+		if existingTaskID, ok := taskRefMap[ref]; ok && existingTaskID != task.ID {
+			return fmt.Errorf("task ref %s must be unique", ref)
+		}
+		taskRefMap[ref] = task.ID
 		taskMap[task.ID] = task
 		inbound[task.ID] = 0
 		indegree[task.ID] = 0

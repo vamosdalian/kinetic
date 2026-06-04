@@ -138,6 +138,21 @@ export function Taskform({
       </div>
 
       <div className="grid gap-2">
+        <div className="flex items-center gap-2">
+          <Label htmlFor="task_ref">Ref</Label>
+          <HelpHint content={<>Stable template key for upstream references, such as {"${{ .upstream.build.result.version }}"}. It must be unique in this workflow.</>} />
+        </div>
+        <Input
+          id="task_ref"
+          placeholder="build"
+          value={node.ref}
+          onChange={(e) => {
+            onUpdate(taskId, { ref: e.target.value });
+          }}
+        />
+      </div>
+
+      <div className="grid gap-2">
         <Label htmlFor="description">Description</Label>
         <Textarea
           id="description"

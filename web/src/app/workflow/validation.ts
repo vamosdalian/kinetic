@@ -38,6 +38,10 @@ function isValidEnvName(value: string) {
   return /^[A-Za-z_][A-Za-z0-9_]*$/.test(value) && !value.startsWith("KINETIC_");
 }
 
+function isValidTaskRef(value: string) {
+  return /^[A-Za-z_][A-Za-z0-9_]*$/.test(value);
+}
+
 export function validateWorkflowDefinition(
   taskNodes: Record<string, TaskNode> | TaskNode[],
   edges: Edge[]
@@ -45,6 +49,7 @@ export function validateWorkflowDefinition(
   const tasks = Array.isArray(taskNodes) ? taskNodes : Object.values(taskNodes);
   const errors: string[] = [];
   const taskMap = new Map<string, TaskNode>();
+  const refs = new Map<string, string>();
   const inbound = new Map<string, Edge[]>();
   const outbound = new Map<string, Edge[]>();
 
@@ -57,6 +62,17 @@ export function validateWorkflowDefinition(
     taskMap.set(task.id, task);
     inbound.set(task.id, []);
     outbound.set(task.id, []);
+
+    const ref = (task.ref || "").trim();
+    if (!ref) {
+      errors.push(`${getTaskLabel(task)} requires a ref.`);
+    } else if (!isValidTaskRef(ref)) {
+      errors.push(`${getTaskLabel(task)} has an invalid ref.`);
+    } else if (refs.has(ref) && refs.get(ref) !== task.id) {
+      errors.push(`Task ref ${ref} must be unique.`);
+    } else {
+      refs.set(ref, task.id);
+    }
 
     const config = (task.config ?? {}) as TaskConfig;
     validatePolicy(config, task, errors);

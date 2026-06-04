@@ -16,6 +16,7 @@ type TaskNodeRun struct {
 	TaskRunID      string          `json:"task_run_id"`
 	RunID          string          `json:"run_id"`
 	TaskID         string          `json:"task_id"`
+	Ref            string          `json:"ref"`
 	Name           string          `json:"name"`
 	Description    string          `json:"description,omitempty"`
 	Type           TaskType        `json:"type"`

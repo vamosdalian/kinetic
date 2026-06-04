@@ -705,6 +705,7 @@ func buildRunGraph(tasks []entity.TaskRunEntity, edges []entity.EdgeRunEntity) (
 		taskEntities = append(taskEntities, entity.TaskEntity{
 			ID:          task.TaskID,
 			WorkflowID:  task.WorkflowID,
+			Ref:         task.TaskRef,
 			Name:        task.TaskName,
 			Description: task.TaskDescription,
 			Type:        task.TaskType,
@@ -1709,19 +1710,24 @@ func (s *RunService) prepareTaskExecution(runID string, task entity.TaskRunEntit
 	}
 	rawTaskEnv := extractTemplateEnv(rawTaskConfigValue)
 
-	baseContext := buildTaskTemplateContext(run, workflowConfigValue, workflowConfig.Env, task, rawTaskEnv, conditionInput, loopContext)
+	upstreamContext, err := s.upstreamTemplateContext(runID, task)
+	if err != nil {
+		return "", workflowcfg.TaskPolicy{}, nil, fmt.Errorf("build upstream context: %w", err)
+	}
+
+	baseContext := buildTaskTemplateContext(run, workflowConfigValue, workflowConfig.Env, task, rawTaskEnv, conditionInput, loopContext, upstreamContext)
 	renderedWorkflowEnv, err := workflowcfg.RenderStringMapValues(workflowConfig.Env, baseContext)
 	if err != nil {
 		return "", workflowcfg.TaskPolicy{}, nil, fmt.Errorf("render workflow env: %w", err)
 	}
 
 	setTemplateEnv(workflowConfigValue, renderedWorkflowEnv)
-	renderedTaskEnv, err := workflowcfg.RenderStringMapValues(rawTaskEnv, buildTaskTemplateContext(run, workflowConfigValue, renderedWorkflowEnv, task, rawTaskEnv, conditionInput, loopContext))
+	renderedTaskEnv, err := workflowcfg.RenderStringMapValues(rawTaskEnv, buildTaskTemplateContext(run, workflowConfigValue, renderedWorkflowEnv, task, rawTaskEnv, conditionInput, loopContext, upstreamContext))
 	if err != nil {
 		return "", workflowcfg.TaskPolicy{}, nil, fmt.Errorf("render task env: %w", err)
 	}
 
-	renderContext := buildTaskTemplateContext(run, workflowConfigValue, renderedWorkflowEnv, task, renderedTaskEnv, conditionInput, loopContext)
+	renderContext := buildTaskTemplateContext(run, workflowConfigValue, renderedWorkflowEnv, task, renderedTaskEnv, conditionInput, loopContext, upstreamContext)
 	renderedConfig, err := workflowcfg.RenderJSONStrings(task.TaskConfig, renderContext)
 	if err != nil {
 		return "", workflowcfg.TaskPolicy{}, nil, fmt.Errorf("render task config: %w", err)
@@ -1735,7 +1741,7 @@ func (s *RunService) prepareTaskExecution(runID string, task entity.TaskRunEntit
 	return renderedConfig, renderedPolicy, buildTaskEnvironment(run, task.TaskName, renderedWorkflowEnv, renderedPolicy, loopContext), nil
 }
 
-func buildTaskTemplateContext(run entity.WorkflowRunEntity, workflowConfigValue any, workflowEnv map[string]string, task entity.TaskRunEntity, taskEnv map[string]string, conditionInput *workflowcfg.ConditionInput, loopContext *workflowcfg.LoopContext) map[string]any {
+func buildTaskTemplateContext(run entity.WorkflowRunEntity, workflowConfigValue any, workflowEnv map[string]string, task entity.TaskRunEntity, taskEnv map[string]string, conditionInput *workflowcfg.ConditionInput, loopContext *workflowcfg.LoopContext, upstreamContext map[string]any) map[string]any {
 	runtimeEnv := map[string]string{
 		"workflowName": run.WorkflowName,
 		"taskName":     task.TaskName,
@@ -1755,6 +1761,7 @@ func buildTaskTemplateContext(run entity.WorkflowRunEntity, workflowConfigValue 
 		},
 		"task": map[string]any{
 			"id":          task.TaskID,
+			"ref":         task.TaskRef,
 			"name":        task.TaskName,
 			"description": task.TaskDescription,
 			"type":        task.TaskType,
@@ -1766,46 +1773,104 @@ func buildTaskTemplateContext(run entity.WorkflowRunEntity, workflowConfigValue 
 			"createdAt": run.CreatedAt.UTC().Format(time.RFC3339),
 			"startTime": templateRunStartTime(run),
 			"env":       runtimeEnv,
+			"workflow": map[string]any{
+				"runid":     run.RunID,
+				"createdAt": run.CreatedAt.UTC().Format(time.RFC3339),
+				"startedAt": templateRunStartTime(run),
+			},
+			"task": map[string]any{
+				"runid":     task.TaskRunID,
+				"createdAt": task.CreatedAt.UTC().Format(time.RFC3339),
+				"startedAt": templateTaskStartTime(task),
+			},
 		},
 	}
 
-	upstream := buildTemplateUpstream(conditionInput)
-	if upstream != nil {
-		context["upstream"] = upstream
-		context["previous"] = upstream
+	if len(upstreamContext) > 0 {
+		context["upstream"] = upstreamContext
 	}
 	if loopContext != nil {
-		context["loop"] = map[string]any{
+		loopValue := map[string]any{
 			"id":    loopContext.ID,
 			"name":  loopContext.Name,
 			"index": loopContext.Index,
 			"value": loopContext.Value,
 			"var":   loopContext.Var,
 		}
+		context["loop"] = loopValue
+		context["runtime"].(map[string]any)["loop"] = loopValue
 	}
 
 	return context
 }
 
-func buildTemplateUpstream(input *workflowcfg.ConditionInput) map[string]any {
-	if input == nil {
-		return nil
+func (s *RunService) upstreamTemplateContext(runID string, task entity.TaskRunEntity) (map[string]any, error) {
+	taskRuns, err := s.db.GetTaskRuns(runID)
+	if err != nil {
+		return nil, err
+	}
+	edgeRuns, err := s.db.GetEdgeRuns(runID)
+	if err != nil {
+		return nil, err
 	}
 
-	upstream := map[string]any{
-		"status":   input.Status,
-		"exitCode": input.ExitCode,
-		"output":   input.Output,
-		"result":   input.Result,
+	inboundSources := map[string]bool{}
+	for _, edge := range edgeRuns {
+		if edge.EdgeTarget == task.TaskID {
+			inboundSources[edge.EdgeSource] = true
+		}
 	}
-	if jsonValue := parseTemplateJSON(input.Output); jsonValue != nil {
-		upstream["outputJSON"] = jsonValue
-	}
-	if jsonValue := parseTemplateJSON(input.Result); jsonValue != nil {
-		upstream["resultJSON"] = jsonValue
+	if len(inboundSources) == 0 {
+		return nil, nil
 	}
 
-	return upstream
+	grouped := map[string][]any{}
+	for _, candidate := range taskRuns {
+		if !inboundSources[candidate.TaskID] || candidate.Status != "success" {
+			continue
+		}
+		if task.LoopID != "" && (candidate.LoopID != task.LoopID || candidate.LoopIndex != task.LoopIndex) {
+			continue
+		}
+		ref := strings.TrimSpace(candidate.TaskRef)
+		if ref == "" {
+			ref = entity.DefaultTaskRef(candidate.TaskID)
+		}
+		grouped[ref] = append(grouped[ref], buildTemplateTaskRun(candidate))
+	}
+
+	if len(grouped) == 0 {
+		return nil, nil
+	}
+	context := make(map[string]any, len(grouped))
+	for ref, runs := range grouped {
+		if len(runs) == 1 {
+			context[ref] = runs[0]
+			continue
+		}
+		context[ref] = runs
+	}
+	return context, nil
+}
+
+func buildTemplateTaskRun(task entity.TaskRunEntity) map[string]any {
+	result := any(task.Result)
+	if parsed := parseTemplateJSON(task.Result); parsed != nil {
+		result = parsed
+	}
+	value := map[string]any{
+		"exitCode": task.ExitCode,
+		"output":   task.Output,
+		"result":   result,
+	}
+	if task.LoopID != "" {
+		value["loop"] = map[string]any{
+			"id":    task.LoopID,
+			"index": task.LoopIndex,
+			"value": task.LoopValue,
+		}
+	}
+	return value
 }
 
 func decodeTemplateJSONValue(raw string) (any, error) {
@@ -1878,6 +1943,13 @@ func templateRunStartTime(run entity.WorkflowRunEntity) string {
 		return run.StartedAt.UTC().Format(time.RFC3339)
 	}
 	return run.CreatedAt.UTC().Format(time.RFC3339)
+}
+
+func templateTaskStartTime(task entity.TaskRunEntity) string {
+	if task.StartedAt != nil && !task.StartedAt.IsZero() {
+		return task.StartedAt.UTC().Format(time.RFC3339)
+	}
+	return ""
 }
 
 func taskResultForWorkerEvent(task entity.TaskRunEntity, finalStatus string, event dto.WorkerTaskEvent) (string, error) {
