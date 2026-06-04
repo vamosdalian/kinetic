@@ -410,34 +410,8 @@ func (w *Worker) executeAssignedTask(ctx context.Context, task dto.AssignedTask)
 }
 
 func (w *Worker) runTaskAttempt(ctx context.Context, task dto.AssignedTask, onOutput executor.OutputFunc) (executor.TaskResult, string, error) {
-	if task.Type == dto.TaskTypeCondition {
-		var cfg workflowcfg.ConditionConfig
-		if err := json.Unmarshal(task.Config, &cfg); err != nil {
-			return executor.TaskResult{ExitCode: -1}, "", fmt.Errorf("invalid condition config: %w", err)
-		}
-		if task.ConditionInput == nil {
-			return executor.TaskResult{ExitCode: -1}, "", fmt.Errorf("condition task is missing input")
-		}
-		expr, err := workflowcfg.ParseConditionExpression(cfg.Expression)
-		if err != nil {
-			return executor.TaskResult{ExitCode: -1}, "", err
-		}
-		matched, err := expr.Evaluate(workflowcfg.ConditionInput{
-			Status:   task.ConditionInput.Status,
-			ExitCode: task.ConditionInput.ExitCode,
-			Output:   task.ConditionInput.Output,
-			Result:   task.ConditionInput.Result,
-		})
-		if err != nil {
-			return executor.TaskResult{ExitCode: -1}, "", err
-		}
-		selectedBranch := "false"
-		if matched {
-			selectedBranch = "true"
-		}
-		message := fmt.Sprintf("Condition %q evaluated to %t", cfg.Expression, matched)
-		onOutput(message)
-		return executor.TaskResult{Output: message, ExitCode: 0}, selectedBranch, nil
+	if task.Type == dto.TaskTypeCondition || task.Type == dto.TaskTypeFor {
+		return executor.TaskResult{ExitCode: -1}, "", fmt.Errorf("task type %s is controller-only", task.Type)
 	}
 
 	execTask, err := executor.NewTask(executor.TaskEntity{

@@ -588,28 +588,35 @@ func (s *RunService) executeTask(ctx context.Context, runID string, task entity.
 	}
 }
 
+func evaluateConditionTask(task entity.TaskRunEntity, renderedConfig string, conditionInput *workflowcfg.ConditionInput) (string, string, error) {
+	var cfg workflowcfg.ConditionConfig
+	if err := json.Unmarshal([]byte(renderedConfig), &cfg); err != nil {
+		return "", "", fmt.Errorf("invalid condition config: %w", err)
+	}
+	if conditionInput == nil {
+		return "", "", fmt.Errorf("condition task %s is missing upstream input", task.TaskName)
+	}
+	expr, err := workflowcfg.ParseConditionExpression(cfg.Expression)
+	if err != nil {
+		return "", "", err
+	}
+	matched, err := expr.Evaluate(*conditionInput)
+	if err != nil {
+		return "", "", err
+	}
+	selectedBranch := "false"
+	if matched {
+		selectedBranch = "true"
+	}
+	return selectedBranch, fmt.Sprintf("Condition %q evaluated to %t", cfg.Expression, matched), nil
+}
+
 func (s *RunService) executeTaskAttempt(ctx context.Context, runID string, task entity.TaskRunEntity, renderedConfig string, conditionInput *workflowcfg.ConditionInput, effectiveEnv map[string]string, onOutput executor.OutputFunc) (executor.TaskResult, string, error) {
 	if task.TaskType == "condition" {
-		var cfg workflowcfg.ConditionConfig
-		if err := json.Unmarshal([]byte(renderedConfig), &cfg); err != nil {
-			return executor.TaskResult{ExitCode: -1}, "", fmt.Errorf("invalid condition config: %w", err)
-		}
-		if conditionInput == nil {
-			return executor.TaskResult{ExitCode: -1}, "", fmt.Errorf("condition task %s is missing upstream input", task.TaskName)
-		}
-		expr, err := workflowcfg.ParseConditionExpression(cfg.Expression)
+		selectedBranch, message, err := evaluateConditionTask(task, renderedConfig, conditionInput)
 		if err != nil {
 			return executor.TaskResult{ExitCode: -1}, "", err
 		}
-		matched, err := expr.Evaluate(*conditionInput)
-		if err != nil {
-			return executor.TaskResult{ExitCode: -1}, "", err
-		}
-		selectedBranch := "false"
-		if matched {
-			selectedBranch = "true"
-		}
-		message := fmt.Sprintf("Condition %q evaluated to %t", cfg.Expression, matched)
 		if onOutput != nil {
 			onOutput(message)
 		}
@@ -955,6 +962,9 @@ func (s *RunService) PrepareAssignedTask(runID string, taskID string) (*dto.Assi
 	if err != nil {
 		return nil, err
 	}
+	if task.TaskType == "condition" || task.TaskType == "for" {
+		return nil, fmt.Errorf("task type %s is controller-only", task.TaskType)
+	}
 	conditionInput, err := s.conditionInputForTask(runID, taskID)
 	if err != nil {
 		return nil, err
@@ -997,6 +1007,9 @@ func (s *RunService) HandleWorkerTaskEvent(nodeID string, event dto.WorkerTaskEv
 	task, err := s.taskRunForWorkerEvent(event)
 	if err != nil {
 		return err
+	}
+	if task.TaskType == "condition" || task.TaskType == "for" {
+		return fmt.Errorf("task type %s is controller-only", task.TaskType)
 	}
 	if task.AssignedNodeID != "" && task.AssignedNodeID != nodeID {
 		return nil
@@ -1381,6 +1394,16 @@ func (s *RunService) queueReadyTasks(runID string) error {
 		}
 
 		if len(node.inbound) == 0 || (unknownCount == 0 && activeCount > 0) {
+			if task.TaskType == "condition" {
+				progressed, err := s.advanceConditionTask(runID, task, node, completed)
+				if err != nil {
+					return err
+				}
+				if progressed {
+					return s.queueReadyTasks(runID)
+				}
+				continue
+			}
 			if task.TaskType == "for" {
 				progressed, err := s.advanceForLoopTask(runID, task, graph, taskByID, true)
 				if err != nil {
@@ -1431,6 +1454,30 @@ func (s *RunService) queueReadyTasks(runID string) error {
 		return s.finishWorkflowRun(runID, "success")
 	}
 	return nil
+}
+
+func (s *RunService) advanceConditionTask(runID string, task entity.TaskRunEntity, node *runtimeNode, completed map[string]completedTaskState) (bool, error) {
+	conditionInput, err := node.buildConditionInput(completed)
+	if err != nil {
+		return false, err
+	}
+	loopContext, err := s.loopContextForTask(runID, task.TaskID)
+	if err != nil {
+		return false, err
+	}
+	renderedConfig, _, _, err := s.prepareTaskExecution(runID, task, conditionInput, loopContext)
+	if err != nil {
+		return false, err
+	}
+	selectedBranch, output, err := evaluateConditionTask(task, renderedConfig, conditionInput)
+	if err != nil {
+		return false, err
+	}
+	if err := s.db.FinishTaskRun(runID, task.TaskID, "success", 0, output, resultWithSelectedBranch("", selectedBranch)); err != nil {
+		return false, err
+	}
+	s.publishTaskStatus(runID, task.TaskID)
+	return true, nil
 }
 
 func (s *RunService) advanceForLoopTask(runID string, task entity.TaskRunEntity, graph runGraph, taskByID map[string]entity.TaskRunEntity, initial bool) (bool, error) {

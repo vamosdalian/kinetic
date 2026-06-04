@@ -335,7 +335,7 @@ func TestRunService_ReplayedFailedEventDoesNotRegressRequeuedTask(t *testing.T) 
 	assert.Equal(t, "queued", taskRun.Status)
 }
 
-func TestRunService_DistributedConditionUsesWorkerSelectedBranch(t *testing.T) {
+func TestRunService_DistributedConditionRunsOnController(t *testing.T) {
 	db := setupRunServiceDB(t)
 	service := NewRunService(db, 1)
 	service.EnableDistributed(NewWorkerStreamHub())
@@ -383,26 +383,19 @@ func TestRunService_DistributedConditionUsesWorkerSelectedBranch(t *testing.T) {
 		{ID: uuid.New().String(), Source: conditionID, Target: falseID, SourceHandle: "false"},
 	})
 
-	runID := uuid.New().String()
-	require.NoError(t, db.CreateWorkflowRun(workflowID, runID))
-	require.NoError(t, db.MarkWorkflowRunRunning(runID))
-	require.NoError(t, db.FinishTaskRun(runID, rootID, "success", 0, "go", ""))
-	require.NoError(t, db.QueueTaskRun(runID, conditionID, ""))
-	require.NoError(t, db.AssignTaskRun(runID, conditionID, "node-1"))
-	require.NoError(t, db.MarkTaskRunRunning(runID, conditionID))
+	runID, err := service.StartWorkflowRun(workflowID)
+	require.NoError(t, err)
 
-	exitCode := 0
-	require.NoError(t, service.HandleWorkerTaskEvent("node-1", dto.WorkerTaskEvent{
-		Type:           "finished",
-		RunID:          runID,
-		TaskID:         conditionID,
-		SelectedBranch: "true",
-		ExitCode:       &exitCode,
-	}))
+	finishAssignedTaskWithOutput(t, db, service, rootID, runID, "go")
 
 	conditionRun, err := db.GetTaskRun(runID, conditionID)
 	require.NoError(t, err)
+	assert.Equal(t, "success", conditionRun.Status)
+	assert.Empty(t, conditionRun.AssignedNodeID)
+	assert.Contains(t, conditionRun.Output, `Condition "output == \"go\"" evaluated to true`)
 	assert.JSONEq(t, `{"selected_branch":"true"}`, conditionRun.Result)
+	_, err = service.PrepareAssignedTask(runID, conditionID)
+	assert.ErrorContains(t, err, "controller-only")
 	trueRun, err := db.GetTaskRun(runID, trueID)
 	require.NoError(t, err)
 	assert.Equal(t, "queued", trueRun.Status)
@@ -650,6 +643,15 @@ func finishAssignedTask(t *testing.T, db database.Database, service *RunService,
 	t.Helper()
 	require.NoError(t, db.AssignTaskRun(runID, taskID, "node-1"))
 	require.NoError(t, service.HandleWorkerTaskEvent("node-1", dto.WorkerTaskEvent{Type: "started", RunID: runID, TaskID: taskID}))
+	exitCode := 0
+	require.NoError(t, service.HandleWorkerTaskEvent("node-1", dto.WorkerTaskEvent{Type: "finished", RunID: runID, TaskID: taskID, ExitCode: &exitCode}))
+}
+
+func finishAssignedTaskWithOutput(t *testing.T, db database.Database, service *RunService, taskID string, runID string, output string) {
+	t.Helper()
+	require.NoError(t, db.AssignTaskRun(runID, taskID, "node-1"))
+	require.NoError(t, service.HandleWorkerTaskEvent("node-1", dto.WorkerTaskEvent{Type: "started", RunID: runID, TaskID: taskID}))
+	require.NoError(t, service.HandleWorkerTaskEvent("node-1", dto.WorkerTaskEvent{Type: "output", RunID: runID, TaskID: taskID, Output: output}))
 	exitCode := 0
 	require.NoError(t, service.HandleWorkerTaskEvent("node-1", dto.WorkerTaskEvent{Type: "finished", RunID: runID, TaskID: taskID, ExitCode: &exitCode}))
 }
