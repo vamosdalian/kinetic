@@ -41,24 +41,53 @@ func ValidateDefinition(tasks []entity.TaskEntity, edges []entity.EdgeEntity) er
 	}
 
 	for _, task := range tasks {
-		if task.Type != "condition" {
+		if task.Type == "condition" {
+			if inbound[task.ID] != 1 {
+				return fmt.Errorf("condition task %s must have exactly one incoming edge", task.NameOrID())
+			}
+			if len(outbound[task.ID]) != 2 {
+				return fmt.Errorf("condition task %s must have exactly two outgoing edges", task.NameOrID())
+			}
+
+			handles := map[string]bool{}
+			for _, edge := range outbound[task.ID] {
+				if edge.SourceHandle == "" {
+					return fmt.Errorf("condition task %s requires source handles true and false", task.NameOrID())
+				}
+				handles[edge.SourceHandle] = true
+			}
+			if !handles["true"] || !handles["false"] {
+				return fmt.Errorf("condition task %s requires source handles true and false", task.NameOrID())
+			}
 			continue
 		}
-		if inbound[task.ID] != 1 {
-			return fmt.Errorf("condition task %s must have exactly one incoming edge", task.NameOrID())
+
+		if task.Type != "for" {
+			continue
 		}
-		if len(outbound[task.ID]) != 2 {
-			return fmt.Errorf("condition task %s must have exactly two outgoing edges", task.NameOrID())
-		}
+
+		bodyCount := 0
+		doneCount := 0
 		handles := map[string]bool{}
 		for _, edge := range outbound[task.ID] {
 			if edge.SourceHandle == "" {
-				return fmt.Errorf("condition task %s requires source handles true and false", task.NameOrID())
+				return fmt.Errorf("for task %s requires source handle body", task.NameOrID())
 			}
 			handles[edge.SourceHandle] = true
+			switch edge.SourceHandle {
+			case "body":
+				bodyCount++
+			case "done":
+				doneCount++
+			default:
+				return fmt.Errorf("for task %s only supports source handles body and done", task.NameOrID())
+			}
 		}
-		if !handles["true"] || !handles["false"] {
-			return fmt.Errorf("condition task %s requires source handles true and false", task.NameOrID())
+		if !handles["body"] || bodyCount != 1 {
+			return fmt.Errorf("for task %s requires exactly one body source handle", task.NameOrID())
+		}
+		if doneCount > 1 {
+			return fmt.Errorf("for task %s supports at most one done source handle", task.NameOrID())
 		}
 	}
 
@@ -144,6 +173,19 @@ func validateTaskConfig(task entity.TaskEntity) error {
 		if !ContainsTemplate(cfg.Expression) {
 			if _, err := ParseConditionExpression(cfg.Expression); err != nil {
 				return err
+			}
+		}
+		if err := ValidateTemplateEnvValues(cfg.TaskPolicy.Env); err != nil {
+			return err
+		}
+	case "for":
+		var cfg ForConfig
+		if err := decodeConfig(task.Config, &cfg); err != nil {
+			return fmt.Errorf("invalid for config: %w", err)
+		}
+		if strings.TrimSpace(cfg.Var) != "" {
+			if err := ValidateEnvName(strings.TrimSpace(cfg.Var)); err != nil {
+				return fmt.Errorf("invalid for variable: %w", err)
 			}
 		}
 		if err := ValidateTemplateEnvValues(cfg.TaskPolicy.Env); err != nil {

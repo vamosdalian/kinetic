@@ -2,7 +2,7 @@ import { type Edge } from "@xyflow/react";
 
 // ============ Task Type Configs ============
 
-export type TaskType = "shell" | "http" | "condition";
+export type TaskType = "shell" | "http" | "condition" | "for";
 
 export interface TaskPolicy {
   timeout_seconds?: number;
@@ -37,7 +37,13 @@ export interface ConditionConfig extends TaskPolicy {
   expression: string;
 }
 
-export type TaskConfig = ShellConfig | HttpConfig | ConditionConfig;
+export interface ForConfig extends TaskPolicy {
+  start: number;
+  end: number;
+  var?: string;
+}
+
+export type TaskConfig = ShellConfig | HttpConfig | ConditionConfig | ForConfig;
 
 export const DEFAULT_TASK_TIMEOUT_SECONDS = 600;
 
@@ -55,6 +61,13 @@ export function createTaskConfig(type: TaskType): TaskConfig {
     case "condition":
       return {
         expression: "",
+        timeout_seconds: DEFAULT_TASK_TIMEOUT_SECONDS,
+      };
+    case "for":
+      return {
+        start: 1,
+        end: 1,
+        var: "N",
         timeout_seconds: DEFAULT_TASK_TIMEOUT_SECONDS,
       };
   }

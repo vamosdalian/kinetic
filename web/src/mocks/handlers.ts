@@ -21,7 +21,7 @@ interface TaskNode {
   id: string;
   name: string;
   description: string;
-  type: "shell" | "http" | "condition";
+  type: "shell" | "http" | "condition" | "for";
   config: Record<string, unknown>;
   position: Position;
   nodeType: string;

@@ -22,6 +22,7 @@ import { KeyValueEditor } from "./key-value-editor";
 import {
   createTaskConfig,
   type ConditionConfig,
+  type ForConfig,
   type HttpConfig,
   type ShellConfig,
   type TaskConfig,
@@ -233,6 +234,7 @@ export function Taskform({
             <SelectItem value="shell">Shell</SelectItem>
             <SelectItem value="http">HTTP</SelectItem>
             <SelectItem value="condition">Condition</SelectItem>
+            <SelectItem value="for">For</SelectItem>
           </SelectContent>
         </Select>
       </div>
@@ -368,6 +370,58 @@ export function Taskform({
             }}
           />
         </div>
+      )}
+
+      {node.type === "for" && (
+        <>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="grid gap-2">
+              <Label htmlFor="for_start">Start</Label>
+              <Input
+                id="for_start"
+                type="number"
+                value={(config as ForConfig).start ?? 1}
+                onChange={(e) => {
+                  updateConfig({
+                    ...(config as ForConfig),
+                    start: Number(e.target.value),
+                  });
+                }}
+              />
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="for_end">End</Label>
+              <Input
+                id="for_end"
+                type="number"
+                value={(config as ForConfig).end ?? 1}
+                onChange={(e) => {
+                  updateConfig({
+                    ...(config as ForConfig),
+                    end: Number(e.target.value),
+                  });
+                }}
+              />
+            </div>
+          </div>
+          <div className="grid gap-2">
+            <div className="flex items-center gap-2">
+              <Label htmlFor="for_var">Loop Variable</Label>
+              <HelpHint content="Injected into loop body tasks as an environment variable. The same value is also available as loop.value in templates." />
+            </div>
+            <Input
+              id="for_var"
+              placeholder="N"
+              value={(config as ForConfig).var || ""}
+              onChange={(e) => {
+                updateConfig({
+                  ...(config as ForConfig),
+                  var: e.target.value,
+                });
+              }}
+            />
+          </div>
+        </>
       )}
 
       <div className="grid gap-3">

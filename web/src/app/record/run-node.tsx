@@ -5,6 +5,7 @@ import {
   SquareTerminal, 
   Globe, 
   GitBranch, 
+  Repeat2,
   // Circle,
   HelpCircle
 } from "lucide-react";
@@ -45,24 +46,29 @@ const TypeIcon = ({ type }: { type: string }) => {
       return <Globe className="w-3 h-3 flex-shrink-0" />;
     case "condition":
       return <GitBranch className="w-3 h-3 flex-shrink-0" />;
+    case "for":
+      return <Repeat2 className="w-3 h-3 flex-shrink-0" />;
     default:
       return <HelpCircle className="w-3 h-3 flex-shrink-0" />;
   }
 };
 
 const SourceHandles = ({ type }: { type: string }) => {
-  if (type === "condition") {
+  if (type === "condition" || type === "for") {
+    const leftHandle = type === "for" ? "body" : "true";
+    const rightHandle = type === "for" ? "done" : "false";
+
     return (
       <>
         <Handle
           type="source"
-          id="true"
+          id={leftHandle}
           position={Position.Bottom}
           style={{ ...handleStyle, left: "38%" }}
         />
         <Handle
           type="source"
-          id="false"
+          id={rightHandle}
           position={Position.Bottom}
           style={{ ...handleStyle, left: "66%" }}
         />

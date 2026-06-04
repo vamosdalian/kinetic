@@ -3,6 +3,7 @@ package workflow
 import (
 	"encoding/json"
 	"fmt"
+	"regexp"
 	"strings"
 )
 
@@ -40,6 +41,23 @@ type ConditionConfig struct {
 	Expression string `json:"expression"`
 	TaskPolicy
 }
+
+type ForConfig struct {
+	Start int    `json:"start"`
+	End   int    `json:"end"`
+	Var   string `json:"var,omitempty"`
+	TaskPolicy
+}
+
+type LoopContext struct {
+	ID    string `json:"id"`
+	Name  string `json:"name"`
+	Index int    `json:"index"`
+	Value int    `json:"value"`
+	Var   string `json:"var,omitempty"`
+}
+
+var envNamePattern = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
 
 func ParseWorkflowConfig(raw string) (WorkflowConfig, error) {
 	if strings.TrimSpace(raw) == "" {
@@ -92,13 +110,23 @@ func ParseTaskPolicy(raw string) (TaskPolicy, error) {
 func ValidateEnvMap(values map[string]string) error {
 	for key := range values {
 		trimmed := strings.TrimSpace(key)
-		if trimmed == "" {
-			return fmt.Errorf("env key is required")
-		}
-		if strings.HasPrefix(trimmed, ReservedEnvPrefix) {
-			return fmt.Errorf("env key %s uses reserved prefix %s", trimmed, ReservedEnvPrefix)
+		if err := ValidateEnvName(trimmed); err != nil {
+			return err
 		}
 	}
 
+	return nil
+}
+
+func ValidateEnvName(name string) error {
+	if strings.TrimSpace(name) == "" {
+		return fmt.Errorf("env key is required")
+	}
+	if !envNamePattern.MatchString(name) {
+		return fmt.Errorf("env key %s is invalid", name)
+	}
+	if strings.HasPrefix(name, ReservedEnvPrefix) {
+		return fmt.Errorf("env key %s uses reserved prefix %s", name, ReservedEnvPrefix)
+	}
 	return nil
 }

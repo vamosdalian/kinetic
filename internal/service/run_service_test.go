@@ -411,6 +411,151 @@ func TestRunService_DistributedConditionUsesWorkerSelectedBranch(t *testing.T) {
 	assert.Equal(t, "skipped", falseRun.Status)
 }
 
+func TestRunService_DistributedForLoopRequeuesBodyWithLoopContext(t *testing.T) {
+	db := setupRunServiceDB(t)
+	service := NewRunService(db, 1)
+	service.EnableDistributed(NewWorkerStreamHub())
+
+	rootID := uuid.New().String()
+	forID := uuid.New().String()
+	bodyID := uuid.New().String()
+	bodyNextID := uuid.New().String()
+	doneID := uuid.New().String()
+	workflowID := seedWorkflow(t, db, []entity.TaskEntity{
+		{
+			ID:       rootID,
+			Name:     "root",
+			Type:     "shell",
+			Config:   `{"script":"printf 'root'"}`,
+			Position: `{"x":0,"y":0}`,
+			NodeType: "baseNodeFull",
+		},
+		{
+			ID:       forID,
+			Name:     "for-loop",
+			Type:     "for",
+			Config:   `{"start":1,"end":2,"var":"N"}`,
+			Position: `{"x":1,"y":0}`,
+			NodeType: "baseNodeFull",
+		},
+		{
+			ID:       bodyID,
+			Name:     "body",
+			Type:     "shell",
+			Config:   `{"script":"printf '${{ .loop.value }}'"}`,
+			Position: `{"x":2,"y":0}`,
+			NodeType: "baseNodeFull",
+		},
+		{
+			ID:       bodyNextID,
+			Name:     "body-next",
+			Type:     "shell",
+			Config:   `{"script":"printf 'next'"}`,
+			Position: `{"x":3,"y":0}`,
+			NodeType: "baseNodeFull",
+		},
+		{
+			ID:       doneID,
+			Name:     "done",
+			Type:     "shell",
+			Config:   `{"script":"printf 'done'"}`,
+			Position: `{"x":4,"y":0}`,
+			NodeType: "baseNodeFull",
+		},
+	}, []entity.EdgeEntity{
+		{ID: uuid.New().String(), Source: rootID, Target: forID},
+		{ID: uuid.New().String(), Source: forID, Target: bodyID, SourceHandle: "body"},
+		{ID: uuid.New().String(), Source: bodyID, Target: bodyNextID},
+		{ID: uuid.New().String(), Source: forID, Target: doneID, SourceHandle: "done"},
+	})
+
+	runID, err := service.StartWorkflowRun(workflowID)
+	require.NoError(t, err)
+
+	finishAssignedTask(t, db, service, rootID, runID)
+
+	body, err := db.GetTaskRun(runID, bodyID)
+	require.NoError(t, err)
+	require.Equal(t, "queued", body.Status)
+	assigned, err := service.PrepareAssignedTask(runID, bodyID)
+	require.NoError(t, err)
+	assert.Equal(t, "1", assigned.Env["N"])
+	assert.JSONEq(t, `{"script":"printf '1'"}`, string(assigned.Config))
+
+	finishAssignedTask(t, db, service, bodyID, runID)
+	finishAssignedTask(t, db, service, bodyNextID, runID)
+
+	body, err = db.GetTaskRun(runID, bodyID)
+	require.NoError(t, err)
+	require.Equal(t, "queued", body.Status)
+	assigned, err = service.PrepareAssignedTask(runID, bodyID)
+	require.NoError(t, err)
+	assert.Equal(t, "2", assigned.Env["N"])
+	assert.Equal(t, "1", assigned.Env["KINETIC_LOOP_INDEX"])
+	assert.JSONEq(t, `{"script":"printf '2'"}`, string(assigned.Config))
+
+	finishAssignedTask(t, db, service, bodyID, runID)
+	finishAssignedTask(t, db, service, bodyNextID, runID)
+
+	done, err := db.GetTaskRun(runID, doneID)
+	require.NoError(t, err)
+	assert.Equal(t, "queued", done.Status)
+	forRun, err := db.GetTaskRun(runID, forID)
+	require.NoError(t, err)
+	assert.JSONEq(t, `{"selected_branch":"done","loop":{"id":"`+forID+`","name":"for-loop","index":1,"value":2,"var":"N"}}`, forRun.Result)
+}
+
+func TestRunService_DistributedForLoopWithoutDoneCompletes(t *testing.T) {
+	db := setupRunServiceDB(t)
+	service := NewRunService(db, 1)
+	service.EnableDistributed(NewWorkerStreamHub())
+
+	forID := uuid.New().String()
+	bodyID := uuid.New().String()
+	workflowID := seedWorkflow(t, db, []entity.TaskEntity{
+		{
+			ID:       forID,
+			Name:     "for-loop",
+			Type:     "for",
+			Config:   `{"start":1,"end":1,"var":"N"}`,
+			Position: `{"x":0,"y":0}`,
+			NodeType: "baseNodeFull",
+		},
+		{
+			ID:       bodyID,
+			Name:     "body",
+			Type:     "shell",
+			Config:   `{"script":"printf '$N'"}`,
+			Position: `{"x":1,"y":0}`,
+			NodeType: "baseNodeFull",
+		},
+	}, []entity.EdgeEntity{
+		{ID: uuid.New().String(), Source: forID, Target: bodyID, SourceHandle: "body"},
+	})
+
+	runID, err := service.StartWorkflowRun(workflowID)
+	require.NoError(t, err)
+
+	body, err := db.GetTaskRun(runID, bodyID)
+	require.NoError(t, err)
+	require.Equal(t, "queued", body.Status)
+	finishAssignedTask(t, db, service, bodyID, runID)
+
+	run := waitForRunStatus(t, db, runID, "success")
+	assert.Equal(t, "success", run.Status)
+	forRun, err := db.GetTaskRun(runID, forID)
+	require.NoError(t, err)
+	assert.JSONEq(t, `{"selected_branch":"done","loop":{"id":"`+forID+`","name":"for-loop","index":0,"value":1,"var":"N"}}`, forRun.Result)
+}
+
+func finishAssignedTask(t *testing.T, db database.Database, service *RunService, taskID string, runID string) {
+	t.Helper()
+	require.NoError(t, db.AssignTaskRun(runID, taskID, "node-1"))
+	require.NoError(t, service.HandleWorkerTaskEvent("node-1", dto.WorkerTaskEvent{Type: "started", RunID: runID, TaskID: taskID}))
+	exitCode := 0
+	require.NoError(t, service.HandleWorkerTaskEvent("node-1", dto.WorkerTaskEvent{Type: "finished", RunID: runID, TaskID: taskID, ExitCode: &exitCode}))
+}
+
 func TestRunService_BranchedWorkflowSuccess(t *testing.T) {
 	db := setupRunServiceDB(t)
 	service := NewRunService(db, 4)

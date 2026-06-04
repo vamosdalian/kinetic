@@ -327,6 +327,30 @@ func (s *SqliteDB) ResetAssignedTaskRun(runID string, taskID string) error {
 	return err
 }
 
+func (s *SqliteDB) ResetTaskRunsForLoop(runID string, taskIDs []string) error {
+	if len(taskIDs) == 0 {
+		return nil
+	}
+
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	for _, taskID := range taskIDs {
+		if _, err := tx.Exec(`
+			UPDATE task_runs
+			SET status = 'pending', assigned_node_id = '', assigned_at = NULL, started_at = NULL, finished_at = NULL, exit_code = 0, result = ''
+			WHERE run_id = ? AND task_id = ?
+		`, runID, taskID); err != nil {
+			return err
+		}
+	}
+
+	return tx.Commit()
+}
+
 func (s *SqliteDB) MarkTaskRunRunning(runID string, taskID string) error {
 	_, err := s.db.Exec(`
 		UPDATE task_runs
