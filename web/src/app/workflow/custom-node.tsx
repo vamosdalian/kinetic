@@ -62,13 +62,13 @@ function SourceHandles({ type }: { type: string }) {
     return (
       <>
         <div
-          className="pointer-events-none absolute -bottom-5 -translate-x-1/2 whitespace-nowrap text-[9px] font-medium text-muted-foreground"
+          className="pointer-events-none absolute -bottom-5 -translate-x-1/2 whitespace-nowrap text-[9px] font-medium text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100"
           style={{ left: "38%" }}
         >
           {leftLabel}
         </div>
         <div
-          className="pointer-events-none absolute -bottom-5 -translate-x-1/2 whitespace-nowrap text-[9px] font-medium text-muted-foreground"
+          className="pointer-events-none absolute -bottom-5 -translate-x-1/2 whitespace-nowrap text-[9px] font-medium text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100"
           style={{ left: "66%" }}
         >
           {rightLabel}
@@ -108,7 +108,7 @@ export const ActionBarNodeDemo = memo((props: NodeProps) => {
   return (
     <BaseNode
       className={cn(
-        "relative rounded-xs w-48 h-8 transition-all",
+        "group relative rounded-xs w-48 h-8 transition-all",
         selected ? "ring ring-blue-500" : ""
       )}
     >
