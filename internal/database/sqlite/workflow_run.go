@@ -451,7 +451,7 @@ func (s *SqliteDB) FinishTaskRun(runID string, taskID string, status string, exi
 		UPDATE task_runs
 		SET status = ?, finished_at = DATETIME('now'), exit_code = ?, output = ?, result = ?
 		WHERE task_run_id = (SELECT task_run_id FROM task_runs WHERE run_id = ? AND task_id = ? ORDER BY loop_index DESC, created_at DESC, task_run_id DESC LIMIT 1)
-	`, status, exitCode, output, normalizeJSONText(result), runID, taskID)
+	`, status, exitCode, output, normalizeTaskResultText(result), runID, taskID)
 	return err
 }
 
@@ -460,7 +460,7 @@ func (s *SqliteDB) FinishTaskRunByID(taskRunID string, status string, exitCode i
 		UPDATE task_runs
 		SET status = ?, finished_at = DATETIME('now'), exit_code = ?, output = ?, result = ?
 		WHERE task_run_id = ?
-	`, status, exitCode, output, normalizeJSONText(result), taskRunID)
+	`, status, exitCode, output, normalizeTaskResultText(result), taskRunID)
 	return err
 }
 

@@ -207,6 +207,35 @@ func TestRunService_PersistsTaskResult(t *testing.T) {
 	assert.JSONEq(t, `{"count":1}`, taskRun.Result)
 }
 
+func TestRunService_PreservesEmptyTaskResult(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+
+	db := setupRunServiceDB(t)
+	service := NewRunService(db, 1)
+
+	taskID := uuid.New().String()
+	workflowID := seedWorkflow(t, db, []entity.TaskEntity{
+		{
+			ID:       taskID,
+			Name:     "task-without-result",
+			Type:     "shell",
+			Config:   `{"script":"printf 'done'"}`,
+			Position: `{"x":0,"y":0}`,
+			NodeType: "baseNodeFull",
+		},
+	}, nil)
+
+	runID, err := service.StartWorkflowRun(workflowID)
+	assert.NoError(t, err)
+
+	_ = waitForRunStatus(t, db, runID, "success")
+
+	taskRun, err := db.GetTaskRun(runID, taskID)
+	assert.NoError(t, err)
+	assert.Equal(t, "done", taskRun.Output)
+	assert.Empty(t, taskRun.Result)
+}
+
 func TestRunService_HandleWorkerTaskEventDeduplicatesOutputSequence(t *testing.T) {
 	db := setupRunServiceDB(t)
 	service := NewRunService(db, 1)

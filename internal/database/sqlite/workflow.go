@@ -239,6 +239,23 @@ func normalizeJSONText(raw string) string {
 	return string(normalized)
 }
 
+func normalizeTaskResultText(raw string) string {
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" {
+		return ""
+	}
+
+	var payload any
+	if err := json.Unmarshal([]byte(trimmed), &payload); err != nil {
+		return trimmed
+	}
+	normalized, err := json.Marshal(payload)
+	if err != nil {
+		return trimmed
+	}
+	return string(normalized)
+}
+
 func formatNullableDBTime(value *time.Time) any {
 	if value == nil || value.IsZero() {
 		return nil

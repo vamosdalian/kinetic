@@ -142,6 +142,18 @@ func TestWorkflowRun(t *testing.T) {
 		t.Fatalf("Expected task result %s, got %s", `{"message":"ok"}`, finishedTaskRun.Result)
 	}
 
+	err = db.FinishTaskRun(runID, task2ID, "success", 0, "hello\n", "")
+	if err != nil {
+		t.Fatalf("Failed to finish task run with empty result: %v", err)
+	}
+	emptyResultTaskRun, err := db.GetTaskRun(runID, task2ID)
+	if err != nil {
+		t.Fatalf("Failed to get empty result task run: %v", err)
+	}
+	if emptyResultTaskRun.Result != "" {
+		t.Fatalf("Expected empty task result, got %q", emptyResultTaskRun.Result)
+	}
+
 	// Test GetEdgeRuns
 	edgeRuns, err := db.GetEdgeRuns(runID)
 	if err != nil {
