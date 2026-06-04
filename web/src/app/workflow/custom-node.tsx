@@ -56,15 +56,21 @@ function SourceHandles({ type }: { type: string }) {
   if (type === "condition" || type === "for") {
     const leftHandle = type === "for" ? "body" : "true";
     const rightHandle = type === "for" ? "done" : "false";
-    const leftLabel = type === "for" ? "B" : "T";
-    const rightLabel = type === "for" ? "D" : "F";
+    const leftLabel = type === "for" ? "Loop" : "True";
+    const rightLabel = type === "for" ? "Done" : "False";
 
     return (
       <>
-        <div className="pointer-events-none absolute -bottom-5 left-[34%] text-[9px] font-medium text-muted-foreground">
+        <div
+          className="pointer-events-none absolute -bottom-5 -translate-x-1/2 whitespace-nowrap text-[9px] font-medium text-muted-foreground"
+          style={{ left: "38%" }}
+        >
           {leftLabel}
         </div>
-        <div className="pointer-events-none absolute -bottom-5 left-[62%] text-[9px] font-medium text-muted-foreground">
+        <div
+          className="pointer-events-none absolute -bottom-5 -translate-x-1/2 whitespace-nowrap text-[9px] font-medium text-muted-foreground"
+          style={{ left: "66%" }}
+        >
           {rightLabel}
         </div>
         <Handle

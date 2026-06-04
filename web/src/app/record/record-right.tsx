@@ -10,6 +10,7 @@ import {
 } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
 import { formatDashboardDateTime } from "@/lib/dashboard";
+import { formatTaskType } from "@/lib/task-type";
 import type { TaskNodeRun } from "./types";
 import { getStatusBadgeClassName } from "./status";
 
@@ -94,7 +95,7 @@ export function RecordRight({
           <div className="grid grid-cols-2 gap-3 text-sm">
             <div className="rounded-lg border bg-muted/30 p-3">
               <div className="text-muted-foreground">Type</div>
-              <div className="font-medium capitalize">{task.type}</div>
+              <div className="font-medium">{formatTaskType(task.type)}</div>
             </div>
             <div className="rounded-lg border bg-muted/30 p-3">
               <div className="text-muted-foreground">Requested Tag</div>

@@ -19,6 +19,7 @@ import {
 } from "@/components/ui/hover-card";
 import { CircleQuestionMark, Copy } from "lucide-react";
 import { KeyValueEditor } from "./key-value-editor";
+import { formatTaskType } from "@/lib/task-type";
 import {
   createTaskConfig,
   type ConditionConfig,
@@ -234,7 +235,7 @@ export function Taskform({
             <SelectItem value="shell">Shell</SelectItem>
             <SelectItem value="http">HTTP</SelectItem>
             <SelectItem value="condition">Condition</SelectItem>
-            <SelectItem value="for">For</SelectItem>
+            <SelectItem value="for">{formatTaskType("for")}</SelectItem>
           </SelectContent>
         </Select>
       </div>
