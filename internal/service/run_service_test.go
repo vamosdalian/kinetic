@@ -207,6 +207,35 @@ func TestRunService_PersistsTaskResult(t *testing.T) {
 	assert.JSONEq(t, `{"count":1}`, taskRun.Result)
 }
 
+func TestRunService_PreservesEmptyTaskResult(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+
+	db := setupRunServiceDB(t)
+	service := NewRunService(db, 1)
+
+	taskID := uuid.New().String()
+	workflowID := seedWorkflow(t, db, []entity.TaskEntity{
+		{
+			ID:       taskID,
+			Name:     "task-without-result",
+			Type:     "shell",
+			Config:   `{"script":"printf 'done'"}`,
+			Position: `{"x":0,"y":0}`,
+			NodeType: "baseNodeFull",
+		},
+	}, nil)
+
+	runID, err := service.StartWorkflowRun(workflowID)
+	assert.NoError(t, err)
+
+	_ = waitForRunStatus(t, db, runID, "success")
+
+	taskRun, err := db.GetTaskRun(runID, taskID)
+	assert.NoError(t, err)
+	assert.Equal(t, "done", taskRun.Output)
+	assert.Empty(t, taskRun.Result)
+}
+
 func TestRunService_HandleWorkerTaskEventDeduplicatesOutputSequence(t *testing.T) {
 	db := setupRunServiceDB(t)
 	service := NewRunService(db, 1)
@@ -347,6 +376,7 @@ func TestRunService_DistributedConditionRunsOnController(t *testing.T) {
 	workflowID := seedWorkflow(t, db, []entity.TaskEntity{
 		{
 			ID:       rootID,
+			Ref:      "root",
 			Name:     "root",
 			Type:     "shell",
 			Config:   `{"script":"printf 'go'"}`,
@@ -355,9 +385,10 @@ func TestRunService_DistributedConditionRunsOnController(t *testing.T) {
 		},
 		{
 			ID:       conditionID,
+			Ref:      "condition",
 			Name:     "condition",
 			Type:     "condition",
-			Config:   `{"expression":"output == \"${{ .upstream.output }}\""}`,
+			Config:   `{"expression":"output == \"${{ .upstream.root.output }}\""}`,
 			Position: `{"x":1,"y":0}`,
 			NodeType: "baseNodeFull",
 		},
@@ -473,6 +504,12 @@ func TestRunService_DistributedForLoopRequeuesBodyWithLoopContext(t *testing.T) 
 	assigned, err := service.PrepareAssignedTask(runID, bodyID)
 	require.NoError(t, err)
 	assert.Equal(t, "1", assigned.Env["N"])
+	assert.Equal(t, workflowID, assigned.Env["KINETIC_WORKFLOW_ID"])
+	assert.Equal(t, runID, assigned.Env["KINETIC_WORKFLOW_RUN_ID"])
+	assert.Equal(t, bodyID, assigned.Env["KINETIC_TASK_ID"])
+	assert.Equal(t, entity.DefaultTaskRef(bodyID), assigned.Env["KINETIC_TASK_REF"])
+	assert.Equal(t, assigned.TaskRunID, assigned.Env["KINETIC_TASK_RUN_ID"])
+	assert.NotContains(t, assigned.Env, "KINETIC_LOOP_ID")
 	assert.JSONEq(t, `{"script":"printf '1'"}`, string(assigned.Config))
 
 	finishAssignedTask(t, db, service, bodyID, runID)
@@ -485,6 +522,12 @@ func TestRunService_DistributedForLoopRequeuesBodyWithLoopContext(t *testing.T) 
 	require.NoError(t, err)
 	assert.Equal(t, "2", assigned.Env["N"])
 	assert.Equal(t, "1", assigned.Env["KINETIC_LOOP_INDEX"])
+	assert.Equal(t, workflowID, assigned.Env["KINETIC_WORKFLOW_ID"])
+	assert.Equal(t, runID, assigned.Env["KINETIC_WORKFLOW_RUN_ID"])
+	assert.Equal(t, bodyID, assigned.Env["KINETIC_TASK_ID"])
+	assert.Equal(t, entity.DefaultTaskRef(bodyID), assigned.Env["KINETIC_TASK_REF"])
+	assert.Equal(t, assigned.TaskRunID, assigned.Env["KINETIC_TASK_RUN_ID"])
+	assert.NotContains(t, assigned.Env, "KINETIC_LOOP_ID")
 	assert.JSONEq(t, `{"script":"printf '2'"}`, string(assigned.Config))
 
 	finishAssignedTask(t, db, service, bodyID, runID)
@@ -969,6 +1012,7 @@ func TestRunService_RendersTemplatesAcrossWorkflowAndUpstreamContext(t *testing.
 	workflowID := seedWorkflowWithConfig(t, db, `{"env":{"GREETING":"hello-${{ .task.name }}"}}`, []entity.TaskEntity{
 		{
 			ID:       producerID,
+			Ref:      "producer",
 			Name:     "producer",
 			Type:     "shell",
 			Config:   `{"script":"printf 'producer'; printf '{\"message\":\"ok\"}' > \"$KINETIC_RESULT_PATH\""}`,
@@ -977,9 +1021,10 @@ func TestRunService_RendersTemplatesAcrossWorkflowAndUpstreamContext(t *testing.
 		},
 		{
 			ID:       consumerID,
+			Ref:      "consumer",
 			Name:     "consumer",
 			Type:     "shell",
-			Config:   `{"script":"printf '%s|%s|%s' \"$GREETING\" \"${{ .upstream.resultJSON.message }}\" \"${{ .runtime.env.startTime }}\""}`,
+			Config:   `{"script":"printf '%s|%s|%s|%s|%s' \"$GREETING\" \"${{ .upstream.producer.result.message }}\" \"${{ .runtime.workflow.startedAt }}\" \"${{ .runtime.workflow.runid }}\" \"${{ .task.ref }}\""}`,
 			Position: `{"x":1,"y":0}`,
 			NodeType: "baseNodeFull",
 		},
@@ -1000,6 +1045,8 @@ func TestRunService_RendersTemplatesAcrossWorkflowAndUpstreamContext(t *testing.
 	if assert.NotNil(t, run.StartedAt) {
 		assert.Contains(t, taskRun.Output, run.StartedAt.UTC().Format(time.RFC3339))
 	}
+	assert.Contains(t, taskRun.Output, runID)
+	assert.Contains(t, taskRun.Output, "consumer")
 }
 
 func TestRunService_FailsOnMissingTemplateValue(t *testing.T) {
@@ -1039,17 +1086,19 @@ func TestRunService_ConditionExpressionSupportsTemplates(t *testing.T) {
 	workflowID := seedWorkflow(t, db, []entity.TaskEntity{
 		{
 			ID:       rootID,
+			Ref:      "root",
 			Name:     "root",
 			Type:     "shell",
-			Config:   `{"script":"printf '{\"expected\":true}'"}`,
+			Config:   `{"script":"printf '{\"expected\":true}'; printf '{\"expected\":true}' > \"$KINETIC_RESULT_PATH\""}`,
 			Position: `{"x":0,"y":0}`,
 			NodeType: "baseNodeFull",
 		},
 		{
 			ID:       conditionID,
+			Ref:      "condition",
 			Name:     "condition",
 			Type:     "condition",
-			Config:   `{"expression":"json.expected == ${{ .upstream.outputJSON.expected }}"}`,
+			Config:   `{"expression":"json.expected == ${{ .upstream.root.result.expected }}"}`,
 			Position: `{"x":1,"y":0}`,
 			NodeType: "baseNodeFull",
 		},

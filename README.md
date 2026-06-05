@@ -178,6 +178,8 @@ Current workflow config fields:
 
 Task-level settings remain inside each task's existing `config` object. Tasks may also define `config.env`.
 
+Tasks also have a `ref` field. The `ref` is a stable template key and must be unique within the workflow. Task names are display labels and may be duplicated; templates should use refs for upstream task output.
+
 Workflow scheduling is configured outside `workflow.config` with the top-level fields:
 
 - `enable`: enables or disables the workflow trigger
@@ -198,9 +200,17 @@ Environment variable precedence is:
 
 Current system-provided variables:
 
+- `KINETIC_WORKFLOW_ID`
 - `KINETIC_WORKFLOW_NAME`
+- `KINETIC_WORKFLOW_RUN_ID`
+- `KINETIC_TASK_ID`
+- `KINETIC_TASK_REF`
 - `KINETIC_TASK_NAME`
-- `KINETIC_RESULT_PATH`
+- `KINETIC_TASK_RUN_ID`
+- `KINETIC_LOOP_NAME` inside loop body tasks
+- `KINETIC_LOOP_INDEX` inside loop body tasks
+- `KINETIC_LOOP_VALUE` inside loop body tasks
+- `KINETIC_RESULT_PATH` for shell tasks
 
 Keys starting with `KINETIC_` are reserved for the system and cannot be defined by users in workflow or task config.
 
@@ -217,6 +227,7 @@ Example:
   "taskNodes": [
     {
       "id": "task-1",
+      "ref": "run_shell",
       "name": "Run Shell",
       "type": "shell",
       "config": {
@@ -232,7 +243,7 @@ Example:
 
 In this example, the shell task receives `API_BASE_URL=https://staging-api.example.com`.
 
-Shell tasks also receive `KINETIC_RESULT_PATH`, which points to `~/.kinetic/results/[runid]/[taskid]_result.json` on the machine that executes the task. If the script writes valid JSON to that file, Kinetic stores it in `task_runs.result` and exposes it from the workflow run detail API. Invalid JSON causes the task to fail.
+Shell tasks also receive `KINETIC_RESULT_PATH`, which points to `~/.kinetic/results/[workflow_run_id]/[task_run_id]_result.json` on the machine that executes the task. If the script writes JSON to that file, Kinetic stores it in `task_runs.result` and exposes it from the workflow run detail API. Downstream templates can read parsed JSON fields through the upstream task ref, such as `${{ .upstream.run_shell.result.version }}`.
 
 At the moment, shell tasks receive environment variables directly at runtime. Other supported task types can still reference templated values in their config where applicable.
 

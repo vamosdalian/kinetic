@@ -81,6 +81,8 @@ function WorkflowGraph() {
 
   const [selectedTaskId, setSelectedTaskId] = React.useState<string>("");
 
+  const createTaskRef = React.useCallback((id: string) => `task_${id.replace(/[^A-Za-z0-9_]/g, "_")}`, []);
+
   // Actions
   const updateWorkflowData = React.useCallback((data: Partial<WorkflowData>) => {
     setWorkflowData((prev) => ({ ...prev, ...data }));
@@ -90,10 +92,10 @@ function WorkflowGraph() {
   const addTaskNode = React.useCallback((id: string, position: { x: number; y: number }) => {
     setTaskNodes((prev) => ({
       ...prev,
-      [id]: { ...defaultTaskNode, id, position },
+      [id]: { ...defaultTaskNode, id, ref: createTaskRef(id), position },
     }));
     markDirty();
-  }, [markDirty]);
+  }, [createTaskRef, markDirty]);
 
   const duplicateTaskNode = React.useCallback((sourceId: string) => {
     const id = uuidv7();
@@ -107,6 +109,7 @@ function WorkflowGraph() {
         [id]: {
           ...source,
           id,
+          ref: createTaskRef(id),
           name: `${source.name} copy`,
           config: structuredClone(source.config),
           position: { x: source.position.x + 40, y: source.position.y + 40 },
@@ -117,7 +120,7 @@ function WorkflowGraph() {
       setSelectedTaskId(id);
       markDirty();
     }
-  }, [markDirty]);
+  }, [createTaskRef, markDirty]);
 
   const updateTaskNode = React.useCallback((id: string, data: Partial<Omit<TaskNode, "id">>) => {
     setTaskNodes((prev) => {
@@ -165,7 +168,7 @@ function WorkflowGraph() {
     const taskNodesRecord: Record<string, TaskNode> = {};
     if (data.taskNodes) {
       for (const task of data.taskNodes) {
-        taskNodesRecord[task.id] = task;
+        taskNodesRecord[task.id] = { ...task, ref: task.ref || createTaskRef(task.id) };
       }
     }
 
@@ -181,7 +184,7 @@ function WorkflowGraph() {
     setTaskNodes(taskNodesRecord);
     setEdges(data.edges || []);
     markClean();
-  }, [markClean]);
+  }, [createTaskRef, markClean]);
 
   const fetchAvailableTags = React.useCallback(async () => {
     try {

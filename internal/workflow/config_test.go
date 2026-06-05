@@ -146,3 +146,22 @@ func TestValidateDefinitionRejectsInvalidForVariable(t *testing.T) {
 		t.Fatal("expected reserved loop variable to fail validation")
 	}
 }
+
+func TestValidateDefinitionRejectsDuplicateTaskRef(t *testing.T) {
+	err := ValidateDefinition([]entity.TaskEntity{
+		{ID: "task-1", Ref: "build", Name: "build one", Type: "shell", Config: `{"script":"printf one"}`},
+		{ID: "task-2", Ref: "build", Name: "build two", Type: "shell", Config: `{"script":"printf two"}`},
+	}, nil)
+	if err == nil {
+		t.Fatal("expected duplicate task refs to fail validation")
+	}
+}
+
+func TestValidateDefinitionRejectsInvalidTaskRef(t *testing.T) {
+	err := ValidateDefinition([]entity.TaskEntity{
+		{ID: "task-1", Ref: "build-image", Name: "build", Type: "shell", Config: `{"script":"printf build"}`},
+	}, nil)
+	if err == nil {
+		t.Fatal("expected invalid task ref to fail validation")
+	}
+}

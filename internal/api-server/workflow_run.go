@@ -250,6 +250,7 @@ func (h *WorkflowHandler) buildRunDTO(runID string) (dto.WorkflowRun, error) {
 			TaskRunID:      t.TaskRunID,
 			RunID:          t.RunID,
 			TaskID:         t.TaskID,
+			Ref:            t.TaskRef,
 			Name:           t.TaskName,
 			Description:    t.TaskDescription,
 			Type:           dto.TaskType(t.TaskType),

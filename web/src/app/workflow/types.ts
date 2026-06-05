@@ -77,6 +77,7 @@ export function createTaskConfig(type: TaskType): TaskConfig {
 
 export interface TaskNode {
   id: string;
+  ref: string;
 
   // 业务数据
   name: string;
@@ -91,6 +92,7 @@ export interface TaskNode {
 }
 
 export const defaultTaskNode: Omit<TaskNode, "id" | "position"> = {
+  ref: "",
   name: "New Task",
   description: "",
   type: "shell",

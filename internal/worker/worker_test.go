@@ -95,7 +95,7 @@ func TestWorker_RunStreamProcessesAssignCommand(t *testing.T) {
 			w.Header().Set("Content-Type", "text/event-stream")
 			w.WriteHeader(http.StatusOK)
 			_, _ = fmt.Fprintf(w, "event: assign\n")
-			_, _ = fmt.Fprintf(w, "data: {\"type\":\"assign\",\"task\":{\"run_id\":\"run-1\",\"task_id\":\"task-1\",\"name\":\"task-1\",\"type\":\"shell\",\"config\":{\"script\":\"printf 'ok'; printf '{\\\"ok\\\":true}' > \\\"$KINETIC_RESULT_PATH\\\"\"}}}\n\n")
+			_, _ = fmt.Fprintf(w, "data: {\"type\":\"assign\",\"task\":{\"task_run_id\":\"task-run-1\",\"run_id\":\"run-1\",\"task_id\":\"task-1\",\"name\":\"task-1\",\"type\":\"shell\",\"config\":{\"script\":\"printf 'ok'; printf '{\\\"ok\\\":true}' > \\\"$KINETIC_RESULT_PATH\\\"\"}}}\n\n")
 			if flusher, ok := w.(http.Flusher); ok {
 				flusher.Flush()
 			}
@@ -178,10 +178,11 @@ func TestWorker_ExecuteAssignedTaskRetriesOutputAndTerminalEvents(t *testing.T) 
 
 	worker := NewWorker(testWorkerConfig(server.URL), "remote")
 	worker.executeAssignedTask(context.Background(), dto.AssignedTask{
-		RunID:  "run-1",
-		TaskID: "task-1",
-		Type:   dto.TaskTypeShell,
-		Config: json.RawMessage(`{"script":"printf 'ok'"}`),
+		TaskRunID: "task-run-1",
+		RunID:     "run-1",
+		TaskID:    "task-1",
+		Type:      dto.TaskTypeShell,
+		Config:    json.RawMessage(`{"script":"printf 'ok'"}`),
 	})
 
 	mu.Lock()

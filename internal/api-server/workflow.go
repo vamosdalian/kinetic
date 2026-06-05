@@ -147,6 +147,7 @@ func (h *WorkflowHandler) Get(c *gin.Context) {
 		json.Unmarshal([]byte(task.Position), &position)
 		resp.TaskNodes = append(resp.TaskNodes, dto.TaskNode{
 			ID:          task.ID,
+			Ref:         task.RefOrDefault(),
 			Name:        task.Name,
 			Type:        dto.TaskType(task.Type),
 			Config:      json.RawMessage(task.Config),
@@ -199,6 +200,7 @@ func (h *WorkflowHandler) Save(c *gin.Context) {
 		taskEntities = append(taskEntities, entity.TaskEntity{
 			ID:          task.ID,
 			WorkflowID:  req.ID,
+			Ref:         strings.TrimSpace(task.Ref),
 			Name:        task.Name,
 			Description: task.Description,
 			Type:        string(task.Type),

@@ -21,6 +21,7 @@ type TaskRunEntity struct {
 	RunID           string
 	TaskID          string
 	WorkflowID      string
+	TaskRef         string
 	TaskName        string
 	TaskDescription string
 	TaskType        string

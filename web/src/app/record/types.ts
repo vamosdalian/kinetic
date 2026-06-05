@@ -29,6 +29,7 @@ export interface TaskNodeRun {
   task_run_id: string;
   run_id: string;
   task_id: string;
+  ref: string;
   name: string;
   description: string;
   type: string;
